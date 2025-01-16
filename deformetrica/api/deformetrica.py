@@ -14,10 +14,8 @@ import numpy as np
 
 from ..core import default, GpuMode
 from ..core.estimators.gradient_ascent import GradientAscent
-from ..core.estimators.mcmc_saem import McmcSaem
 from ..core.estimators.scipy_optimize import ScipyOptimize
-from ..core.models import PrincipalGeodesicAnalysis, AffineAtlas, BayesianAtlas, \
-                        DeterministicAtlas, GeodesicRegression, PiecewiseGeodesicRegression, \
+from ..core.models import DeterministicAtlas, GeodesicRegression, PiecewiseGeodesicRegression, \
                         BayesianPiecewiseGeodesicRegression, LongitudinalAtlas, LongitudinalAtlasSimplified
 from ..in_out.dataset_functions import create_dataset, filter_dataset, make_dataset_timeseries, create_template_metadata,\
                                         age, id, dataset_for_registration, maxi, mini, ages_histogram
@@ -32,11 +30,8 @@ from ..support.utilities.vtk_tools import screenshot_vtk
 from ..support.probability_distributions.multi_scalar_normal_distribution import MultiScalarNormalDistribution
 
 #ajouts vd
-from ..core.estimators.proximal_gradient_ascent import ProximalGradientAscent
-from ..core.estimators.hardthreshold_gradient_ascent import HardthresholdGradientAscent
-from ..core.models import BayesianAtlasSparse, ClusteredBayesianAtlas, DeterministicAtlasSparse, DeterministicAtlasHypertemplate, DeterministicAtlasWithModule, ClusteredLongitudinalAtlas
-from ..support.probability_distributions.multi_scalar_truncated_normal_distribution import MultiScalarTruncatedNormalDistribution
-from ..support.probability_distributions.truncated_normal_distribution import TruncatedNormalDistribution
+#from ..support.probability_distributions.multi_scalar_truncated_normal_distribution import MultiScalarTruncatedNormalDistribution
+#from ..support.probability_distributions.truncated_normal_distribution import TruncatedNormalDistribution
 from ..support.probability_distributions.uniform_distribution import UniformDistribution
 from ..core.models.model_functions import initialize_control_points
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
@@ -91,8 +86,6 @@ class Deformetrica:
 
         # console logger
         logger_stream_handler = logging.StreamHandler(stream=sys.stdout)
-        # logger_stream_handler.setFormatter(logging.Formatter(default.logger_format))
-        # logger_stream_handler.setLevel(verbosity)
         try:
             logger_stream_handler.setLevel(verbosity)
             logger.setLevel(verbosity)
@@ -287,132 +280,6 @@ class Deformetrica:
 
         return statistical_model
 
-    #ajouts vd
-    def estimate_deterministic_hypertemplate_atlas(self, template_specifications, dataset_specifications,
-                                     model_options={}, estimator_options={}, write_output=True):
-        """ Estimate deterministic atlas.
-        Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
-        as well as to compute a low number of coordinates for each object from this template shape.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'DeterministicAtlasSparse', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        logger.info(estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = DeterministicAtlasHypertemplate(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
-        statistical_model.setup_multiprocess_pool(dataset)
-
-        # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
-
-    def estimate_deterministic_atlas_sparse(self, template_specifications, dataset_specifications,
-                                     model_options={}, estimator_options={}, write_output=True):
-        """ Estimate deterministic atlas.
-        Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
-        as well as to compute a low number of coordinates for each object from this template shape.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'DeterministicAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        logger.info(estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = DeterministicAtlasSparse(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
-        statistical_model.setup_multiprocess_pool(dataset)
-
-        # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
-
-    def estimate_deterministic_atlas_withmodule(self, template_specifications, dataset_specifications,
-                                     model_options={}, estimator_options={}, write_output=True):
-        """ Estimate deterministic atlas.
-        Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
-        as well as to compute a low number of coordinates for each object from this template shape.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'DeterministicAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        logger.info(estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = DeterministicAtlasWithModule(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
-        statistical_model.setup_multiprocess_pool(dataset)
-
-        # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
-
-    ###########
-
     def estimate_bayesian_atlas(self, template_specifications, dataset_specifications,
                                 model_options={}, estimator_options={}, write_output=True):
         """ Estimate bayesian atlas.
@@ -453,86 +320,6 @@ class Deformetrica:
 
         return statistical_model, estimator.individual_RER
 
-    def estimate_sparse_bayesian_atlas(self, template_specifications, dataset_specifications,
-                                model_options={}, estimator_options={}, write_output=True):
-        """ Estimate bayesian atlas.
-        Bayesian version of the deterministic atlas. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'BayesianAtlasSparse', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = BayesianAtlasSparse(template_specifications, dataset.number_of_subjects, **model_options)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
-                                                                                 **model_options)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
-
-        # Instantiate estimator.
-        estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model, estimator.individual_RER
-
-    def estimate_clustered_bayesian_atlas(self, template_specifications, dataset_specifications,
-                                model_options={}, estimator_options={}, write_output=True):
-        """ Estimate clustered bayesian atlas.
-        Clustered Bayesian version of the deterministic atlas. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'ClusteredBayesianAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = ClusteredBayesianAtlas(template_specifications, **model_options)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
-                                                                                 **model_options)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
-
-        # Instantiate estimator.
-        estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model, estimator.individual_RER
-
-##########
-
     def estimate_longitudinal_atlas(self, template_specifications, dataset_specifications,
                                     model_options={}, estimator_options={}, write_output=True):
         """ Estimate longitudinal atlas.
@@ -565,55 +352,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=McmcSaem)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
-
-    #ajouts vd
-
-    def estimate_clustered_longitudinal_atlas(self, template_specifications, dataset_specifications,
-                                    model_options={}, estimator_options={}, write_output=True):
-        """ Estimate clustered longitudinal atlas.
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'ClusteredLongitudinalAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (not dataset.is_cross_sectional() and not dataset.is_time_series()), \
-            "Cannot estimate an atlas from a cross-sectional or time-series dataset."
-
-        # Instantiate model.
-        mini = min(dataset.times[0])
-        maxi = max(dataset.times[0])
-        for k in range(1, dataset.times.__len__()):
-            if min(dataset.times[k]) < mini: mini = min(dataset.times[k])
-            if max(dataset.times[k]) > maxi: maxi = max(dataset.times[k])
-        statistical_model = ClusteredLongitudinalAtlas(template_specifications, min_times=mini, max_times=maxi, **model_options)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
-                                                                                 **model_options)
-        statistical_model.setup_multiprocess_pool(dataset)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
-
-        # Instantiate estimator.
-        estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=McmcSaem)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             # Launch.
@@ -643,7 +382,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=McmcSaem)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -651,7 +390,6 @@ class Deformetrica:
             statistical_model.cleanup()
 
         return statistical_model
-
 
     def estimate_longitudinal_registration(self, template_specifications, dataset_specifications,
                                            model_options={}, estimator_options={}, overwrite=True):
@@ -675,55 +413,6 @@ class Deformetrica:
         estimate_longitudinal_registration(template_specifications, dataset_specifications,
                                            model_options, estimator_options,
                                            output_dir=self.output_dir, overwrite=overwrite)
-
-
-    def estimate_affine_atlas(self, template_specifications, dataset_specifications,
-                              model_options={}, estimator_options={}, write_output=True):
-        """ Estimate affine atlas
-        TODO
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'AffineAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-
-        # Instantiate model.
-        statistical_model = AffineAtlas(dataset, template_specifications, **model_options)
-
-        # instantiate estimator
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
-
-    def estimate_longitudinal_metric_model(self):
-        """
-        TODO
-        :return:
-        """
-        raise NotImplementedError
-
-    def estimate_longitudinal_metric_registration(self):
-        """
-        TODO
-        :return:
-        """
-        raise NotImplementedError
 
     def estimate_geodesic_regression(self, template_specifications, dataset_specifications,
                                      model_options={}, estimator_options={}, write_output=True):
@@ -1210,54 +899,6 @@ class Deformetrica:
                     nb_components = model_options_["num_component"], target_time = target_time,
                     **model_options_)
         
-    def test_deterministic_atlas(self, template_specifications, dataset_specifications,
-                                     model_options={}, estimator_options={}, write_output=True):
-        ages_histogram(dataset_specifications, self.output_dir)
-
-        estimator_options["overwrite"] = False
-
-        main_output_dir = self.output_dir  
-
-        for template in range(len(dataset_specifications['subject_ids'])):
-            new_dataset_spec = {"subject_ids" : [], 'dataset_filenames' : [], "visit_ages" : []}
-            self.output_dir = op.join(main_output_dir, "Template_{}__{}_age_{}".format(template, 
-                                            dataset_specifications['subject_ids'][template],
-                                            dataset_specifications['visit_ages'][template][0]))
-            make_dir(self.output_dir)
-
-            template_specifications["img"]['filename'] = dataset_specifications['dataset_filenames'][template][0]['img']
-
-            logger.info("Setting template to {}".format(template_specifications["img"]['filename'] ))
-
-            for i in range(len(dataset_specifications['subject_ids'])):
-                if i != template:
-                    new_dataset_spec['subject_ids'].append(dataset_specifications['subject_ids'][i])
-                    new_dataset_spec['dataset_filenames'].append([dataset_specifications['dataset_filenames'][i][0]])
-                    new_dataset_spec['visit_ages'].append([age(dataset_specifications, i)])
-
-            # Check and completes the input parameters.
-            template_specifications_, model_options, estimator_options = self.further_initialization(
-                'DeterministicAtlas', template_specifications, model_options, new_dataset_spec, 
-                estimator_options)
-            
-            # Instantiate dataset.
-            dataset = create_dataset(template_specifications_,
-                                    dimension=model_options['dimension'], interpolation =model_options['interpolation'],
-                                    **new_dataset_spec)
-            assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-            statistical_model = DeterministicAtlas(template_specifications_, dataset.number_of_subjects, **model_options)
-            statistical_model.initialize_noise_variance(dataset)
-            statistical_model.setup_multiprocess_pool(dataset)
-
-            estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-            try:
-                self.__launch_estimator(estimator, write_output)
-            finally:
-                statistical_model.cleanup()
-
-        
     def initialized_piecewise_bayesian_geodesic_regression(self, template_specifications, dataset_specifications,
                                      model_options={}, estimator_options={}, write_output=True):
         
@@ -1357,7 +998,6 @@ class Deformetrica:
         
         # Adaptative kernel
         
-
         # Update the dataset accordingly
         new_dataset_spec = copy.deepcopy(dataset_specifications)
         new_dataset_spec['visit_ages'] = [[age] for i, age in enumerate(visit_ages) if i in selection]
@@ -1471,13 +1111,6 @@ class Deformetrica:
 
         return 
 
-    def estimate_deep_pga(self):
-        """
-        TODO
-        :return:
-        """
-        raise NotImplementedError
-
     def estimate_principal_geodesic_analysis(self, template_specifications, dataset_specifications,
                                              model_options={}, estimator_options={}, write_output=True):
         """ Estimate principal geodesic analysis
@@ -1511,7 +1144,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=McmcSaem)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             # Launch.
@@ -1598,11 +1231,6 @@ class Deformetrica:
     def __instantiate_estimator(self, statistical_model, dataset, estimator_options, default=ScipyOptimize):
         if estimator_options['optimization_method_type'].lower() == 'GradientAscent'.lower():
             estimator = GradientAscent
-        #ajouts vd
-        elif estimator_options['optimization_method_type'].lower() == 'ProximalGradientAscent'.lower():
-            estimator = ProximalGradientAscent
-        elif estimator_options['optimization_method_type'].lower() == 'HardthresholdGradientAscent'.lower():
-            estimator = HardthresholdGradientAscent
         elif estimator_options['optimization_method_type'].lower() == 'StochasticGradientAscent'.lower():
             estimator = StochasticGradientAscent
             # set batch number
@@ -1619,11 +1247,8 @@ class Deformetrica:
 
                 print("\nSetting number of batches to", estimator_options["number_of_batches"])
 
-
         elif estimator_options['optimization_method_type'].lower() == 'ScipyLBFGS'.lower():
             estimator = ScipyOptimize
-        elif estimator_options['optimization_method_type'].lower() == 'McmcSaem'.lower():
-            estimator = McmcSaem
         else:
             estimator = default
 
@@ -1772,7 +1397,7 @@ class Deformetrica:
                 logger.info('>> ' + msg)
 
             elif model_type.lower() in ['BayesianAtlas'.lower(), 'Regression'.lower(),
-                                        'LongitudinalRegistration'.lower(), 'ClusteredBayesianAtlas'.lower()]:
+                                        'LongitudinalRegistration'.lower()]:
                 model_options['number_of_processes'] = 1
                 msg = 'It is not possible at the moment to estimate a "%s" model with multithreading. ' \
                       'Overriding the "number-of-processes" option, now set to 1.' % model_type
@@ -1907,12 +1532,6 @@ class Deformetrica:
             logger.info('>> The initial acceleration std fixed effect is ARBITRARILY set to %.2f.' % acceleration_std)
             model_options['initial_acceleration_variance'] = (acceleration_std ** 2)
         
-        #ajout vd
-        if model_type == 'ClusteredBayesianAtlas'.lower() and model_options['nb_classes'] is None:
-            model_options['nb_classes'] = 1
-            print('≥> The number of classes is set to 1')
-        ###########
-
         # Checking the number of image objects, and moving as desired the downsampling_factor parameter.
         count = 0
         for elt in template_specifications.values():
@@ -1934,95 +1553,29 @@ class Deformetrica:
             logger.info('>> ' + msg)
 
         # Initializes the proposal distributions.
-        if estimator_options is not None and \
-                estimator_options['optimization_method_type'].lower() == 'McmcSaem'.lower():
+        # if estimator_options is not None and \
+        #         estimator_options['optimization_method_type'].lower() == 'McmcSaem'.lower():
 
-            assert model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower(), 
-                                            'BayesianAtlas'.lower(), 'ClusteredLongitudinalAtlas'.lower(), 
-                                            'ClusteredBayesianAtlas'.lower(), 'BayesianAtlasSparse'.lower(),
-                                            'BayesianPiecewiseRegression'.lower()], \
-                'Only the "BayesianAtlas" and "LongitudinalAtlas" models can be estimated with the "McmcSaem" ' \
-                'algorithm, when here was specified a "%s" model.' % model_type
+        #     assert model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower(), 
+        #                                     'BayesianAtlas'.lower(), 'ClusteredLongitudinalAtlas'.lower(), 
+        #                                     'ClusteredBayesianAtlas'.lower(), 'BayesianAtlasSparse'.lower(),
+        #                                     'BayesianPiecewiseRegression'.lower()], \
+        #         'Only the "BayesianAtlas" and "LongitudinalAtlas" models can be estimated with the "McmcSaem" ' \
+        #         'algorithm, when here was specified a "%s" model.' % model_type
 
-            if model_type.lower() in ['BayesianPiecewiseRegression'.lower(), 'LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower()]:
+        #     if model_type.lower() in ['BayesianPiecewiseRegression'.lower(), 'LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower()]:
 
-                if 'onset_age_proposal_std' not in estimator_options:
-                    estimator_options['onset_age_proposal_std'] = default.onset_age_proposal_std
-                if 'acceleration_proposal_std' not in estimator_options:
-                    estimator_options['acceleration_proposal_std'] = default.acceleration_proposal_std
-                if 'sources_proposal_std' not in estimator_options:
-                    estimator_options['sources_proposal_std'] = default.sources_proposal_std
+        #         if 'onset_age_proposal_std' not in estimator_options:
+        #             estimator_options['onset_age_proposal_std'] = default.onset_age_proposal_std
+        #         if 'acceleration_proposal_std' not in estimator_options:
+        #             estimator_options['acceleration_proposal_std'] = default.acceleration_proposal_std
+        #         if 'sources_proposal_std' not in estimator_options:
+        #             estimator_options['sources_proposal_std'] = default.sources_proposal_std
 
-                estimator_options['individual_proposal_distributions'] = {
-                    'onset_age': MultiScalarNormalDistribution(std=estimator_options['onset_age_proposal_std']),
-                    'acceleration': MultiScalarNormalDistribution(std=estimator_options['acceleration_proposal_std']),
-                    'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
-
-            #ajouts vd
-            elif model_type.lower() == 'ClusteredLongitudinalAtlas'.lower():
-
-                if 'onset_age_proposal_std' not in estimator_options:
-                    estimator_options['onset_age_proposal_std'] = default.onset_age_proposal_std
-                if 'acceleration_proposal_std' not in estimator_options:
-                    estimator_options['acceleration_proposal_std'] = default.acceleration_proposal_std/50
-                if 'sources_proposal_std' not in estimator_options:
-                    estimator_options['sources_proposal_std'] = default.sources_proposal_std*50
-
-                estimator_options['individual_proposal_distributions'] = {
-                    'classes': UniformDistribution(max=model_options['nb_classes']),
-                    'onset_ages': MultiScalarNormalDistribution(std=estimator_options['onset_age_proposal_std']),
-                    'accelerations': MultiScalarNormalDistribution(std=estimator_options['acceleration_proposal_std']),
-                    'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
-            ###############
-            elif model_type.lower() == 'BayesianAtlas'.lower():
-                if 'momenta_proposal_std' not in estimator_options:
-                    estimator_options['momenta_proposal_std'] = default.momenta_proposal_std
-
-                estimator_options['individual_proposal_distributions'] = {
-                    'momenta': MultiScalarNormalDistribution(std=estimator_options['momenta_proposal_std'])}
-
-            #ajouts vd
-            elif model_type.lower() == 'BayesianAtlasSparse'.lower():
-                if 'momenta_proposal_std' not in estimator_options:
-                    estimator_options['momenta_proposal_std'] = 100*default.momenta_proposal_std
-                    estimator_options['module_positions_proposal_std'] = 200*default.momenta_proposal_std
-                    estimator_options['module_intensities_proposal_std'] = 30*default.momenta_proposal_std
-                    estimator_options['module_variances_proposal_std'] = 100*default.momenta_proposal_std
-
-                (object_list, objects_name, objects_name_extension,
-                 objects_noise_variance, multi_object_attachment) = create_template_metadata(
-                    template_specifications, model_options['dimension'], gpu_mode='cpu')
-
-                template = DeformableMultiObject(object_list)
-                initial_cp = initialize_control_points(None, template, model_options['space_between_modules'], None,
-                                                       model_options['dimension'], False)
-                nb_modules = initial_cp.shape[0]
-                nb_subjects = dataset_specifications['subject_ids'].__len__()
-                estimator_options['individual_proposal_distributions'] = {
-                    'momenta': MultiScalarNormalDistribution(std=estimator_options['momenta_proposal_std']),
-                    #'module_intensities': MultiScalarTruncatedNormalDistribution(std=estimator_options['module_intensities_proposal_std']),
-                    #'module_variances': MultiScalarNormalDistribution(std=estimator_options['module_variances_proposal_std']),
-                    #'module_directions': MultiScalarNormalDistribution(std=estimator_options['module_variances_proposal_std'])
-                }
-
-                #for i in range(nb_modules):
-                #    estimator_options['individual_proposal_distributions']['module_' + str(i)] = MultiScalarNormalDistribution(std= np.array([10.,10.,50.,2.,2.,1.,1.]))
-                estimator_options['individual_proposal_distributions'][
-                    'sparse_matrix'] = MultiScalarTruncatedNormalDistribution(std=0.05)
-                #for i in range(nb_subjects):
-                #    estimator_options['individual_proposal_distributions']['module_positions_subj' + str(i)] = MultiScalarNormalDistribution(std=estimator_options['module_positions_proposal_std'])
-                        #estimator_options['individual_proposal_distributions'][
-                        #    'module_positions_subj' + str(i)].set_boundary(np.min(object_list[0].bounding_box,1), np.max(object_list[0].bounding_box,1))
-            
-            elif model_type.lower() == 'ClusteredBayesianAtlas'.lower():
-                if 'momenta_proposal_std' not in estimator_options:
-                    estimator_options['momenta_proposal_std'] = default.momenta_proposal_std*10
-
-                estimator_options['individual_proposal_distributions'] = {
-                    'momenta': MultiScalarNormalDistribution(std=estimator_options['momenta_proposal_std']),
-                    'classes': UniformDistribution(max=model_options['nb_classes'])
-                }
-        ###############
+        #         estimator_options['individual_proposal_distributions'] = {
+        #             'onset_age': MultiScalarNormalDistribution(std=estimator_options['onset_age_proposal_std']),
+        #             'acceleration': MultiScalarNormalDistribution(std=estimator_options['acceleration_proposal_std']),
+        #             'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
         
         return template_specifications, model_options, estimator_options
 

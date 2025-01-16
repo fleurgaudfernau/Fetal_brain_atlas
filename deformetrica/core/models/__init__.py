@@ -1,21 +1,10 @@
 
 from .abstract_statistical_model import AbstractStatisticalModel
-from .affine_atlas import AffineAtlas
 from .bayesian_atlas import BayesianAtlas
-from .deep_pga import DeepPga
 from .deterministic_atlas import DeterministicAtlas
 from .geodesic_regression import GeodesicRegression
 from .geodesic_regression_piecewise import PiecewiseGeodesicRegression
 from .geodesic_regression_piecewise_space_shift import BayesianPiecewiseGeodesicRegression
 from .longitudinal_atlas import LongitudinalAtlas, compute_exponential_and_attachment
-from .longitudinal_metric_learning import LongitudinalMetricLearning
 from .principal_geodesic_analysis import PrincipalGeodesicAnalysis
-
-from .bayesian_atlas_sparse import BayesianAtlasSparse
-from .clustered_bayesian_atlas import ClusteredBayesianAtlas
-from .deterministic_atlas_sparse import DeterministicAtlasSparse
-from .deterministic_atlas_hypertemplate import DeterministicAtlasHypertemplate
-from .deterministic_atlas_withmodule import DeterministicAtlasWithModule
-from .clustered_longitudinal_atlas import ClusteredLongitudinalAtlas
-
 from .longitudinal_atlas_simplified import LongitudinalAtlasSimplified
