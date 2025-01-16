@@ -14,7 +14,6 @@ from .core.model_tools import attachments as attachments
 from .core.model_tools import deformations as deformations
 from .launch.initialize_longitudinal_atlas import initialize_longitudinal_atlas
 from .launch.finalize_longitudinal_atlas import finalize_longitudinal_atlas
-from .launch.estimate_longitudinal_metric_model import estimate_longitudinal_metric_model
 from .launch.estimate_longitudinal_metric_registration import estimate_longitudinal_metric_registration
 #from .launch.initialize_longitudinal_atlas_simplified import initialize_longitudinal_atlas_simplified
 from .launch.initialize_longitudinal_atlas_development import initialize_longitudinal_atlas_development
@@ -22,9 +21,6 @@ from .launch.initialize_piecewise_geodesic_regression_with_space_shift import in
 
 # estimators
 from .core import estimators as estimators
-
-# samplers
-from .core.estimator_tools import samplers as samplers
 
 # io
 from . import in_out as io

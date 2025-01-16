@@ -1,5 +1,4 @@
 import os
-
 from ..core import GpuMode
 from ..support import utilities
 
@@ -28,7 +27,7 @@ process_per_gpu = 1
 model_type = 'undefined'
 template_specifications = {}
 deformation_kernel_width = 1.0
-deformation_kernel_type = 'keops'
+#deformation_kernel_type = 'keops'
 deformation_kernel_device = 'auto'
 
 shoot_kernel_type = None
@@ -47,7 +46,7 @@ covariance_momenta_prior_normalized_dof = 0.001
 dataset_filenames = []
 visit_ages = []
 subject_ids = []
-optimization_method_type = 'ScipyLBFGS'
+optimization_method_type = 'GradientAscent'
 optimized_log_likelihood = 'complete'
 max_iterations = 100
 max_line_search_iterations = 10
@@ -61,7 +60,6 @@ initial_step_size = None
 line_search_shrink = 0.5
 line_search_expand = 1.5
 convergence_tolerance = 1e-4
-noise_variance_prior_normalized_dof = 0.01
 noise_variance_prior_normalized_dof = 0.01
 memory_length = 10
 scale_initial_step_size = True #before 27/01 TRUE
@@ -115,13 +113,12 @@ initial_sources = None
 initial_sources_mean = None
 initial_sources_std = None
 
-sampler = 'SrwMhwg'
 individual_proposal_distributions = {}
 
-momenta_proposal_std = 0.01
-onset_age_proposal_std = 0.1
-acceleration_proposal_std = 0.01
-sources_proposal_std = 0.01
+# momenta_proposal_std = 0.01
+# onset_age_proposal_std = 0.1
+# acceleration_proposal_std = 0.01
+# sources_proposal_std = 0.01
 
 #modify fleur
 momenta_proposal_std = 1
@@ -141,9 +138,7 @@ metric_parameters_file = None
 interpolation_points_file = None
 initial_noise_variance = None
 exponential_type = None
-number_of_metric_parameters = None  # number of parameters in metric learning.
 number_of_interpolation_points = None
-latent_space_dimension = None  # For deep metric learning
 normalize_image_intensity = False
 initialization_heuristic = False
 

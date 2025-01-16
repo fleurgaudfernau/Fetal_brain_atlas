@@ -6,8 +6,6 @@ from ...support.kernels.abstract_kernel import AbstractKernel
 
 logger = logging.getLogger(__name__)
 
-#fg: convolve points, control points
-
 def gaussian(r2, s):
     return torch.exp(-r2 / (s * s))
 

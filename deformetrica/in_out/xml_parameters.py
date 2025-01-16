@@ -35,16 +35,6 @@ def get_estimator_options(xml_parameters):
         options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
         options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
 
-    elif xml_parameters.optimization_method_type.lower() == 'McmcSaem'.lower():
-        options['sample_every_n_mcmc_iters'] = xml_parameters.sample_every_n_mcmc_iters
-        options['sampler'] = 'SrwMhwg'.lower()
-        # Options for the gradient-based estimator.
-        options['scale_initial_step_size'] = xml_parameters.scale_initial_step_size
-        options['initial_step_size'] = xml_parameters.initial_step_size
-        options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
-        options['line_search_shrink'] = xml_parameters.line_search_shrink
-        options['line_search_expand'] = xml_parameters.line_search_expand
-
     # common options
     options['optimization_method_type'] = xml_parameters.optimization_method_type.lower()
     options['max_iterations'] = xml_parameters.max_iterations
@@ -69,7 +59,6 @@ def get_estimator_options(xml_parameters):
 
 def get_model_options(xml_parameters):
     options = {
-        'deformation_kernel_type': xml_parameters.deformation_kernel_type,
         'deformation_kernel_width': xml_parameters.deformation_kernel_width,
         'deformation_kernel_device': xml_parameters.deformation_kernel_device,
         'number_of_time_points': xml_parameters.number_of_time_points,
@@ -99,7 +88,7 @@ def get_model_options(xml_parameters):
     }
 
     if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower(), 
-                                            'LongitudinalRegistration'.lower(), 'ClusteredLongitudinalAtlas'.lower()]:
+                                            'LongitudinalRegistration'.lower()]:
         options['t0'] = xml_parameters.t0
         options['tR'] = xml_parameters.tR
         options['tmin'] = xml_parameters.tmin
@@ -128,21 +117,6 @@ def get_model_options(xml_parameters):
         options['tmin'] = xml_parameters.tmin
         options['tmax'] = xml_parameters.tmax
 
-    elif "BayesianPiecewiseRegression".lower() in xml_parameters.model_type.lower():#ajout fg
-        options['num_component'] = xml_parameters.num_component
-        options['t0'] = xml_parameters.t0
-        options['tR'] = xml_parameters.tR
-        options['t1'] = xml_parameters.t1 
-        options['number_of_sources'] = xml_parameters.number_of_sources
-        options['initial_modulation_matrix'] = xml_parameters.initial_modulation_matrix
-        options['initial_accelerations'] = xml_parameters.initial_accelerations
-        options['initial_sources'] = xml_parameters.initial_sources
-        options['freeze_modulation_matrix'] = xml_parameters.freeze_modulation_matrix
-        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
-        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
-        options['freeze_components'] = xml_parameters.freeze_components
-        options['freeze_acceleration_variance'] = xml_parameters.freeze_acceleration_variance
-
     elif xml_parameters.model_type.lower() in ["PiecewiseRegression".lower()]:#ajout fg
         options['num_component'] = xml_parameters.num_component
         options['t0'] = xml_parameters.t0
@@ -161,22 +135,6 @@ def get_model_options(xml_parameters):
         options['initial_momenta_to_transport'] = xml_parameters.initial_momenta_to_transport
         options['initial_control_points_to_transport'] = xml_parameters.initial_control_points_to_transport
     
-    #ajouts vd
-    elif xml_parameters.model_type.lower() == 'ClusteredBayesianAtlas'.lower():
-        options['nb_classes'] = xml_parameters.nb_classes
-
-    elif xml_parameters.model_type.lower() == 'BayesianAtlasSparse'.lower():
-        options['space_between_modules'] = xml_parameters.space_between_modules
-        #options['alpha_sparse'] = xml_parameters.alpha_sparse
-
-    if xml_parameters.model_type.lower() == 'ClusteredLongitudinalAtlas'.lower():
-        options['nb_classes'] = xml_parameters.nb_classes
-        options['num_component'] = xml_parameters.num_component
-
-    if xml_parameters.model_type.lower() == 'DeterministicAtlasSparse'.lower():
-        options['alpha_sparse'] = xml_parameters.alpha_sparse
-        options['gaussian_smoothing'] = xml_parameters.gaussian_smoothing
-        
     return options
 
 
@@ -200,7 +158,6 @@ class XmlParameters:
         self.model_type = default.model_type
         self.template_specifications = default.template_specifications
         self.deformation_kernel_width = 0
-        self.deformation_kernel_type = 'torch'
         self.deformation_kernel_device = default.deformation_kernel_device
         self.number_of_time_points = default.number_of_time_points
         self.concentration_of_time_points = default.concentration_of_time_points
@@ -228,7 +185,6 @@ class XmlParameters:
         self.max_line_search_iterations = default.max_line_search_iterations
         self.save_every_n_iters = default.save_every_n_iters
         self.print_every_n_iters = default.print_every_n_iters
-        self.sample_every_n_mcmc_iters = default.sample_every_n_mcmc_iters
         self.use_sobolev_gradient = default.use_sobolev_gradient
         self.sobolev_kernel_width_ratio = default.sobolev_kernel_width_ratio
         self.smoothing_kernel_width = default.smoothing_kernel_width
@@ -274,11 +230,6 @@ class XmlParameters:
         self.freeze_rotation_angles = False
         self.freeze_scaling_ratios = False
 
-        # For metric learning atlas
-        self.freeze_metric_parameters = default.freeze_metric_parameters
-        self.freeze_p0 = default.freeze_p0
-        self.freeze_v0 = default.freeze_v0
-
         self.initial_control_points = default.initial_control_points
         self.initial_momenta = default.initial_momenta
         self.initial_principal_directions = default.initial_principal_directions
@@ -300,18 +251,18 @@ class XmlParameters:
         self.sources_proposal_std = default.sources_proposal_std
 
         # For scalar inputs:
-        self.group_file = default.group_file
-        self.observations_file = default.observations_file
-        self.timepoints_file = default.timepoints_file
-        self.v0 = default.v0
-        self.p0 = default.p0
-        self.metric_parameters_file = default.metric_parameters_file
-        self.interpolation_points_file = default.interpolation_points_file
-        self.initial_noise_variance = default.initial_noise_variance
-        self.exponential_type = default.exponential_type
-        self.number_of_metric_parameters = default.number_of_metric_parameters  # number of parameters in metric learning.
-        self.number_of_interpolation_points = default.number_of_interpolation_points
-        self.latent_space_dimension = default.latent_space_dimension  # For deep metric learning
+        # self.group_file = default.group_file
+        # self.observations_file = default.observations_file
+        # self.timepoints_file = default.timepoints_file
+        # self.v0 = default.v0
+        # self.p0 = default.p0
+        # self.metric_parameters_file = default.metric_parameters_file
+        # self.interpolation_points_file = default.interpolation_points_file
+        # self.initial_noise_variance = default.initial_noise_variance
+        # self.exponential_type = default.exponential_type
+        # self.number_of_metric_parameters = default.number_of_metric_parameters  # number of parameters in metric learning.
+        # self.number_of_interpolation_points = default.number_of_interpolation_points
+        # self.latent_space_dimension = default.latent_space_dimension  # For deep metric learning
 
         self.normalize_image_intensity = default.normalize_image_intensity
         self.initialization_heuristic = default.initialization_heuristic
@@ -448,10 +399,6 @@ class XmlParameters:
                                 template_object['attachment_type'] = model_xml_level3.text.lower()
                             elif model_xml_level3.tag.lower() == 'kernel-width':
                                 template_object['kernel_width'] = float(model_xml_level3.text)
-                            elif model_xml_level3.tag.lower() == 'kernel-type':
-                                template_object['kernel_type'] = model_xml_level3.text.lower()
-                                if model_xml_level3.text.lower() == 'keops'.lower():
-                                    self._keops_is_used = True
                             elif model_xml_level3.tag.lower() == 'kernel-device':
                                 template_object['kernel_device'] = model_xml_level3.text
                             elif model_xml_level3.tag.lower() == 'noise-std':
@@ -480,10 +427,6 @@ class XmlParameters:
                         self.deformation_kernel_width = float(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 'exponential-type':
                         self.exponential_type = model_xml_level2.text
-                    elif model_xml_level2.tag.lower() == 'kernel-type':
-                        self.deformation_kernel_type = model_xml_level2.text.lower()
-                        if model_xml_level2.text.lower() == 'keops'.lower():
-                            self._keops_is_used = True
                     elif model_xml_level2.tag.lower() == 'kernel-device':
                         self.deformation_kernel_device = model_xml_level2.text
                     elif model_xml_level2.tag.lower() == 'number-of-timepoints':
@@ -510,10 +453,6 @@ class XmlParameters:
                         self.p0 = model_xml_level2.text
                     elif model_xml_level2.tag.lower() == 'v0':
                         self.v0 = model_xml_level2.text
-                    elif model_xml_level2.tag.lower() == 'metric-parameters-file':  # for metric learning
-                        self.metric_parameters_file = model_xml_level2.text
-                    elif model_xml_level2.tag.lower() == 'interpolation-points-file':  # for metric learning
-                        self.interpolation_points_file = model_xml_level2.text
                     elif model_xml_level2.tag.lower() == 'covariance-momenta-prior-normalized-dof':
                         self.covariance_momenta_prior_normalized_dof = float(model_xml_level2.text)
                     else:
@@ -597,8 +536,6 @@ class XmlParameters:
                     self.save_every_n_iters = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'print-every-n-iters':
                     self.print_every_n_iters = int(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'sample-every-n-mcmc-iters':
-                    self.sample_every_n_mcmc_iters = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'use-sobolev-gradient':
                     self.use_sobolev_gradient = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'sobolev-kernel-width-ratio':
@@ -688,7 +625,6 @@ class XmlParameters:
     def _initialize_template_object_xml_parameters():
         template_object = {}
         template_object['deformable_object_type'] = 'undefined'
-        template_object['kernel_type'] = 'undefined'
         template_object['kernel_width'] = 0.0
         template_object['kernel_device'] = default.deformation_kernel_device
         template_object['noise_std'] = -1

@@ -7,7 +7,6 @@ import os
 import sys
 from codecarbon import EmissionsTracker
 
-
 import deformetrica as dfca #from the init file
 
 logger = logging.getLogger(__name__)
@@ -55,7 +54,6 @@ def main():
     parser_initialize.add_argument('model', type=str, help='model xml file')
 
     #age command
-    
 
     # gui command
     subparsers.add_parser('gui', add_help=False, parents=[common_parser])
@@ -104,8 +102,6 @@ def main():
                                      args.dataset if args.command == 'estimate' else None,
                                      args.parameters)
         
-        print("xml_parameters.model_type", xml_parameters.model_type)
-
         if xml_parameters.model_type == 'Registration'.lower():
             assert args.command == 'estimate', \
                 'The estimation of a registration model should be launched with the command: ' \
@@ -134,75 +130,12 @@ def main():
                 xml_parameters.template_specifications,
                 dfca.io.get_dataset_specifications(xml_parameters),
                 estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-        
-        elif xml_parameters.model_type == 'DeterministicAtlasTest'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a deterministic atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.test_deterministic_atlas(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-	
-	#ajouts vd
-        elif xml_parameters.model_type == 'DeterministicAtlasHypertemplate'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a deterministic atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_deterministic_hypertemplate_atlas(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-        ########
-        elif xml_parameters.model_type == 'BayesianAtlas'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a bayesian atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_bayesian_atlas(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-
-        #ajouts vd
-        elif xml_parameters.model_type == 'BayesianAtlasSparse'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a bayesian atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_sparse_bayesian_atlas(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-
-        elif xml_parameters.model_type == 'ClusteredBayesianAtlas'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a bayesian atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_clustered_bayesian_atlas(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-        ########
+                model_options=dfca.io.get_model_options(xml_parameters))        	
         elif xml_parameters.model_type == 'PrincipalGeodesicAnalysis'.lower():
             assert args.command == 'estimate', \
                 'The estimation of a principal geodesic analysis model should be launched with the command: ' \
                 '"deformetrica estimate" (and not "%s").' % args.command
             deformetrica.estimate_principal_geodesic_analysis(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
-
-        elif xml_parameters.model_type == 'AffineAtlas'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a affine atlas model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_affine_atlas(
                 xml_parameters.template_specifications,
                 dfca.io.get_dataset_specifications(xml_parameters),
                 estimator_options=dfca.io.get_estimator_options(xml_parameters),
@@ -285,18 +218,6 @@ def main():
                     args.model, args.dataset, args.parameters, output_dir=output_dir, overwrite=True)
             elif args.command == 'finalize':
                 dfca.finalize_longitudinal_atlas(args.model, output_dir=output_dir)
-
-        #ajouts vd
-        elif xml_parameters.model_type == 'ClusteredLongitudinalAtlas'.lower():
-            assert args.command in ['estimate'], \
-                'The initialization or estimation of a clustered longitudinal atlas model should be launched with the command: ' \
-                '"deformetrica { estimate }" (and not "%s").' % args.command
-            if args.command == 'estimate':
-                deformetrica.estimate_clustered_longitudinal_atlas(
-                    xml_parameters.template_specifications,
-                    dfca.io.get_dataset_specifications(xml_parameters),
-                    estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                    model_options=dfca.io.get_model_options(xml_parameters))
         #ajout fg
         elif xml_parameters.model_type == 'LongitudinalAtlasSimplified'.lower():
             assert args.command in ['estimate', 'initialize'], \
@@ -348,12 +269,6 @@ def main():
             deformetrica.compute_parallel_transport(
                 xml_parameters.template_specifications,
                 model_options=dfca.io.get_model_options(xml_parameters))
-
-        elif xml_parameters.model_type == 'LongitudinalMetricLearning'.lower():
-            dfca.estimate_longitudinal_metric_model(xml_parameters)
-
-        elif xml_parameters.model_type == 'LongitudinalMetricRegistration'.lower():
-            dfca.estimate_longitudinal_metric_registration(xml_parameters)
 
         else:
             raise RuntimeError(
