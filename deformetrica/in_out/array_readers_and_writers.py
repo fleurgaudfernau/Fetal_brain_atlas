@@ -1,6 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
-
+import pyvista as pv
 import os.path
 
 import numpy as np
@@ -27,13 +27,45 @@ def write_3D_array(array, output_dir, name):
         array = np.array([array])
     save_name = os.path.join(output_dir, name)
     with open(save_name, "w") as f:
-        f.write(str(len(array)) + " " + str(len(array[0])) + " " + str(len(array[0, 0])) + "\n")
+        try:
+            f.write(str(len(array)) + " " + str(len(array[0])) + " " + str(len(array[0, 0])) + "\n")
+        except:
+            pass
         for elt in array:
             f.write("\n")
             for elt1 in elt:
                 for elt2 in elt1:
                     f.write(str(elt2) + " ")
                 f.write("\n")
+
+def concatenate_for_paraview(array_momenta, array_cp, output_dir, name, **kwargs):
+    if len(array_momenta.shape) == 1:
+        array_momenta = np.array([array_momenta])
+    if len(array_momenta.shape) == 2:
+        array_momenta = np.array([array_momenta])
+    
+    # another option faster
+
+    if array_cp.shape[1] == 2:
+        col = np.zeros((array_cp.shape[0], 1))
+        array_cp = np.hstack((array_cp, col))
+        col = np.zeros((array_momenta.shape[0], array_momenta.shape[1], 1))
+        array_momenta = np.concatenate((array_momenta, col), axis = 2)
+
+
+    for sujet in range(array_momenta.shape[0]):
+        momenta = array_momenta[sujet,:,:]
+        polydata = pv.PolyData(array_cp)
+        polydata.point_data["Momenta"] = momenta
+        
+        for k, v in kwargs.items():
+            if len(v.shape) == 3:
+                polydata.point_data[str(k)] = v[sujet,:,:]
+            else:
+                polydata.point_data[str(k)] = v
+        
+        save_name = os.path.join(output_dir, name).replace(".vtk", "_sujet_{}.vtk".format(sujet))
+        polydata.save(save_name, binary=False)
 
 
 def read_2D_list(path):
@@ -52,8 +84,11 @@ def write_2D_list(input_list, output_dir, name):
     save_name = os.path.join(output_dir, name)
     with open(save_name, "w") as f:
         for elt_i in input_list:
-            for elt_i_j in elt_i:
-                f.write(str(elt_i_j) + " ")
+            try:
+                for elt_i_j in elt_i:
+                    f.write(str(elt_i_j) + " ")
+            except:
+                pass
             f.write("\n")
 
 def read_3D_list(path):

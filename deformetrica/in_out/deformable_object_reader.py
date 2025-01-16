@@ -18,6 +18,9 @@ from ..core.observations.deformable_objects.landmarks.poly_line import PolyLine
 from ..core.observations.deformable_objects.landmarks.surface_mesh import SurfaceMesh
 from ..in_out.image_functions import normalize_image_intensities
 
+# ajout fg
+from ..support import kernels as kernel_factory
+
 logger = logging.getLogger(__name__)
 logging.getLogger('PIL').setLevel(logging.WARNING)
 
@@ -32,37 +35,38 @@ class DeformableObjectReader:
 
     # Create a PyDeformetrica object from specified filename and object type.
     @staticmethod
-    def create_object(object_filename, object_type, dimension=None):
-
+    def create_object(object_filename, object_type, dimension=None, interpolation = "linear",
+                        kernel = None, gpu_mode=None, kernel_width=None):
         if object_type.lower() in ['SurfaceMesh'.lower(), 'PolyLine'.lower(), 'PointCloud'.lower(), 'Landmark'.lower()]:
 
             if object_type.lower() == 'SurfaceMesh'.lower():
                 points, dimension, connectivity = DeformableObjectReader.read_file(
                     object_filename, dimension, extract_connectivity=True)
-                out_object = SurfaceMesh(points, connectivity)
+                out_object = SurfaceMesh(points, connectivity, object_filename, 
+                                        kernel=kernel, gpu_mode=gpu_mode, kernel_width = kernel_width)
                 out_object.remove_null_normals()
 
             elif object_type.lower() == 'PolyLine'.lower():
                 points, dimension, connectivity = DeformableObjectReader.read_file(
                     object_filename, dimension, extract_connectivity=True)
-                out_object = PolyLine(points, connectivity)
+                out_object = PolyLine(points, connectivity, object_filename)
 
             elif object_type.lower() == 'PointCloud'.lower():
                 try:
                     points, dimension, connectivity = DeformableObjectReader.read_file(
                         object_filename, dimension, extract_connectivity=True)
-                    out_object = PointCloud(points, connectivity)
+                    out_object = PointCloud(points, connectivity, object_filename)
 
                 except KeyError:
                     points, dimension = DeformableObjectReader.read_file(
                         object_filename, dimension, extract_connectivity=False)
-                    out_object = PointCloud(points)
+                    out_object = PointCloud(points, object_filename)
 
             elif object_type.lower() == 'Landmark'.lower():
                 try:
                     points, dimension, connectivity = DeformableObjectReader.read_file(
                         object_filename, dimension, extract_connectivity=True)
-                    out_object = Landmark(points)
+                    out_object = Landmark(points, object_filename)
                     out_object.set_connectivity(connectivity)
 
                 except KeyError:
@@ -99,7 +103,7 @@ class DeformableObjectReader:
 
             # Rescaling between 0. and 1.
             img_data, img_data_dtype = normalize_image_intensities(img_data)
-            out_object = Image(img_data, img_data_dtype, img_affine)
+            out_object = Image(img_data, img_data_dtype, img_affine, interpolation, object_filename)
 
             dimension_image = len(img_data.shape)
             if dimension_image != dimension:
@@ -132,7 +136,12 @@ class DeformableObjectReader:
         poly_data_reader.Update()
         poly_data = poly_data_reader.GetOutput()
 
-        points = nps.vtk_to_numpy(poly_data.GetPoints().GetData()).astype('float64')
+        try:
+
+            points = nps.vtk_to_numpy(poly_data.GetPoints().GetData()).astype('float64')
+        except:
+            print("Problem", filename)
+            return 1, 1, 1
 
         if dimension is None:
             dimension = 3

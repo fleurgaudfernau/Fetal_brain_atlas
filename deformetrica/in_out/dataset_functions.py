@@ -1,10 +1,12 @@
 import logging
-import math
 import warnings
-
-import numpy as np
 import torch
+from copy import deepcopy
+import matplotlib.pyplot as plt
+import os.path as op
+import numpy as np
 from torch.autograd import Variable
+from math import ceil, floor, trunc
 
 from ..support import kernels as kernel_factory
 from ..core.model_tools.attachments.multi_object_attachment import MultiObjectAttachment
@@ -17,25 +19,34 @@ from ..support.utilities.general_settings import Settings
 logger = logging.getLogger(__name__)
 
 
-def create_dataset(template_specifications, visit_ages=None, dataset_filenames=None, subject_ids=None, dimension=None):
+def create_dataset(template_specifications, visit_ages=None, dataset_filenames=None, subject_ids=None, 
+                    dimension=None, interpolation = "linear"):
     """
     Creates a longitudinal dataset object from xml parameters. 
+
+    template_specifications = ['object_id':]
+    deformable_objects_dataset = [ [ [object a, object b for obs 0], [object a, object b for obs 1] ] ... [object list of a subject] ]
     """
     deformable_objects_dataset = []
+
     if dataset_filenames is not None:
-        for i in range(len(dataset_filenames)):
+        for i in range(len(dataset_filenames)): #for each subject
             deformable_objects_subject = []
-            for j in range(len(dataset_filenames[i])):
+            for j in range(len(dataset_filenames[i])): #for each observation of i
                 object_list = []
                 reader = DeformableObjectReader()
-                for object_id in template_specifications.keys():
+                for object_id in template_specifications.keys(): #for each object of i eg right hippocampus
                     if object_id not in dataset_filenames[i][j]:
                         raise RuntimeError('The template object with id ' + object_id + ' is not found for the visit '
                                            + str(j) + ' of subject ' + str(i) + '. Check the dataset xml.')
                     else:
                         object_type = template_specifications[object_id]['deformable_object_type']
+                        #dataset_filenames[i][j][object_id]: path to file
+                        object = template_specifications[object_id]
                         object_list.append(reader.create_object(dataset_filenames[i][j][object_id], object_type,
-                                                                dimension))
+                                                                dimension, interpolation, 
+                                                                kernel = object['kernel_type'],
+                                                                kernel_width=object['kernel_width']))
                 deformable_objects_subject.append(DeformableMultiObject(object_list))
             deformable_objects_dataset.append(deformable_objects_subject)
 
@@ -44,6 +55,78 @@ def create_dataset(template_specifications, visit_ages=None, dataset_filenames=N
 
     return longitudinal_dataset
 
+def make_dataset_timeseries(dataset_specifications):
+    # visit ages [[1], [2] ...] -> [[1, 2]] / filenames : [[{'img':...}], [{'img':...}]] -> [[{'img':...}, {'img':...}]]
+    # id : [1, 2, 3] -> [1]
+
+    new_dataset_spec = deepcopy(dataset_specifications)
+    new_dataset_spec["dataset_filenames"] = [sum(dataset_specifications["dataset_filenames"], [])]
+    new_dataset_spec["visit_ages"] = [sum(dataset_specifications["visit_ages"], [])]
+    new_dataset_spec["subject_ids"] = [dataset_specifications["subject_ids"][0]]
+
+    return new_dataset_spec
+
+def filter_dataset(dataset_specifications, age_limit):
+    new_dataset_spec = {k:[] for k in dataset_specifications.keys()}
+    new_dataset_spec["subject_ids"] = dataset_specifications["subject_ids"]
+
+    for age, name in zip(dataset_specifications["visit_ages"][0], 
+                       dataset_specifications["dataset_filenames"][0]):
+        if age < age_limit:
+            new_dataset_spec["visit_ages"].append(age)
+            new_dataset_spec["dataset_filenames"].append(name)
+    new_dataset_spec["visit_ages"] = [new_dataset_spec["visit_ages"]]
+    new_dataset_spec["dataset_filenames"] = [new_dataset_spec["dataset_filenames"]]
+    return new_dataset_spec
+
+
+def dataset_for_registration(subject, age, id):
+    return {'dataset_filenames' :  [subject], "visit_ages" : [[age]],
+                'subject_ids': [id]}
+
+def age(dataset_specifications, i):
+    return dataset_specifications['visit_ages'][i][0]
+
+def mini(dataset_specifications):
+    if isinstance(dataset_specifications["visit_ages"][0], list):
+        return trunc(min(sum(dataset_specifications["visit_ages"], [])))
+    
+    return trunc(min(dataset_specifications["visit_ages"]))
+
+def maxi(dataset_specifications):
+    if isinstance(dataset_specifications["visit_ages"][0], list):
+        return ceil(max(sum(dataset_specifications["visit_ages"], [])))
+    
+    return ceil(max(dataset_specifications["visit_ages"]))
+
+def ages_histogram(dataset_specifications, path):
+
+    if not op.exists(op.join(path, "ages_histogram.png")):
+        if isinstance(dataset_specifications["visit_ages"][0], list):
+            ages = sum(dataset_specifications["visit_ages"], [])
+        else:
+            ages = dataset_specifications["visit_ages"]
+        
+        fig, ax = plt.subplots(figsize=(4,3))
+
+        # the histogram of the data
+        bins = np.arange(int(min(ages)), int(min(ages)) + int(max(ages)) - int(min(ages)) + 1) #decalage vers gauche
+        n, bins, patches = ax.hist(ages, bins = bins, rwidth = 0.8)
+
+        # add a 'best fit' line
+        ax.set_xlabel('Gestational age')
+        ax.set_ylabel('Number of subjects')
+        ticks = [k for k in range(int(min(ages)), int(min(ages)) + int(max(ages)) - int(min(ages)) + 1)]
+        ax.set_xticks(ticks)
+        fig.tight_layout()
+        #ax.set_title(r'Histogram of IQ: $\mu=100$, $\sigma=15$')
+
+        # Tweak spacing to prevent clipping of ylabel
+        plt.savefig(op.join(path, "ages_histogram.png"))
+
+
+def id(dataset_specifications, i):
+    return dataset_specifications["subject_ids"][i]
 
 def create_scalar_dataset(group, observations, timepoints):
     """
@@ -175,7 +258,8 @@ def create_template_metadata(template_specifications, dimension=None, gpu_mode=N
     """
     if gpu_mode is None:
         gpu_mode = default.gpu_mode
-
+    elif gpu_mode == "GpuMode.NONE":
+        gpu_mode = default.gpu_mode
     objects_list = []
     objects_name = []
     objects_noise_variance = []
@@ -189,11 +273,12 @@ def create_template_metadata(template_specifications, dimension=None, gpu_mode=N
 
         assert object_type in ['SurfaceMesh'.lower(), 'PolyLine'.lower(), 'PointCloud'.lower(), 'Landmark'.lower(),
                                'Image'.lower()], "Unknown object type."
-
         root, extension = split_filename(filename)
         reader = DeformableObjectReader()
 
-        objects_list.append(reader.create_object(filename, object_type, dimension=dimension))
+        objects_list.append(reader.create_object(filename, object_type, dimension=dimension,
+                            kernel = object['kernel_type'], gpu_mode=gpu_mode,
+                            kernel_width=object['kernel_width']))
         objects_name.append(object_id)
         objects_name_extension.append(extension)
 
@@ -202,14 +287,12 @@ def create_template_metadata(template_specifications, dimension=None, gpu_mode=N
         else:
             objects_noise_variance.append(object['noise_std'] ** 2)
 
-        object_norm = _get_norm_for_object(object, object_id)
+        object_norm = _get_norm_for_object(object, object_id) #=current
 
         objects_norm.append(object_norm)
-
         if object_norm in ['current', 'pointcloud', 'varifold']:
             objects_norm_kernels.append(kernel_factory.factory(
-                object['kernel_type'],
-                gpu_mode=gpu_mode,
+                object['kernel_type'], gpu_mode=gpu_mode,
                 kernel_width=object['kernel_width']))
         else:
             objects_norm_kernels.append(kernel_factory.factory(kernel_factory.Type.NO_KERNEL))
@@ -217,11 +300,44 @@ def create_template_metadata(template_specifications, dimension=None, gpu_mode=N
         # Optional grid downsampling parameter for image data.
         if object_type == 'image' and 'downsampling_factor' in list(object.keys()):
             objects_list[-1].downsampling_factor = object['downsampling_factor']
-
+        if object_type == 'image' and 'interpolation' in list(object.keys()): #ajout fg
+            objects_list[-1].interpolation = object['interpolation']
     multi_object_attachment = MultiObjectAttachment(objects_norm, objects_norm_kernels)
 
     return objects_list, objects_name, objects_name_extension, objects_noise_variance, multi_object_attachment
 
+def create_mesh_attachements(template_specifications, gpu_mode=None):
+
+    # ajout fg
+    if gpu_mode is None:
+        gpu_mode = default.gpu_mode
+    elif gpu_mode == "GpuMode.NONE":
+        gpu_mode = default.gpu_mode
+
+    objects_norm = []
+    mesh=False
+    attachments = dict()
+
+    user_kernel_width = int(max([o['kernel_width'] for o in template_specifications.values()]))
+
+    #for kernel_width in range(user_kernel_width, user_kernel_width+5): #0 to  user 
+    for kernel_width in np.arange(1, user_kernel_width + 2, 1):
+        objects_norm_kernels = []
+
+        for object_id, object in template_specifications.items():
+            object_norm = _get_norm_for_object(object, object_id) #=current
+
+            objects_norm.append(object_norm)
+            if object_norm in ['current', 'pointcloud', 'varifold']:
+                mesh = True
+                objects_norm_kernels.append(kernel_factory.factory(
+                    object['kernel_type'], gpu_mode=gpu_mode, kernel_width=kernel_width))
+        if mesh:
+            attachments[kernel_width] = MultiObjectAttachment(objects_norm, objects_norm_kernels)
+        else:
+            return None
+            
+    return attachments
 
 def compute_noise_dimension(template, multi_object_attachment, dimension, objects_name=None):
     """
@@ -238,7 +354,7 @@ def compute_noise_dimension(template, multi_object_attachment, dimension, object
             for d in range(dimension):
                 length = template.bounding_box[d, 1] - template.bounding_box[d, 0]
                 assert length >= 0
-                noise_dimension *= math.floor(length / multi_object_attachment.kernels[k].kernel_width + 1.0)
+                noise_dimension *= floor(length / multi_object_attachment.kernels[k].kernel_width + 1.0)
             noise_dimension *= dimension
 
         elif multi_object_attachment.attachment_types[k] in ['landmark']:

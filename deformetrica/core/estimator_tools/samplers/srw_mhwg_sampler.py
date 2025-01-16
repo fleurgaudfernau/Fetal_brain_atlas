@@ -23,12 +23,17 @@ class SrwMhwgSampler:
 
         self.acceptance_rates_target = acceptance_rates_target  # Percentage.
 
+        #ajout fg
+        self.accepted_realisations = {}
+        for random_effect_name, _ in self.individual_proposal_distributions.items():
+            self.accepted_realisations[random_effect_name] = []
+
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
 
     def sample(self, statistical_model, dataset, population_RER, individual_RER, current_model_terms=None):
-
+        print("\nSampling...")
         # Initialization -----------------------------------------------------------------------------------------------
 
         # Initialization of the memory of the current model terms.
@@ -42,62 +47,71 @@ class SrwMhwgSampler:
 
         # Main loop ----------------------------------------------------------------------------------------------------
         for random_effect_name, proposal_RED in self.individual_proposal_distributions.items():
+            
+            if not statistical_model.is_frozen[random_effect_name]: #ajout fg
 
-            # RED: random effect distribution.
-            model_RED = statistical_model.individual_random_effects[random_effect_name]
+                print("\n Random_effect:", random_effect_name)
 
-            # Initialize subject lists.
-            current_regularity_terms = []
-            candidate_regularity_terms = []
-            current_RER = []
-            candidate_RER = []
+                # RED: random effect distribution. eg multiscalarnormaldistribution
+                model_RED = statistical_model.individual_random_effects[random_effect_name]
 
-            # Shape parameters of the current random effect realization.
-            shape_parameters = individual_RER[random_effect_name][0].shape
+                # Initialize subject lists.
+                current_regularity_terms = []
+                candidate_regularity_terms = []
+                current_RER = []
+                candidate_RER = []
 
-            for i in range(dataset.number_of_subjects):
-                # Evaluate the current part.
-                current_regularity_terms.append(model_RED.compute_log_likelihood(individual_RER[random_effect_name][i]))
-                current_RER.append(individual_RER[random_effect_name][i].flatten())
+                # Shape parameters of the current random effect realization.
+                shape_parameters = individual_RER[random_effect_name][0].shape
 
-                # Draw the candidate.
-                proposal_RED.mean = current_RER[i]
-                candidate_RER.append(proposal_RED.sample())
+                # Simulate the random variable for each subject
+                for i in range(dataset.number_of_subjects):
+                    # Evaluate the current part.
+                    # LL of the previous random effect realization
+                    current_regularity_terms.append(model_RED.compute_log_likelihood(individual_RER[random_effect_name][i]))
+                    current_RER.append(individual_RER[random_effect_name][i].flatten())
 
-                # Evaluate the candidate part.
-                individual_RER[random_effect_name][i] = candidate_RER[i].reshape(shape_parameters)
-                candidate_regularity_terms.append(model_RED.compute_log_likelihood(candidate_RER[i]))
+                    # Draw the candidate.
+                    proposal_RED.mean = current_RER[i] #proposal random effect distribution of the RE
+                    candidate_RER.append(proposal_RED.sample()) #sample a candidate
 
-            # Evaluate the candidate terms for all subjects at once, since all contributions are independent.
-            candidate_model_terms = self._compute_model_log_likelihood(
-                statistical_model, dataset, population_RER, individual_RER, modified_individual_RER=random_effect_name)
+                    # Evaluate the candidate part (LL of this RE realization)
+                    individual_RER[random_effect_name][i] = candidate_RER[i].reshape(shape_parameters)
+                    candidate_regularity_terms.append(model_RED.compute_log_likelihood(candidate_RER[i]))
 
-            for i in range(dataset.number_of_subjects):
+                # Evaluate the candidate terms for all subjects at once, since all contributions are independent.
+                candidate_model_terms = self._compute_model_log_likelihood(
+                    statistical_model, dataset, population_RER, individual_RER, modified_individual_RER=random_effect_name)
+                
+                print("candidate_RER for sub 1", candidate_RER[0])
+                print("candidate_RER for sub 2", candidate_RER[1])
 
-                # if i == np.random.randint(0, dataset.number_of_subjects) and random_effect_name == 'log_acceleration':
-                #     logger.info("Sampling summary", random_effect_name,
-                #           "from", candidate_RER[i], "to", current_RER[i],
-                #           "attachments:", candidate_model_terms[i], current_model_terms[i],
-                #           "regularities:", candidate_regularity_terms[i], current_regularity_terms[i])
+                for i in range(dataset.number_of_subjects):
 
-                # Acceptance rate.
-                tau = candidate_model_terms[i] + candidate_regularity_terms[i] \
-                      - current_model_terms[i] - current_regularity_terms[i]
+                    # Acceptance rate of the candidate (Log -> / )
+                    tau = candidate_model_terms[i] + candidate_regularity_terms[i] \
+                        - current_model_terms[i] - current_regularity_terms[i]
 
-                # tau = candidate_model_terms[i] - current_model_terms[i]
+                    # Reject.
+                    if math.log(np.random.uniform()) > tau or math.isnan(tau):
+                        individual_RER[random_effect_name][i] = current_RER[i].reshape(shape_parameters)
+                        if i == 0:
+                            self.accepted_realisations[random_effect_name].append(current_RER[i])
 
-                # Reject.
-                if math.log(np.random.uniform()) > tau or math.isnan(tau):
-                    individual_RER[random_effect_name][i] = current_RER[i].reshape(shape_parameters)
+                    # Accept.
+                    else:  #already added to individual_RER - see above
+                        current_model_terms[i] = candidate_model_terms[i] #update new model term of LL
+                        current_regularity_terms[i] = candidate_regularity_terms[i] #regularity term of LL
+                        acceptance_rates[random_effect_name] += 1.0
 
-                # Accept.
-                else:
-                    current_model_terms[i] = candidate_model_terms[i]
-                    current_regularity_terms[i] = candidate_regularity_terms[i]
-                    acceptance_rates[random_effect_name] += 1.0
+                        if i in [0,1]:
+                            print("Candidate accepted for sub", i+1)
 
-            # Acceptance rate final scaling for the considered random effect.
-            acceptance_rates[random_effect_name] *= 100.0 / float(dataset.number_of_subjects)
+                        if i == 0:
+                            self.accepted_realisations[random_effect_name].append(candidate_RER[i])
+
+                # Acceptance rate final scaling for the considered random effect.
+                acceptance_rates[random_effect_name] *= 100.0 / float(dataset.number_of_subjects)
 
         return acceptance_rates, current_model_terms
 
@@ -116,22 +130,25 @@ class SrwMhwgSampler:
             statistical_model.clear_memory()
             return np.zeros((dataset.number_of_subjects,)) - float('inf')
 
-    def adapt_proposal_distributions(self, current_acceptance_rates_in_window, iteration_number, verbose):
-        goal = self.acceptance_rates_target
+    def adapt_proposal_distributions(self, statistical_model, current_acceptance_rates_in_window, iteration_number, verbose):
+        goal = self.acceptance_rates_target #30%
         msg = '>> Proposal std re-evaluated from:\n'
 
         for random_effect_name, proposal_distribution in self.individual_proposal_distributions.items():
-            ar = current_acceptance_rates_in_window[random_effect_name]
-            std = proposal_distribution.get_variance_sqrt()
-            msg += '\t\t %.3f ' % std
+            if not statistical_model.is_frozen[random_effect_name]: #ajout fg
+                ar = current_acceptance_rates_in_window[random_effect_name]
+                std = proposal_distribution.get_variance_sqrt()
+                msg += '\t\t %.3f ' % std
 
-            if ar > self.acceptance_rates_target:
-                std *= 1 + (ar - goal) / ((100 - goal) * math.sqrt(iteration_number + 1))
-            else:
-                std *= 1 - (goal - ar) / (goal * math.sqrt(iteration_number + 1))
+                if ar > self.acceptance_rates_target:
+                    #we raise std
+                    std *= 1 + (ar - goal) / ((100 - goal) * math.sqrt(iteration_number + 1))
+                else:
+                    #we diminish std
+                    std *= 1 - (goal - ar) / (goal * math.sqrt(iteration_number + 1))
 
-            msg += '\tto\t%.3f \t[ %s ]\n' % (std, random_effect_name)
-            proposal_distribution.set_variance_sqrt(std)
+                msg += '\tto\t%.3f \t[ %s ]\n' % (std, random_effect_name)
+                proposal_distribution.set_variance_sqrt(std)
 
         if verbose > 0: logger.info(msg[:-1])
 

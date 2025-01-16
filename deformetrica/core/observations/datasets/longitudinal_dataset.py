@@ -53,7 +53,7 @@ class LongitudinalDataset:
 
     def is_time_series(self):
         """
-        Checks whether there is a single visit per subject
+        Checks whether there is only one subject, with several visits
         """
         return len(self.deformable_objects) == 1 and len(self.deformable_objects[0]) > 1 and \
                len(self.times) == 1 and len(self.deformable_objects[0]) == len(self.times[0])

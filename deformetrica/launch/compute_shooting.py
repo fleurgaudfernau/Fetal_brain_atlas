@@ -6,9 +6,88 @@ from ..core.observations.deformable_objects.deformable_multi_object import Defor
 from ..in_out.array_readers_and_writers import *
 from ..in_out.dataset_functions import create_template_metadata
 from ..support import kernels as kernel_factory
+from ..core.models.model_functions import create_regular_grid_of_points
 
 import logging
 logger = logging.getLogger(__name__)
+
+def vector_field_to_new_support(control_points, momenta_torch, new_template):   
+    old_spacing = control_points[1][0] - control_points[0][0]     
+    old_image_size = control_points[-1][0] + control_points[0][0] + 1
+    new_image_size = new_template.bounding_box[0, 1] + 1
+
+    new_spacing = old_spacing
+
+    print("old control points", control_points.shape)
+
+    if old_image_size != new_image_size:
+        print("Transport vector field to new support!")
+        print("old_image_size", old_image_size, " >> new_image_size", new_image_size)
+
+        #(int(new_image_size / new_spacing) + 1)**2 > control_points.shape[0]
+        new_spacing = int(new_image_size/ (np.sqrt(control_points.shape[0]) - 1))
+        ratio = new_spacing/ old_spacing
+        print("new_spacing", new_spacing)
+        print("ratio", ratio)
+
+        # ratio = int(new_image_size/old_image_size)
+        # ratio = new_image_size/old_image_size
+        # new_spacing = ratio * old_spacing
+        # print("old_spacing", old_spacing)
+        # print("new_spacing", new_spacing)
+        # print(new_template.bounding_box)
+        # print(new_template.dimension)
+
+
+        # Create the control points for the new image
+        control_points = create_regular_grid_of_points(new_template.bounding_box, new_spacing, new_template.dimension)
+        
+        momenta_torch = momenta_torch * ratio / 1.5
+        print("new_control_points", control_points.shape)
+
+    return control_points, momenta_torch, new_spacing
+
+def vector_field_to_new_support_(control_points, momenta_torch, new_template):   
+    old_spacing = control_points[1][0] - control_points[0][0]     
+    old_image_size = control_points[-1][0] + control_points[0][0] + 1
+    new_image_size = new_template.bounding_box[0, 1] + 1
+
+    new_spacing = old_spacing
+
+    print("old control points", control_points.shape)
+
+    if old_image_size != new_image_size:
+        print("Transport vector field to new support!")
+        print("old_image_size", old_image_size, " >> new_image_size", new_image_size)
+
+        new_spacing = int(new_image_size/ (np.sqrt(control_points.shape[0]) - 1))
+        ratio = new_spacing/ old_spacing
+        print("old_spacing", old_spacing, ">> new_spacing", new_spacing)
+        print("ratio", ratio)
+
+        if old_image_size < new_image_size:
+            new_spacing = new_spacing / 2
+
+        # Create the control points for the new image
+        kernel = kernel_factory.factory(default.deformation_kernel_type, gpu_mode=default.gpu_mode, kernel_width = old_spacing)
+        new_control_points_1 = create_regular_grid_of_points(new_template.bounding_box, new_spacing * 2, new_template.dimension)
+        new_control_points = create_regular_grid_of_points(new_template.bounding_box, new_spacing, new_template.dimension)
+
+        new_control_points = torch.from_numpy(new_control_points)
+        new_control_points_1 = torch.from_numpy(new_control_points_1)
+        ones = torch.ones(momenta_torch.size())
+        print(ones)
+        print("new_control_points", new_control_points)
+        print("new_control_points_1", new_control_points_1)
+        norm = kernel.convolve(new_control_points, new_control_points_1, ones)
+        print("old momenta_torch", momenta_torch)
+        print(norm)
+        momenta_torch = kernel.convolve(new_control_points, new_control_points_1, momenta_torch) 
+        print("new momenta_torch", momenta_torch)
+        print("new momenta_torch", momenta_torch / norm)
+        
+    return new_control_points.numpy(), momenta_torch, new_spacing
+
 
 
 def compute_shooting(template_specifications,
@@ -29,16 +108,13 @@ def compute_shooting(template_specifications,
                      use_rk2_for_shoot=default.use_rk2_for_shoot,
                      use_rk2_for_flow=default.use_rk2_for_flow,
                      gpu_mode=default.gpu_mode,
-                     output_dir=default.output_dir, **kwargs
+                     output_dir=default.output_dir, 
+                     write_adjoint_parameters = True, 
+                     **kwargs
                      ):
-    logger.info('[ compute_shooting function ]')
-
     """
     Create the template object
     """
-
-    deformation_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
-
     (object_list, t_name, t_name_extension,
      t_noise_variance, multi_object_attachment) = create_template_metadata(
         template_specifications, dimension, gpu_mode=gpu_mode)
@@ -58,24 +134,39 @@ def compute_shooting(template_specifications,
         momenta = read_3D_array(initial_momenta)
     else:
         raise RuntimeError('Please specify a path to momenta to perform a shooting')
+    
+    if dimension == 2 and len(momenta.shape) == 3:
+        momenta = momenta[:,:,0]
+    if dimension == 2 and len(control_points.shape) == 3:
+        control_points = control_points[:,:,0]
 
-    # _, b = control_points.shape
-    # assert Settings().dimension == b, 'Please set the correct dimension in the model.xml file.'
+    deformation_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
 
     momenta_torch = torch.from_numpy(momenta).type(tensor_scalar_type)
-    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
     template_points = {key: torch.from_numpy(value).type(tensor_scalar_type)
                        for key, value in template.get_points().items()}
     template_data = {key: torch.from_numpy(value).type(tensor_scalar_type)
                      for key, value in template.get_data().items()}
-
+    
+    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
     geodesic = Geodesic(dense_mode=dense_mode,
                         concentration_of_time_points=concentration_of_time_points, t0=t0,
                         kernel=deformation_kernel, shoot_kernel_type=shoot_kernel_type,
                         use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
+    print("Old Norm", geodesic.forward_exponential.scalar_product(control_points_torch, momenta_torch, momenta_torch))
+    print("deformation_kernel_width", deformation_kernel_width)
+
+    control_points, momenta_torch, deformation_kernel_width = vector_field_to_new_support(control_points, momenta_torch, template)
+    write_2D_array(control_points, output_dir, "NewControlPoints.txt")
+    
+    deformation_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
+
+    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
+    geodesic.set_kernel(deformation_kernel)
+
     if t0 is None:
-        logger.warning('Defaulting geodesic t0 to 1.')
+        logger.warning('Defaulting geodesic t0 to 0.')
         geodesic.t0 = 0.
     else:
         geodesic.t0 = t0
@@ -92,6 +183,8 @@ def compute_shooting(template_specifications,
     else:
         geodesic.tmin = tmin
 
+    print("tmax: {}, tmin: {}, t0:{}".format(geodesic.tmax, geodesic.tmin, geodesic.t0))
+
     assert geodesic.tmax >= geodesic.t0, 'The max time {} for the shooting should be larger than t0 {}' \
         .format(geodesic.tmax, geodesic.t0)
     assert geodesic.tmin <= geodesic.t0, 'The min time for the shooting should be lower than t0.' \
@@ -107,9 +200,12 @@ def compute_shooting(template_specifications,
     if len(momenta.shape) == 2:
         geodesic.set_momenta_t0(momenta_torch)
         geodesic.update()
+
+        print("geodesic.backward_exponential.number_of_time_points", geodesic.backward_exponential.number_of_time_points)
+        print("geodesic.forward_exponential.number_of_time_points", geodesic.forward_exponential.number_of_time_points)
         names = [elt for elt in t_name]
         geodesic.write('Shooting', names, t_name_extension, template, template_data, output_dir,
-                       write_adjoint_parameters=True)
+                       write_adjoint_parameters=write_adjoint_parameters)
 
     # Several shootings to compute
     else:
@@ -118,4 +214,4 @@ def compute_shooting(template_specifications,
             geodesic.update()
             names = [elt for elt in t_name]
             geodesic.write('Shooting' + "_" + str(i), names, t_name_extension, template, template_data, output_dir,
-                           write_adjoint_parameters=True)
+                           write_adjoint_parameters=write_adjoint_parameters)

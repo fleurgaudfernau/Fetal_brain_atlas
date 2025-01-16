@@ -8,16 +8,23 @@ from ...in_out.image_functions import points_to_voxels_transform, metric_to_imag
 import logging
 logger = logging.getLogger(__name__)
 
+def gaussian_kernel(x, y, sigma = 1):
+    return np.exp(-0.5 * ((x-y)/sigma)**2)/ sigma * np.sqrt(2 * np.pi)
+
+def residuals_change(avg_residuals):
+    return (avg_residuals[-2] - avg_residuals[-1])/avg_residuals[-2]
+
 
 def initialize_control_points(initial_control_points, template, spacing, deformation_kernel_width,
-                              dimension, dense_mode):
+                              dimension, dense_mode, new_bounding_box = None):
     if initial_control_points is not None:
         control_points = read_2D_array(initial_control_points)
         logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_control_points))
 
     else:
         if not dense_mode:
-            control_points = create_regular_grid_of_points(template.bounding_box, spacing, dimension)
+            bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
+            control_points = create_regular_grid_of_points(bounding_box, spacing, dimension)
             # if len(template.object_list) == 1 and template.object_list[0].type.lower() == 'image':
             #     control_points = remove_useless_control_points(control_points, template.object_list[0],
             #                                                    deformation_kernel_width)
@@ -31,7 +38,8 @@ def initialize_control_points(initial_control_points, template, spacing, deforma
     return control_points
 
 
-def initialize_momenta(initial_momenta, number_of_control_points, dimension, number_of_subjects=0, random=False):
+def initialize_momenta(initial_momenta, number_of_control_points, dimension, 
+                       number_of_subjects=0, random=False):
     if initial_momenta is not None:
         momenta = read_3D_array(initial_momenta)
         logger.info('>> Reading initial momenta from file: %s.' % initial_momenta)
@@ -57,7 +65,7 @@ def initialize_covariance_momenta_inverse(control_points, kernel, dimension):
 
 def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_points, number_of_sources, dimension):
     if initial_modulation_matrix is not None:
-        modulation_matrix = read_2D_array(initial_modulation_matrix)
+        modulation_matrix = read_3D_array(initial_modulation_matrix)
         if len(modulation_matrix.shape) == 1:
             modulation_matrix = modulation_matrix.reshape(-1, 1)
         logger.info('>> Reading ' + str(
@@ -72,9 +80,10 @@ def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_po
     return modulation_matrix
 
 
+
 def initialize_sources(initial_sources, number_of_subjects, number_of_sources):
     if initial_sources is not None:
-        sources = read_2D_array(initial_sources).reshape((-1, number_of_sources))
+        sources = read_3D_array(initial_sources).reshape((-1, number_of_sources))
         logger.info('>> Reading initial sources from file: ' + initial_sources)
     else:
         sources = np.zeros((number_of_subjects, number_of_sources))

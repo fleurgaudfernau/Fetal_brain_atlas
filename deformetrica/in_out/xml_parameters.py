@@ -14,13 +14,14 @@ def get_dataset_specifications(xml_parameters):
     specifications['visit_ages'] = xml_parameters.visit_ages
     specifications['dataset_filenames'] = xml_parameters.dataset_filenames
     specifications['subject_ids'] = xml_parameters.subject_ids
+
     return specifications
 
 
 def get_estimator_options(xml_parameters):
     options = {}
 
-    if xml_parameters.optimization_method_type.lower() == 'GradientAscent'.lower():
+    if xml_parameters.optimization_method_type.lower() in ['GradientAscent'.lower(), 'StochasticGradientAscent'.lower(), 'ProximalGradientAscent'.lower()]:
         options['initial_step_size'] = xml_parameters.initial_step_size
         options['scale_initial_step_size'] = xml_parameters.scale_initial_step_size
         options['line_search_shrink'] = xml_parameters.line_search_shrink
@@ -54,6 +55,14 @@ def get_estimator_options(xml_parameters):
     options['state_file'] = xml_parameters.state_file
     options['load_state_file'] = xml_parameters.load_state_file
 
+    options['multiscale_momenta'] = xml_parameters.multiscale_momenta #ajout fg
+    options['multiscale_images'] = xml_parameters.multiscale_images
+    options['multiscale_meshes'] = xml_parameters.multiscale_meshes
+    options['naive'] = xml_parameters.naive #ajout fg
+    options["start_scale"] = xml_parameters.start_scale
+    options['multiscale_strategy'] =  xml_parameters.multiscale_strategy #ajout fg
+    options['gamma'] = xml_parameters.gamma #ajout fg
+
     # logger.debug(options)
     return options
 
@@ -84,11 +93,15 @@ def get_model_options(xml_parameters):
         'dtype': xml_parameters.dtype,
         'tensor_scalar_type': utilities.get_torch_scalar_type(dtype=xml_parameters.dtype),
         'tensor_integer_type': utilities.get_torch_integer_type(dtype=xml_parameters.dtype),
-        'random_seed': xml_parameters.random_seed
+        'random_seed': xml_parameters.random_seed,
+        'perform_shooting':xml_parameters.perform_shooting, #ajout fg
+        'interpolation':xml_parameters.interpolation #ajout fg
     }
 
-    if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalRegistration'.lower()]:
+    if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower(), 
+                                            'LongitudinalRegistration'.lower(), 'ClusteredLongitudinalAtlas'.lower()]:
         options['t0'] = xml_parameters.t0
+        options['tR'] = xml_parameters.tR
         options['tmin'] = xml_parameters.tmin
         options['tmax'] = xml_parameters.tmax
         options['number_of_sources'] = xml_parameters.number_of_sources
@@ -110,19 +123,60 @@ def get_model_options(xml_parameters):
         options['initial_principal_directions'] = xml_parameters.initial_principal_directions
         options['freeze_principal_directions'] = xml_parameters.freeze_principal_directions
 
-    elif xml_parameters.model_type.lower() == 'Regression'.lower():
+    elif xml_parameters.model_type.lower() in ['Regression'.lower(), "KernelRegression".lower()]:
         options['t0'] = xml_parameters.t0
         options['tmin'] = xml_parameters.tmin
         options['tmax'] = xml_parameters.tmax
+
+    elif "BayesianPiecewiseRegression".lower() in xml_parameters.model_type.lower():#ajout fg
+        options['num_component'] = xml_parameters.num_component
+        options['t0'] = xml_parameters.t0
+        options['tR'] = xml_parameters.tR
+        options['t1'] = xml_parameters.t1 
+        options['number_of_sources'] = xml_parameters.number_of_sources
+        options['initial_modulation_matrix'] = xml_parameters.initial_modulation_matrix
+        options['initial_accelerations'] = xml_parameters.initial_accelerations
+        options['initial_sources'] = xml_parameters.initial_sources
+        options['freeze_modulation_matrix'] = xml_parameters.freeze_modulation_matrix
+        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
+        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
+        options['freeze_components'] = xml_parameters.freeze_components
+        options['freeze_acceleration_variance'] = xml_parameters.freeze_acceleration_variance
+
+    elif xml_parameters.model_type.lower() in ["PiecewiseRegression".lower()]:#ajout fg
+        options['num_component'] = xml_parameters.num_component
+        options['t0'] = xml_parameters.t0
+        options['tR'] = xml_parameters.tR
+        options['t1'] = xml_parameters.t1
+        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
+        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
+        options['freeze_components'] = xml_parameters.freeze_components 
 
     elif xml_parameters.model_type.lower() == 'ParallelTransport'.lower():
         options['t0'] = xml_parameters.t0
+        options['t1'] = xml_parameters.t1 #ajout fg
         options['tmin'] = xml_parameters.tmin
+        options['perform_shooting'] = xml_parameters.perform_shooting
         options['tmax'] = xml_parameters.tmax
         options['initial_momenta_to_transport'] = xml_parameters.initial_momenta_to_transport
         options['initial_control_points_to_transport'] = xml_parameters.initial_control_points_to_transport
+    
+    #ajouts vd
+    elif xml_parameters.model_type.lower() == 'ClusteredBayesianAtlas'.lower():
+        options['nb_classes'] = xml_parameters.nb_classes
 
-    # logger.debug(options)
+    elif xml_parameters.model_type.lower() == 'BayesianAtlasSparse'.lower():
+        options['space_between_modules'] = xml_parameters.space_between_modules
+        #options['alpha_sparse'] = xml_parameters.alpha_sparse
+
+    if xml_parameters.model_type.lower() == 'ClusteredLongitudinalAtlas'.lower():
+        options['nb_classes'] = xml_parameters.nb_classes
+        options['num_component'] = xml_parameters.num_component
+
+    if xml_parameters.model_type.lower() == 'DeterministicAtlasSparse'.lower():
+        options['alpha_sparse'] = xml_parameters.alpha_sparse
+        options['gaussian_smoothing'] = xml_parameters.gaussian_smoothing
+        
     return options
 
 
@@ -154,6 +208,9 @@ class XmlParameters:
         self.use_rk2_for_shoot = default.use_rk2_for_shoot
         self.use_rk2_for_flow = default.use_rk2_for_flow
         self.t0 = None
+        self.tR = [] # ajout fg
+        self.t1 = None #ajout fg
+        self.num_component = None # ajout fg
         self.tmin = default.tmin
         self.tmax = default.tmax
         self.initial_cp_spacing = default.initial_cp_spacing
@@ -182,6 +239,7 @@ class XmlParameters:
         self.memory_length = default.memory_length
         self.scale_initial_step_size = default.scale_initial_step_size
         self.downsampling_factor = default.downsampling_factor
+        self.interpolation = default.interpolation #ajout fg
 
         self.dense_mode = default.dense_mode
 
@@ -194,10 +252,20 @@ class XmlParameters:
 
         self.freeze_template = default.freeze_template
         self.freeze_control_points = default.freeze_control_points
+        self.multiscale_momenta = default.multiscale_momenta #ajout fg
+        self.multiscale_images = default.multiscale_images #ajout fg
+        self.multiscale_meshes = default.multiscale_meshes
+        self.naive = default.naive #ajout fg
+        self.start_scale = None
+        self.multiscale_strategy = default.multiscale_strategy #ajout fg
+        self.gamma = default.gamma
+        self.perform_shooting = default.perform_shooting #ajout fg
         self.freeze_momenta = default.freeze_momenta
         self.freeze_principal_directions = default.freeze_principal_directions
         self.freeze_modulation_matrix = default.freeze_modulation_matrix
         self.freeze_reference_time = default.freeze_reference_time
+        self.freeze_rupture_time = default.freeze_rupture_time
+        self.freeze_components = default.freeze_rupture_time
         self.freeze_time_shift_variance = default.freeze_time_shift_variance
         self.freeze_acceleration_variance = default.freeze_acceleration_variance
         self.freeze_noise_variance = default.freeze_noise_variance
@@ -248,6 +316,8 @@ class XmlParameters:
         self.normalize_image_intensity = default.normalize_image_intensity
         self.initialization_heuristic = default.initialization_heuristic
 
+        self.nb_classes = 1
+
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
@@ -264,14 +334,32 @@ class XmlParameters:
 
     # Read the parameters from the model xml.
     def _read_model_xml(self, model_xml_path):
+        
 
         model_xml_level0 = et.parse(model_xml_path).getroot()
 
         for model_xml_level1 in model_xml_level0:
-
             if model_xml_level1.tag.lower() == 'model-type':
                 self.model_type = model_xml_level1.text.lower()
+            
+            #ajouts vd
+            elif model_xml_level1.tag.lower() == 'nb-classes':
+                self.nb_classes = int(model_xml_level1.text)
 
+            elif model_xml_level1.tag.lower() == 'space-between-modules':
+                self.space_between_modules = int(model_xml_level1.text)
+
+            elif model_xml_level1.tag.lower() == 'num-component':
+                if self.nb_classes > 1:
+                    self.num_component = model_xml_level1.text.split(' ')
+                    for i in range(self.num_component.__len__()):
+                        self.num_component[i] = self.num_component[i].split(',')
+                        for j in range(self.num_component[i].__len__()):
+                            self.num_component[i][j] = int(self.num_component[i][j])
+                else:
+                    self.num_component = int(model_xml_level1.text)
+
+            ##########
             elif model_xml_level1.tag.lower() == 'dimension':
                 self.dimension = int(model_xml_level1.text)
 
@@ -408,6 +496,12 @@ class XmlParameters:
                         self.number_of_sources = int(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 't0':
                         self.t0 = float(model_xml_level2.text)
+                    elif model_xml_level2.tag.lower() == 'tr':
+                        self.tR.append(float(model_xml_level2.text))
+                    elif model_xml_level2.tag.lower() == 't1':
+                        self.t1 = float(model_xml_level2.text) #ajout fg
+                    elif model_xml_level2.tag.lower() == 'perform-shooting': #ajout fg
+                        self.perform_shooting = self._on_off_to_bool(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 'tmin':
                         self.tmin = float(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 'tmax':
@@ -426,10 +520,6 @@ class XmlParameters:
                         msg = 'Unknown entry while parsing the deformation-parameters section of the model xml: ' \
                               + model_xml_level2.tag
                         warnings.warn(msg)
-            #
-            # elif model_xml_level1.tag.lower() == 'use-exp-parallelization':
-            #     self.use_exp_parallelization = self._on_off_to_bool(model_xml_level1.text)
-
             else:
                 msg = 'Unknown entry while parsing root of the model xml: ' + model_xml_level1.tag
                 warnings.warn(msg)
@@ -461,7 +551,9 @@ class XmlParameters:
                                 elif dataset_xml_level3.tag.lower() == 'age':
                                     subject_ages.append(float(dataset_xml_level3.text))
                             subject_filenames.append(visit_filenames)
+                    #a list of n_subjects lists containing dictionaries of filenames
                     dataset_filenames.append(subject_filenames)
+                    
                     visit_ages.append(subject_ages)
 
                 # For scalar input, following leasp model
@@ -499,6 +591,8 @@ class XmlParameters:
                     self.memory_length = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'downsampling-factor':
                     self.downsampling_factor = int(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'interpolation':
+                    self.interpolation = str(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'save-every-n-iters':
                     self.save_every_n_iters = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'print-every-n-iters':
@@ -515,12 +609,24 @@ class XmlParameters:
                     self.freeze_template = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-control-points':
                     self.freeze_control_points = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-momenta': #ajout fg
+                    self.multiscale_momenta = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-images': #ajout fg
+                    self.multiscale_images = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-meshes': #ajout fg
+                    self.multiscale_meshes = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'naive': #ajout fg
+                    self.naive = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-strategy': #ajout fg
+                    self.multiscale_strategy = str(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'start-scale': #ajout fg
+                    self.start_scale = float(optimization_parameters_xml_level1.text)  
+                elif optimization_parameters_xml_level1.tag.lower() == 'gamma': #ajout fg
+                    self.gamma = float(optimization_parameters_xml_level1.text)  
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-principal-directions':
                     self.freeze_principal_directions = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'gpu-mode':
                     self.gpu_mode = GpuMode[optimization_parameters_xml_level1.text.upper()]
-                    # if self.gpu_mode:
-                    #     self._cuda_is_used = True
                 elif optimization_parameters_xml_level1.tag.lower() == 'max-line-search-iterations':
                     self.max_line_search_iterations = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'state-file':
@@ -551,6 +657,10 @@ class XmlParameters:
                     self.freeze_modulation_matrix = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-reference-time':
                     self.freeze_reference_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-rupture-time':
+                    self.freeze_rupture_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
+                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-components':
+                    self.freeze_components = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-time-shift-variance':
                     self.freeze_time_shift_variance = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-acceleration-variance':
@@ -585,6 +695,7 @@ class XmlParameters:
         template_object['filename'] = 'undefined'
         template_object['noise_variance_prior_scale_std'] = None
         template_object['noise_variance_prior_normalized_dof'] = 0.01
+        template_object["interpolation"] = "linear" #fg
         return template_object
 
     def _on_off_to_bool(self, s):

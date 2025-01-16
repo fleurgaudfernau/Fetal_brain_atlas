@@ -98,11 +98,12 @@ def move_data(data, device='cpu', dtype=None, requires_grad=None):
     # move data to device. Note: tensor.to() does not move if data is already on target device
     data = data.type(dtype).to(device=device)
 
+
     # handle requires_grad flag
     if requires_grad is not None and requires_grad:
         # user wants grad
         if data.requires_grad is False:
-            data.requires_grad_()
+            data.requires_grad_() #tell autograd to begin recording operations on a Tensor
         # else data already has requires_grad flag to True
     elif requires_grad is not None:
         # user does not want grad

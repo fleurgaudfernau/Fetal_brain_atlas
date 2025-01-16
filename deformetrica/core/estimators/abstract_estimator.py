@@ -45,6 +45,9 @@ class AbstractEstimator(ABC):
         self.callback_ret = True
         self.output_dir = output_dir
         self.state_file = state_file
+        
+        # ajout fg
+        self.stop = False
 
     @abstractmethod
     def update(self):

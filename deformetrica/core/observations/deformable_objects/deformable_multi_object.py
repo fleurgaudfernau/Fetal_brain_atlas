@@ -96,14 +96,14 @@ class DeformableMultiObject:
         deformed_data = {}
 
         if 'landmark_points' in deformed_points.keys():
-            # assert 'landmark_points' in template_data.keys(), 'That\'s unexpected.'       # TODO check this
-            # template_data['landmark_points'] = deformed_points['landmark_points']  # For torch gradients to circulate.
             deformed_data['landmark_points'] = deformed_points['landmark_points']
 
         if 'image_points' in deformed_points.keys():
             assert 'image_intensities' in template_data.keys(), 'That\'s unexpected.'
             image_object_list = [elt for elt in self.object_list if elt.type.lower() == 'image']
+            
             assert len(image_object_list) == 1, 'That\'s unexpected.'
+            
             deformed_data['image_intensities'] = image_object_list[0].get_deformed_intensities(
                 deformed_points['image_points'], template_data['image_intensities'])
 
@@ -153,12 +153,11 @@ class DeformableMultiObject:
                 if self.object_list[k].bounding_box[d, 1] > self.bounding_box[d, 1]:
                     self.bounding_box[d, 1] = self.object_list[k].bounding_box[d, 1]
 
-    def write(self, output_dir, names, data=None):
+    def write(self, output_dir, names, data=None, momenta = None, cp = None, kernel = None):
         """
         Save the list of objects with the given names
         """
         assert len(names) == len(self.object_list), "Give as many names as objects to save multi-object"
-
         pos = 0
         for elt, name in zip(self.object_list, names):
             if data is None:
@@ -166,7 +165,9 @@ class DeformableMultiObject:
 
             else:
                 if elt.type.lower() in ['surfacemesh', 'polyline', 'pointcloud', 'landmark']:
-                    elt.write(output_dir, name, data['landmark_points'][pos:pos + elt.get_number_of_points()])
+                    elt.write(output_dir, name, 
+                              data['landmark_points'][pos:pos + elt.get_number_of_points()], 
+                              momenta, cp, kernel)
                     pos += elt.get_number_of_points()
 
                 elif elt.type.lower() == 'image':

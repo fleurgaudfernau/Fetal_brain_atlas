@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import torch
+import numpy as np
 
 from ...core import default
 
@@ -21,7 +22,11 @@ class AbstractKernel(ABC):
                and self.kernel_width == other.kernel_width
 
     @staticmethod
-    def hash(kernel_type, cuda_type, gpu_mode, *args, **kwargs):
+    def hash(kernel_type, cuda_type, gpu_mode, *args, **kwargs): #kernel_width in kwargs
+        #ajout fg to avoid np.ndarray unashable -> give frozenset a dict instead of a np.ndarray
+        #need different hash codes for different kernels!
+        if "kernel_width" in kwargs.keys() and isinstance(kwargs["kernel_width"], np.ndarray):
+            return hash((kernel_type, cuda_type, gpu_mode, frozenset(args), frozenset({'kernel_width': kwargs["kernel_width"][-1][0]})))
         return hash((kernel_type, cuda_type, gpu_mode, frozenset(args), frozenset(kwargs.items())))
 
     def __hash__(self, **kwargs):
@@ -44,13 +49,56 @@ class AbstractKernel(ABC):
         assert (x.size(0) == y.size(0))
         sq = self._squared_distances(x, y)
         return torch.exp(-sq / (self.kernel_width ** 2))
+    
+    def get_normalized_kernel_matrix(self, x, y=None):
+        """
+        returns the kernel matrix, A_{ij} = exp(-|x_i-x_j|^2/sigma^2)
+        """
+        K = self.get_kernel_matrix(x, y)
+        sum = torch.sum(K, dim = 1)
+
+        return K/sum.unsqueeze(1)
 
     @staticmethod
     def _squared_distances(x, y):
-        x_norm = (x ** 2).sum(1).view(-1, 1)
-        y_norm = (y ** 2).sum(1).view(1, -1)
+        x_norm = (x ** 2).sum(1).view(-1, 1) # n_centers x 1
+        y_norm = (y ** 2).sum(1).view(1, -1) # 1 x n_centers
 
-        dist = x_norm + y_norm - 2.0 * torch.mm(x, torch.transpose(y, 0, 1))
+        #mm=matrix multiplication
+        # x: n_centers x d, yt : d x n_centers
+        # torch.mm output: n_centersxn_centers
+        # torch.mm memory error!
+        # x_norm + y_norm memory error
+
+        if x.size()[0] > 30000:
+            #out of memory error...
+            dist = torch.zeros((x.size()[0], y.size()[0]), device = x_norm.device)
+            n_centers = int(x.size()[0]/4)
+
+            # norm
+            repeat = x_norm.repeat([1, round(n_centers)]) #N1x1 -> N1 x n_centers
+            dist[:,:round(n_centers)] += repeat
+            dist[:,round(n_centers):round(n_centers)*2] += repeat
+            dist[:,round(n_centers)*2:round(n_centers)*3] += repeat
+            dist[:,round(n_centers)*3:] += x_norm.repeat([1, x.size()[0] - round(n_centers)*3])
+
+            repeat = y_norm.repeat([round(n_centers), 1]) #1xN2 -> n_centersxN2
+            dist[:round(n_centers), :] += repeat
+            dist[round(n_centers):round(n_centers)*2, :] += repeat
+            dist[round(n_centers)*2:round(n_centers)*3, :] += repeat
+            dist[round(n_centers)*3:, :] += y_norm.repeat([y.size()[0] - round(n_centers)*3, 1])
+
+            # scalar product
+            cut_x, cut_x_2 = x[:round(n_centers)], x[round(n_centers):round(n_centers)*2]
+            cut_x_3, cut_x_4 = x[round(n_centers)*2:round(n_centers)*3], x[round(n_centers)*3:]
+            dist[:round(n_centers)] = -2.0*torch.mm(cut_x, torch.transpose(y, 0, 1))
+            dist[round(n_centers):round(n_centers)*2] = -2.0*torch.mm(cut_x_2, torch.transpose(y, 0, 1))
+            dist[round(n_centers)*2:round(n_centers)*3] = -2.0*torch.mm(cut_x_3, torch.transpose(y, 0, 1))
+            dist[round(n_centers)*3:] = -2.0*torch.mm(cut_x_4, torch.transpose(y, 0, 1))
+
+        else:
+            dist = x_norm + y_norm - 2.0 * torch.mm(x, torch.transpose(y, 0, 1))
+        
         return dist
 
     @staticmethod

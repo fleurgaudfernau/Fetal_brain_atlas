@@ -6,6 +6,7 @@ from ...support.kernels.abstract_kernel import AbstractKernel
 
 logger = logging.getLogger(__name__)
 
+#fg: convolve points, control points
 
 def gaussian(r2, s):
     return torch.exp(-r2 / (s * s))
@@ -37,7 +38,6 @@ class TorchKernel(AbstractKernel):
 
             sq = self._squared_distances(x, y)
             res = torch.mm(torch.exp(-sq / (self.kernel_width ** 2)), p)
-            # res = torch.mm(1.0 / (1 + sq / self.kernel_width ** 2), p)
 
         elif mode == 'varifold':
             assert isinstance(x, tuple), 'x must be a tuple'
@@ -54,7 +54,10 @@ class TorchKernel(AbstractKernel):
             assert x[0].device == y[0].device == p.device, 'x, y and p must be on the same device'
             assert x[1].device == y[1].device == p.device, 'x, y and p must be on the same device'
 
+            print(x[0].size()) # n_centers x dim
+            print(y[0].size()) #n_centers x dim 
             sq = self._squared_distances(x[0], y[0])
+            
             res = torch.mm(gaussian(sq, self.kernel_width) * binet(torch.mm(x[1], torch.t(y[1]))), p)
         else:
             raise RuntimeError('Unknown kernel mode.')

@@ -50,29 +50,6 @@ class SpatiotemporalReferenceFrame:
 
     def clone(self):
         raise NotImplementedError  # TODO
-        # clone = SpatiotemporalReferenceFrame()
-        #
-        # clone.geodesic = self.geodesic.clone()
-        # clone.exponential = self.exponential.clone()
-        #
-        # if self.modulation_matrix_t0 is not None:
-        #     clone.modulation_matrix_t0 = self.modulation_matrix_t0.clone()
-        # if self.projected_modulation_matrix_t0 is not None:
-        #     clone.projected_modulation_matrix_t0 = self.projected_modulation_matrix_t0.clone()
-        # if self.projected_modulation_matrix_t is not None:
-        #     clone.projected_modulation_matrix_t = [elt.clone() for elt in self.projected_modulation_matrix_t]
-        # clone.number_of_sources = self.number_of_sources
-        #
-        # clone.transport_is_modified = self.transport_is_modified
-        # clone.backward_extension = self.backward_extension
-        # clone.forward_extension = self.forward_extension
-        #
-        # clone.times = self.times
-        # if self.template_points_t is not None:
-        #     clone.template_points_t = {key: [elt.clone() for elt in value]
-        #                                for key, value in self.template_points_t.item()}
-        # if self.control_points_t is not None:
-        #     clone.control_points_t = [elt.clone() for elt in self.control_points_t]
 
     ####################################################################################################################
     ### Encapsulation methods:
@@ -139,6 +116,9 @@ class SpatiotemporalReferenceFrame:
         self.forward_extension = self.geodesic.forward_extension
 
     def get_template_points_exponential_parameters(self, time, sources):
+        """
+        Used only if number of processes > 1
+        """
 
         # Assert for coherent length of attribute lists.
         assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.control_points_t) == len(
@@ -168,6 +148,9 @@ class SpatiotemporalReferenceFrame:
         return initial_template_points, initial_control_points, initial_momenta
 
     def get_template_points(self, time, sources, device=None):
+        """
+        For a subject's absolute time and its sources, returns what should be close to the subject image at time tij
+        """
 
         # Assert for coherent length of attribute lists.
         assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.control_points_t) \
@@ -184,10 +167,20 @@ class SpatiotemporalReferenceFrame:
 
         # Standard case.
         else:
+            #self.times: times of the geodesic (depends on chosen discretization?)
+            #self.template_points_t: the template points (ie intensities) moving in the geodesic at each time in self.time
+
+            #weight_left: the distance between time and the closest lower self.times
+            #weight_right: the distance between time and the closest higher self.times
             index, weight_left, weight_right = self._get_interpolation_index_and_weights(time)
+
+            #average the template point between the two closest trajectory times
             template_points = {key: weight_left * value[index - 1] + weight_right * value[index]
                                for key, value in self.template_points_t.items()}
+            #idem cp
             control_points = weight_left * self.control_points_t[index - 1] + weight_right * self.control_points_t[index]
+            
+            #idem modulation matrix
             modulation_matrix = weight_left * self.projected_modulation_matrix_t[index - 1] \
                                 + weight_right * self.projected_modulation_matrix_t[index]
             space_shift = torch.mm(modulation_matrix, sources.unsqueeze(1)).view(self.geodesic.momenta_t0.size())
@@ -199,9 +192,14 @@ class SpatiotemporalReferenceFrame:
         if device is not None:
             self.exponential.move_data_to_(device)
         self.exponential.update()
+
         return self.exponential.get_template_points()
 
     def _get_interpolation_index_and_weights(self, time):
+        #time ~ observation time of a subject
+        #self.times : times of the main trajectory?
+
+        #get index of the first self.times > time
         for index in range(1, len(self.times)):
             if time.data.cpu().numpy() - self.times[index] < 0:
                 break
@@ -226,6 +224,7 @@ class SpatiotemporalReferenceFrame:
 
         # Convenient attributes for later use.
         self.times = self.geodesic.get_times()
+        # the template points at each time of the average trajectory
         self.template_points_t = self.geodesic.get_template_points_trajectory()
         self.control_points_t = self.geodesic.get_control_points_trajectory()
 
@@ -306,7 +305,7 @@ class SpatiotemporalReferenceFrame:
 
     def write(self, root_name, objects_name, objects_extension, template, template_data, output_dir,
               write_adjoint_parameters=False, write_exponential_flow=False):
-
+    
         # Write the geodesic -------------------------------------------------------------------------------------------
         self.geodesic.write(root_name, objects_name, objects_extension, template, template_data, output_dir,
                             write_adjoint_parameters)
@@ -319,18 +318,22 @@ class SpatiotemporalReferenceFrame:
             # Direct flow.
             space_shift = self.projected_modulation_matrix_t0[:, s].contiguous().view(
                 self.geodesic.momenta_t0.size())
+            
+            # Shoot the template in the direction of geometric mode s
             self.exponential.set_initial_template_points(self.geodesic.template_points_t0)
             self.exponential.set_initial_control_points(self.geodesic.control_points_t0)
             self.exponential.set_initial_momenta(space_shift)
             self.exponential.update()
 
             for j in range(self.exponential.number_of_time_points):
+                print("j", j)
+                print("nb", self.exponential.number_of_time_points - 1 + j)
+                print("sigma", (3. * float(j) / (self.exponential.number_of_time_points - 1)))
                 names = []
-                for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                    name = root_name + '__GeometricMode_' + str(s) + '__' + object_name \
-                           + '__' + str(self.exponential.number_of_time_points - 1 + j) \
-                           + ('__+%.2f_sigma' % (3. * float(j) / (self.exponential.number_of_time_points - 1))) \
-                           + object_extension
+                for (object_name, object_extension) in zip(objects_name, objects_extension):
+                    name = "{}__GeometricMode_{}__{}__{}__{:%.2f}_sigma{}".format(root_name, s, object_name, 
+                            self.exponential.number_of_time_points - 1 + j,
+                            3. * float(j) / (self.exponential.number_of_time_points - 1, object_extension))
                     names.append(name)
                 deformed_points = self.exponential.get_template_points(j)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)
@@ -338,8 +341,6 @@ class SpatiotemporalReferenceFrame:
                                {key: value.detach().cpu().numpy() for key, value in deformed_data.items()})
 
             # Indirect flow.
-            space_shift = self.projected_modulation_matrix_t0[:, s].contiguous().view(
-                self.geodesic.momenta_t0.size())
             self.exponential.set_initial_template_points(self.geodesic.template_points_t0)
             self.exponential.set_initial_control_points(self.geodesic.control_points_t0)
             self.exponential.set_initial_momenta(- space_shift)
@@ -349,11 +350,10 @@ class SpatiotemporalReferenceFrame:
                 if j == 0:
                     continue
                 names = []
-                for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                    name = root_name + '__GeometricMode_' + str(s) + '__' + object_name \
-                           + '__' + str(self.exponential.number_of_time_points - 1 - j) \
-                           + ('__-%.2f_sigma' % (3. * float(j) / (self.exponential.number_of_time_points - 1))) \
-                           + object_extension
+                for (object_name, object_extension) in zip(objects_name, objects_extension):
+                    name = "{}__GeometricMode_{}__{}__{}__-%.2f_sigma{}".format(root_name, s, object_name, 
+                            self.exponential.number_of_time_points - 1 + j,
+                            3. * float(j) / (self.exponential.number_of_time_points - 1, object_extension))
                     names.append(name)
                 deformed_points = self.exponential.get_template_points(j)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)

@@ -13,7 +13,7 @@ from ..core.models.longitudinal_atlas import LongitudinalAtlas
 def estimate_longitudinal_registration_for_subject(
         i, template_specifications, dataset_specifications,
         model_options, estimator_options,
-        registration_output_path,
+        registration_output,
         full_subject_ids, full_dataset_filenames, full_visit_ages,
         global_dimension, global_tensor_scalar_type, global_tensor_integer_type, overwrite=True):
     """
@@ -32,23 +32,22 @@ def estimate_longitudinal_registration_for_subject(
     Create a dedicated output folder for the current subject, adapt the global settings.
     """
 
-    subject_registration_output_path = os.path.join(
-        registration_output_path, 'LongitudinalRegistration__subject_' + full_subject_ids[i])
+    subject_registration_output = os.path.join(registration_output, 'LongitudinalRegistration__subject_' + full_subject_ids[i])
 
-    if not overwrite and os.path.isdir(subject_registration_output_path):
+    if not overwrite and os.path.isdir(subject_registration_output):
         return None
 
     logger.info('')
     logger.info('[ longitudinal registration of subject ' + full_subject_ids[i] + ' ]')
     logger.info('')
 
-    if os.path.isdir(subject_registration_output_path):
-        shutil.rmtree(subject_registration_output_path)
-        os.mkdir(subject_registration_output_path)
+    if os.path.isdir(subject_registration_output):
+        shutil.rmtree(subject_registration_output)
+        os.mkdir(subject_registration_output)
 
-    estimator_options['state_file'] = os.path.join(subject_registration_output_path, 'deformetrica-state.p')
+    estimator_options['state_file'] = os.path.join(subject_registration_output, 'deformetrica-state.p')
 
-    """
+    """model
     Create the model object.
     """
 
@@ -69,20 +68,16 @@ def estimate_longitudinal_registration_for_subject(
     estimator_options['individual_RER'] = individual_RER
 
     if estimator_options['optimization_method_type'].lower() == 'GradientAscent'.lower():
-        estimator = GradientAscent(model, dataset, output_dir=subject_registration_output_path, **estimator_options)
-    elif estimator_options['optimization_method_type'].lower() in ['ScipyLBFGS'.lower(), 'ScipyPowell'.lower()]:
-        estimator = ScipyOptimize(model, dataset, output_dir=subject_registration_output_path, **estimator_options)
+        estimator = GradientAscent(model, dataset, output_dir=subject_registration_output, **estimator_options)
     else:
-        estimator = ScipyOptimize(model, dataset, output_dir=subject_registration_output_path, **estimator_options)
-
-    # estimator(model, dataset, output_dir=subject_registration_output_path, **estimator_options)
+        estimator = ScipyOptimize(model, dataset, output_dir=subject_registration_output, **estimator_options)
 
     """
     Launch.
     """
 
-    if not os.path.exists(subject_registration_output_path):
-        os.makedirs(subject_registration_output_path)
+    if not os.path.exists(subject_registration_output):
+        os.makedirs(subject_registration_output)
 
     start_time = 0.0
     end_time = 0.0
@@ -94,7 +89,7 @@ def estimate_longitudinal_registration_for_subject(
     try:
         start_time = time.time()
         estimator.update()
-        model._write_model_parameters(estimator.individual_RER, subject_registration_output_path)
+        model._write_model_parameters(estimator.individual_RER, subject_registration_output)
         end_time = time.time()
 
     except RuntimeError as error:
@@ -113,7 +108,7 @@ def estimate_longitudinal_registration_for_subject(
 
             start_time = time.time()
             estimator.update()
-            model._write_model_parameters(estimator.individual_RER, subject_registration_output_path)
+            model._write_model_parameters(estimator.individual_RER, subject_registration_output)
             end_time = time.time()
 
     logger.info('')
@@ -126,14 +121,13 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
                                        model_options, estimator_options,
                                        output_dir=default.output_dir,
                                        overwrite=True):
-    logger.info('')
-    logger.info('[ estimate_longitudinal_registration function ]')
+    logger.info('\n [ estimate_longitudinal_registration function ]\n')
 
     """
     Prepare the loop over each subject.
     """
 
-    registration_output_path = output_dir
+    registration_output = output_dir
     full_dataset_filenames = dataset_specifications['dataset_filenames']
     full_visit_ages = dataset_specifications['visit_ages']
     full_subject_ids = dataset_specifications['subject_ids']
@@ -160,7 +154,7 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
         estimate_longitudinal_registration_for_subject(
             i, template_specifications, dataset_specifications,
             model_options, estimator_options,
-            registration_output_path,
+            registration_output,
             full_subject_ids, full_dataset_filenames, full_visit_ages,
             global_dimension, global_tensor_scalar_type, global_tensor_integer_type, overwrite)
 
@@ -168,9 +162,7 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
     Gather all the individual registration results.
     """
 
-    logger.info('')
-    logger.info('[ save the aggregated registration parameters of all subjects ]')
-    logger.info('')
+    logger.info('\n [ save the aggregated registration parameters of all subjects ]\n')
 
     # Gather the individual random effect realizations.
     onset_ages = np.zeros((number_of_subjects,))
@@ -178,15 +170,15 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
     sources = np.zeros((number_of_subjects, global_number_of_sources))
 
     for i in range(number_of_subjects):
-        subject_registration_output_path = os.path.join(
-            registration_output_path, 'LongitudinalRegistration__subject_' + full_subject_ids[i])
+        subject_registration_output = os.path.join(
+            registration_output, 'LongitudinalRegistration__subject_' + full_subject_ids[i])
 
         onset_ages[i] = np.loadtxt(os.path.join(
-            subject_registration_output_path, 'LongitudinalRegistration__EstimatedParameters__OnsetAges.txt'))
+            subject_registration_output, 'LongitudinalRegistration__EstimatedParameters__OnsetAges.txt'))
         accelerations[i] = np.loadtxt(os.path.join(
-            subject_registration_output_path, 'LongitudinalRegistration__EstimatedParameters__Accelerations.txt'))
+            subject_registration_output, 'LongitudinalRegistration__EstimatedParameters__Accelerations.txt'))
         sources[i] = np.loadtxt(os.path.join(
-            subject_registration_output_path, 'LongitudinalRegistration__EstimatedParameters__Sources.txt'))
+            subject_registration_output, 'LongitudinalRegistration__EstimatedParameters__Sources.txt'))
 
     individual_RER = {}
     individual_RER['sources'] = sources
@@ -194,7 +186,7 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
     individual_RER['acceleration'] = accelerations
 
     # Write temporarily those files.
-    temporary_output_path = os.path.join(registration_output_path, 'tmp')
+    temporary_output_path = os.path.join(registration_output, 'tmp')
     if os.path.isdir(temporary_output_path):
         shutil.rmtree(temporary_output_path)
     os.mkdir(temporary_output_path)
@@ -216,8 +208,8 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
     model_options['initial_accelerations'] = path_to_accelerations
     model_options['initial_sources'] = path_to_sources
 
-    if not os.path.isdir(registration_output_path):
-        os.mkdir(registration_output_path)
+    if not os.path.isdir(registration_output):
+        os.mkdir(registration_output)
 
     dataset = create_dataset(template_specifications,
                              dimension=global_dimension,
@@ -228,4 +220,4 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
     model.initialize_noise_variance(dataset, individual_RER)
 
     model.name = 'LongitudinalRegistration'
-    model.write(dataset, None, individual_RER, registration_output_path)
+    model.write(dataset, None, individual_RER, registration_output)

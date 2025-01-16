@@ -73,7 +73,10 @@ class PrincipalGeodesicAnalysis(AbstractStatisticalModel):
         self.tensor_integer_type = tensor_integer_type
         self.dense_mode =  dense_mode
         self.number_of_processes = number_of_processes
-        self.latent_space_dimension = latent_space_dimension
+        #self.latent_space_dimension = latent_space_dimension
+        #ajout fleur
+        self.latent_space_dimension=8
+        
         if self.number_of_processes > 1:
             logger.info('Number of threads larger than 1 not currently handled by the PGA model.')
 
@@ -141,6 +144,8 @@ class PrincipalGeodesicAnalysis(AbstractStatisticalModel):
             logger.info('>> Loading principal directions from file {}'.format(initial_principal_directions))
             self.fixed_effects['principal_directions'] = read_2D_array(initial_principal_directions)
         else:
+        
+            print(self.get_control_points().size, self.latent_space_dimension)
             self.fixed_effects['principal_directions'] = np.random.uniform(
                 -1, 1, size=(self.get_control_points().size, self.latent_space_dimension))
 
@@ -211,6 +216,7 @@ class PrincipalGeodesicAnalysis(AbstractStatisticalModel):
     def _pca_fit_and_transform(self, n_components, observations):
         assert len(observations.shape) == 2, 'Wrong format of observations for pca.'
         nb_obs, dim = observations.shape
+        print(nb_obs, dim, n_components)
         assert dim >= n_components, 'Cannot estimate more components that the dimension of the observations'
         assert n_components <= nb_obs, 'Cannot estimate more components than the number of observations'
 

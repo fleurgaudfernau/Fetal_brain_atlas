@@ -3,13 +3,32 @@ import PIL.Image as pimg
 import nibabel as nib
 import numpy as np
 import torch
+from copy import deepcopy
 
 from ....in_out.image_functions import rescale_image_intensities, points_to_voxels_transform
 from ....support import utilities
+from ....core import default
+from skimage.restoration import denoise_tv_chambolle
+from cv2 import bilateralFilter, blur, cvtColor
+from scipy.ndimage import gaussian_filter, median_filter
+
+
 
 import logging
 logger = logging.getLogger(__name__)
 
+
+def image_average_filter(intensities):
+        return blur(intensities, ksize=(2,2))
+    
+def image_median_filter(intensities, image_scale):
+    #width of the filter = rayon (nb de pixels inclus dans calcul médianes)
+    size = int(image_scale)+1 if int(image_scale) >= 1 else 1
+
+    return median_filter(intensities, size = size)
+
+def image_gaussian_filter(intensities, image_scale):
+    return gaussian_filter(intensities, sigma = image_scale, mode = "constant")
 
 class Image:
     """
@@ -24,7 +43,11 @@ class Image:
     ####################################################################################################################
 
     # Constructor.
-    def __init__(self, intensities, intensities_dtype, affine):
+    def __init__(self, intensities, intensities_dtype, affine, interpolation=default.interpolation, object_filename = None):
+        self.object_filename = object_filename
+        
+        self.interpolation = interpolation
+
         self.dimension = len(intensities.shape)
         assert self.dimension in [2, 3], 'Ambient-space dimension must be either 2 or 3.'
 
@@ -32,13 +55,18 @@ class Image:
         self.is_modified = False
 
         self.intensities = intensities
+        self.original_intensities = deepcopy(intensities)
         self.intensities_dtype = intensities_dtype
         self.affine = affine
 
         self.downsampling_factor = 1
 
+        self.image_filter = image_gaussian_filter
+
         self._update_corner_point_positions()
         self.update_bounding_box()
+
+        self.distance = {"ssim" : 0, "mse":0}
 
     ####################################################################################################################
     ### Encapsulation methods:
@@ -62,12 +90,6 @@ class Image:
     def get_intensities(self):
         return self.intensities
 
-    # def get_intensities_torch(self, tensor_scalar_type=default.tensor_scalar_type, device='cpu'):
-    #     if isinstance(self.intensities, torch.Tensor):
-    #         return self.intensities.to(device)
-    #     else:
-    #         return torch.from_numpy(self.intensities).type(tensor_scalar_type).to(device)
-
     def get_points(self):
 
         image_shape = self.intensities.shape
@@ -84,32 +106,45 @@ class Image:
 
         return points
 
+    def filter(self, scale):
+        #intensities = self.get_intensities()
+        intensities = self.image_filter(deepcopy(self.original_intensities), scale)
+        self.set_intensities(intensities)
+
+        return intensities
+
     # @jit(parallel=True)
     def get_deformed_intensities(self, deformed_points, intensities):
         """
         Torch input / output.
         Interpolation function with zero-padding.
         """
+        
+        # for intensities: mode = "bi/trilinear"
+        # for segmentations: mode = "nearest"
+        options = {}        
+        options["align_corners"] = True
+        options["mode"] = "bilinear" if self.dimension == 2 else "trilinear"
+        #options["mode"], options["align_corners"] = "nearest", None
+        #self.interpolation = "nearest"
+
         assert isinstance(deformed_points, torch.Tensor)
         assert isinstance(intensities, torch.Tensor)
 
         intensities = utilities.move_data(intensities, dtype=deformed_points.type(), device=deformed_points.device)
         assert deformed_points.device == intensities.device
 
-        tensor_integer_type = {
-            'cpu': 'torch.LongTensor',
-            'cuda': 'torch.cuda.LongTensor'
-        }[deformed_points.device.type]
+        tensor_integer_type = {'cpu': 'torch.LongTensor','cuda': 'torch.cuda.LongTensor'}[deformed_points.device.type]
 
         image_shape = self.intensities.shape
-        deformed_voxels = points_to_voxels_transform(deformed_points, self.affine)
+        deformed_voxels = points_to_voxels_transform(deformed_points, self.affine) #does nothin: returns deformed_points
         assert deformed_points.device == deformed_voxels.device, 'tensors must be on the same device'
 
         if self.dimension == 2:
             if not self.downsampling_factor == 1:
                 shape = deformed_points.shape
                 deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(2, 0, 1).contiguous().view(1, shape[2], shape[0], shape[1]),
-                                                                  size=image_shape, mode='bilinear', align_corners=True)[0].permute(1, 2, 0).contiguous()
+                                                                  size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 0).contiguous()
 
             u, v = deformed_voxels.view(-1, 2)[:, 0], deformed_voxels.view(-1, 2)[:, 1]
 
@@ -126,6 +161,12 @@ class Image:
             gu = (u1 + 1) - u
             gv = (v1 + 1) - v
 
+            if self.interpolation == "nearest":
+                gu = gu > 0.5
+                fu = ~gu
+                gv = gv > 0.5
+                fv = ~gv
+
             deformed_intensities = (intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type)] * gu * gv +
                                     intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type)] * gu * fv +
                                     intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type)] * fu * gv +
@@ -135,15 +176,16 @@ class Image:
             if not self.downsampling_factor == 1:
                 shape = deformed_points.shape
                 deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(3, 0, 1, 2).contiguous().view(1, shape[3], shape[0], shape[1], shape[2]),
-                                                                  size=image_shape, mode='trilinear', align_corners=True)[0].permute(1, 2, 3, 0).contiguous()
+                                                                  size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 3, 0).contiguous()
 
             u, v, w = deformed_voxels.view(-1, 3)[:, 0], \
                       deformed_voxels.view(-1, 3)[:, 1], \
                       deformed_voxels.view(-1, 3)[:, 2]
-
-            u1 = torch.floor(u.detach())
+            #print("1.11: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+            u1 = torch.floor(u.detach()) #a new tensor from u
             v1 = torch.floor(v.detach())
             w1 = torch.floor(w.detach())
+            #print("1.12: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
             u1 = torch.clamp(u1, 0, image_shape[0] - 1)
             v1 = torch.clamp(v1, 0, image_shape[1] - 1)
@@ -151,6 +193,7 @@ class Image:
             u2 = torch.clamp(u1 + 1, 0, image_shape[0] - 1)
             v2 = torch.clamp(v1 + 1, 0, image_shape[1] - 1)
             w2 = torch.clamp(w1 + 1, 0, image_shape[2] - 1)
+            #print("1.13: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
             fu = u - u1
             fv = v - v1
@@ -158,7 +201,16 @@ class Image:
             gu = (u1 + 1) - u
             gv = (v1 + 1) - v
             gw = (w1 + 1) - w
+            #print("1.14: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
+            if self.interpolation == "nearest":
+                gu = gu > 0.5
+                fu = ~ gu
+                gv = gv > 0.5
+                fv = ~gv
+                gw = gw > 0.5
+                fw = ~gw
+            
             deformed_intensities = (intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * gv * gw +
                                     intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * gu * gv * fw +
                                     intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * fv * gw +
@@ -167,9 +219,88 @@ class Image:
                                     intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * gv * fw +
                                     intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * fv * gw +
                                     intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * fv * fw).view(image_shape)
+            #print("1.2: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+            del u
+            del v
+            del w
+            del u1
+            del v1
+            del w1
+            del u2
+            del v2
+            del w2
+            del fu
+            del fv 
+            del fw
+            del gu
+            del gv
+            del gw
+            torch.cuda.empty_cache()
+            # print("1.3: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+        
+            # if not self.downsampling_factor == 1:
+            #     shape = deformed_points.shape
+            #     deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(3, 0, 1, 2).contiguous().view(1, shape[3], shape[0], shape[1], shape[2]),
+            #                                                       size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 3, 0).contiguous()
+            
+            # u1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 0].detach()), 0, image_shape[0] - 1)
+            # v1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 1].detach()), 0, image_shape[1] - 1)
+            # w1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 2].detach()), 0, image_shape[2] - 1)
+            # u2 = torch.clamp(u1 + 1, 0, image_shape[0] - 1)
+            # v2 = torch.clamp(v1 + 1, 0, image_shape[1] - 1)
+            # w2 = torch.clamp(w1 + 1, 0, image_shape[2] - 1)
+            # #print("1.13: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+
+            # fu = deformed_voxels.view(-1, 3)[:, 0] - u1
+            # fv = deformed_voxels.view(-1, 3)[:, 1] - v1
+            # fw = deformed_voxels.view(-1, 3)[:, 2] - w1
+            # gu = (u1 + 1) - deformed_voxels.view(-1, 3)[:, 0] - u1
+            # gv = (v1 + 1) - deformed_voxels.view(-1, 3)[:, 1]
+            # gw = (w1 + 1) - deformed_voxels.view(-1, 3)[:, 2]
+            # #print("1.14: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+
+            # if self.interpolation == "nearest":
+            #     gu = gu > 0.5
+            #     fu = ~ gu
+            #     gv = gv > 0.5
+            #     fv = ~gv
+            #     gw = gw > 0.5
+            #     fw = ~gw
+            
+            # deformed_intensities = (intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * gv * gw +
+            #                         intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * gu * gv * fw +
+            #                         intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * fv * gw +
+            #                         intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * gu * fv * fw +
+            #                         intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * gv * gw +
+            #                         intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * gv * fw +
+            #                         intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * fv * gw +
+            #                         intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * fv * fw).view(image_shape)
+            # #print("1.2: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+            
+            
+            # del u1
+            # del v1
+            # del w1
+            # del u2
+            # del v2
+            # del w2
+            # del fu
+            # del fv 
+            # del fw
+            # del gu
+            # del gv
+            # del gw
+            # torch.cuda.empty_cache()
+            #print("1.3: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
         else:
             raise RuntimeError('Incorrect dimension of the ambient space: %d' % self.dimension)
+        
+        del deformed_points
+        del deformed_voxels
+        del intensities
+        torch.cuda.empty_cache()
+        #print("1.4: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
         return deformed_intensities
 
@@ -194,7 +325,6 @@ class Image:
             self.bounding_box[d, 1] = np.max(self.corner_points[:, d])
 
     def write(self, output_dir, name, intensities=None):
-
         if intensities is None:
             intensities = self.get_intensities()
 
@@ -203,6 +333,8 @@ class Image:
         if name.find(".png") > 0:
             pimg.fromarray(intensities_rescaled).save(os.path.join(output_dir, name))
         elif name.find(".nii") > 0:
+            if "/" in name:
+                name = name.split("/")[-1] #ajout fg
             img = nib.Nifti1Image(intensities_rescaled, self.affine)
             nib.save(img, os.path.join(output_dir, name))
         elif name.find(".npy") > 0:

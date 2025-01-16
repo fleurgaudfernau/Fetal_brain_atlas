@@ -5,6 +5,9 @@ from ..support import utilities
 
 logger_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
+#ajout fg
+interpolation = "linear"
+
 dtype = 'float32'
 random_seed = None
 tensor_scalar_type = utilities.get_torch_scalar_type(dtype)
@@ -61,8 +64,9 @@ convergence_tolerance = 1e-4
 noise_variance_prior_normalized_dof = 0.01
 noise_variance_prior_normalized_dof = 0.01
 memory_length = 10
-scale_initial_step_size = True
+scale_initial_step_size = True #before 27/01 TRUE
 downsampling_factor = 1
+gamma = 1
 
 dense_mode = False
 gpu_mode = GpuMode.KERNEL
@@ -72,6 +76,11 @@ _keops_is_used = False  # true if at least one keops kernel operation will take 
 
 freeze_template = False
 freeze_control_points = True
+multiscale_momenta = False
+multiscale_images = False
+multiscale_meshes = False
+naive = True
+multiscale_strategy = "stairs"
 freeze_momenta = False
 freeze_modulation_matrix = False
 freeze_reference_time = False
@@ -79,6 +88,7 @@ freeze_time_shift_variance = False
 freeze_acceleration_variance = False
 freeze_noise_variance = False
 freeze_principal_directions = False
+freeze_rupture_time = True
 
 # affine atlas
 freeze_translation_vectors = False
@@ -113,6 +123,14 @@ onset_age_proposal_std = 0.1
 acceleration_proposal_std = 0.01
 sources_proposal_std = 0.01
 
+#modify fleur
+momenta_proposal_std = 1
+onset_age_proposal_std = 1
+acceleration_proposal_std = 1
+sources_proposal_std = 1
+
+kernel_regression = False
+
 # For scalar inputs:
 group_file = None
 observations_file = None
@@ -130,6 +148,9 @@ normalize_image_intensity = False
 initialization_heuristic = False
 
 verbose = 1
+
+#ajout fg
+perform_shooting = True
 
 
 def update_dtype(new_dtype):

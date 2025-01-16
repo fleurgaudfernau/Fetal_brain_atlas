@@ -1,4 +1,4 @@
-__version__ = '4.3.0'
+__version__ = '2025.01.15'
 
 # api
 from .api import Deformetrica
@@ -16,6 +16,9 @@ from .launch.initialize_longitudinal_atlas import initialize_longitudinal_atlas
 from .launch.finalize_longitudinal_atlas import finalize_longitudinal_atlas
 from .launch.estimate_longitudinal_metric_model import estimate_longitudinal_metric_model
 from .launch.estimate_longitudinal_metric_registration import estimate_longitudinal_metric_registration
+#from .launch.initialize_longitudinal_atlas_simplified import initialize_longitudinal_atlas_simplified
+from .launch.initialize_longitudinal_atlas_development import initialize_longitudinal_atlas_development
+from .launch.initialize_piecewise_geodesic_regression_with_space_shift import initialize_piecewise_geodesic_regression_with_space_shift
 
 # estimators
 from .core import estimators as estimators
