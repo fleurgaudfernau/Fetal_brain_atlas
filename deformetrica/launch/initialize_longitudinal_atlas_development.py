@@ -49,7 +49,6 @@ def orthogonal_projection(cp, momenta_to_project, momenta):
 
     return orthogonal_momenta
 
-
 def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
     K = np.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
     for i in range(global_cp_nb):
@@ -60,7 +59,6 @@ def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp
             for d in range(dimension):
                 K[dimension * i + d, dimension * j + d] = kernel_distance
                 K[dimension * j + d, dimension * i + d] = kernel_distance
-
 
 class LongitudinalAtlasInitializer():
     def __init__(self, model_xml_path, dataset_xml_path, optimization_parameters_xml_path):
@@ -137,9 +135,7 @@ class LongitudinalAtlasInitializer():
         self.number_of_sources = 4
         if self.xml_parameters.number_of_sources:
             self.number_of_sources = self.xml_parameters.number_of_sources            
-
-
-    
+  
     def to_torch_tensor(self, array):
         return Variable(torch.from_numpy(array).type(self.tensor_scalar_type), requires_grad=False)
 

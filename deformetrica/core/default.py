@@ -27,7 +27,7 @@ process_per_gpu = 1
 model_type = 'undefined'
 template_specifications = {}
 deformation_kernel_width = 1.0
-#deformation_kernel_type = 'keops'
+deformation_kernel_type = 'keops'
 deformation_kernel_device = 'auto'
 
 shoot_kernel_type = None
@@ -144,9 +144,7 @@ initialization_heuristic = False
 
 verbose = 1
 
-#ajout fg
 perform_shooting = True
-
 
 def update_dtype(new_dtype):
     global dtype
