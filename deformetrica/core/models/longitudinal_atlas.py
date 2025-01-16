@@ -137,10 +137,8 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                  number_of_processes=default.number_of_processes,
                  gpu_mode=default.gpu_mode,
 
-                 deformation_kernel_type=default.deformation_kernel_type,
                  deformation_kernel_width=default.deformation_kernel_width,
 
-                 shoot_kernel_type=default.shoot_kernel_type,
                  number_of_time_points=default.number_of_time_points,
                  concentration_of_time_points=default.concentration_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot,
@@ -220,10 +218,8 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         # Deformation.
         self.spatiotemporal_reference_frame = SpatiotemporalReferenceFrame(
             dense_mode=dense_mode,
-            kernel=kernel_factory.factory(deformation_kernel_type,
-                                          gpu_mode=self.gpu_mode,
+            kernel=kernel_factory.factory(gpu_mode=self.gpu_mode,
                                           kernel_width=deformation_kernel_width),
-            shoot_kernel_type=shoot_kernel_type,
             concentration_of_time_points=concentration_of_time_points, number_of_time_points=number_of_time_points,
             t0=t0, use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
         self.spatiotemporal_reference_frame_is_modified = True
@@ -242,7 +238,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         self.use_sobolev_gradient = use_sobolev_gradient
         self.smoothing_kernel_width = smoothing_kernel_width
         if self.use_sobolev_gradient:
-            self.sobolev_kernel = kernel_factory.factory(deformation_kernel_type,
+            self.sobolev_kernel = kernel_factory.factory(
                                                          gpu_mode=self.gpu_mode,
                                                          kernel_width=smoothing_kernel_width)
 

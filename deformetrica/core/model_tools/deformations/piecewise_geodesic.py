@@ -30,7 +30,7 @@ class PiecewiseGeodesic:
     ####################################################################################################################
 
     def __init__(self, dense_mode=default.dense_mode,
-                 kernel=default.deformation_kernel, shoot_kernel_type=None,
+                 kernel=default.deformation_kernel,
                  t0=default.t0, concentration_of_time_points=default.concentration_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                  nb_components=2, num_components = None, template_tR=None, transport_cp = True):
@@ -52,7 +52,7 @@ class PiecewiseGeodesic:
         self.exponential = []
         for i in range(self.nb_components):
             self.exponential.append(
-                Exponential(dense_mode=dense_mode, kernel=kernel, shoot_kernel_type=shoot_kernel_type,
+                Exponential(dense_mode=dense_mode, kernel=kernel,
                             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow,
                             transport_cp = transport_cp))
 
@@ -66,7 +66,6 @@ class PiecewiseGeodesic:
     def new_exponential(self):
         return Exponential(dense_mode=self.exponential[0].dense_mode, 
                             kernel=self.exponential[0].kernel, 
-                            shoot_kernel_type=self.exponential[0].shoot_kernel_type,
                             use_rk2_for_shoot=self.exponential[0].use_rk2_for_shoot, 
                             use_rk2_for_flow=self.exponential[0].use_rk2_for_flow,
                             transport_cp = self.exponential[0].transport_cp)
@@ -83,9 +82,6 @@ class PiecewiseGeodesic:
     def set_use_rk2_for_flow(self, flag):
         for l in range(self.nb_components):
             self.exponential[l].set_use_rk2_for_flow(flag)
-
-    def get_kernel_type(self):
-        return self.exponential[0].get_kernel_type()
 
     def set_kernel(self, kernel):
         for l in range(self.nb_components):

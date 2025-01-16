@@ -5,7 +5,6 @@ import argparse
 import logging
 import os
 import sys
-from codecarbon import EmissionsTracker
 
 import deformetrica as dfca #from the init file
 
@@ -13,16 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    # Carbon emission tracker
-    #tracker = EmissionsTracker()
-    #tracker.start()
-
     # common options
     common_parser = argparse.ArgumentParser()
     common_parser.add_argument('--parameters', '-p', type=str, help='parameters xml file')
     common_parser.add_argument('--output', '-o', type=str, help='output folder')
     common_parser.add_argument('--age', "-a", type=int) #fg: kernel regression
-    # logging levels: https://docs.python.org/2/library/logging.html#logging-levels
     common_parser.add_argument('--verbosity', '-v',
                                type=str,
                                default='WARNING',
@@ -131,15 +125,6 @@ def main():
                 dfca.io.get_dataset_specifications(xml_parameters),
                 estimator_options=dfca.io.get_estimator_options(xml_parameters),
                 model_options=dfca.io.get_model_options(xml_parameters))        	
-        elif xml_parameters.model_type == 'PrincipalGeodesicAnalysis'.lower():
-            assert args.command == 'estimate', \
-                'The estimation of a principal geodesic analysis model should be launched with the command: ' \
-                '"deformetrica estimate" (and not "%s").' % args.command
-            deformetrica.estimate_principal_geodesic_analysis(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
 
         elif xml_parameters.model_type == 'Regression'.lower():
             assert args.command == 'estimate', \

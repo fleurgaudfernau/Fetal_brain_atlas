@@ -103,10 +103,8 @@ class DeterministicAtlas(AbstractStatisticalModel):
                  dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
-                 deformation_kernel_type=default.deformation_kernel_type,
                  deformation_kernel_width=default.deformation_kernel_width,
 
-                 shoot_kernel_type=default.shoot_kernel_type,
                  number_of_time_points=default.number_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
 
@@ -152,7 +150,6 @@ class DeterministicAtlas(AbstractStatisticalModel):
         self.initial_cp_spacing = initial_cp_spacing #determines nb of points 
         self.gpu_mode = gpu_mode
         self.deformation_kernel_width = deformation_kernel_width
-        self.deformation_kernel_type = deformation_kernel_type
 
         # Template.
         (object_list, self.objects_name, self.objects_name_extension,
@@ -166,10 +163,8 @@ class DeterministicAtlas(AbstractStatisticalModel):
         
         # Deformation.
         self.exponential = Exponential(dense_mode=dense_mode,
-            kernel=kernel_factory.factory(deformation_kernel_type,
-                                          gpu_mode=gpu_mode,
+            kernel=kernel_factory.factory(gpu_mode=gpu_mode,
                                           kernel_width=deformation_kernel_width),
-            shoot_kernel_type=shoot_kernel_type,
             number_of_time_points=number_of_time_points,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
@@ -177,8 +172,7 @@ class DeterministicAtlas(AbstractStatisticalModel):
         self.use_sobolev_gradient = use_sobolev_gradient
         self.smoothing_kernel_width = smoothing_kernel_width
         if self.use_sobolev_gradient:
-            self.sobolev_kernel = kernel_factory.factory(deformation_kernel_type,
-                                                         gpu_mode=gpu_mode,
+            self.sobolev_kernel = kernel_factory.factory(gpu_mode=gpu_mode,
                                                          kernel_width=smoothing_kernel_width)
 
         # Template data.

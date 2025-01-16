@@ -196,7 +196,6 @@ class Deformetrica:
 
         compute_shooting(template_specifications,
                      dimension=model_options["dimension"],
-                     deformation_kernel_type=model_options["deformation_kernel_type"],
                      deformation_kernel_width=model_options["deformation_kernel_width"],
                      initial_control_points=op.join(main_output_dir, "CP.txt"),
                      initial_momenta=op.join(main_output_dir, "Mean_momenta.txt"),
@@ -1111,48 +1110,6 @@ class Deformetrica:
 
         return 
 
-    def estimate_principal_geodesic_analysis(self, template_specifications, dataset_specifications,
-                                             model_options={}, estimator_options={}, write_output=True):
-        """ Estimate principal geodesic analysis
-
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_specifications: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        """
-        # Check and completes the input parameters.
-        template_specifications, model_options, estimator_options = self.further_initialization(
-            'PrincipalGeodesicAnalysis', template_specifications, model_options, dataset_specifications,
-            estimator_options)
-
-        # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], **dataset_specifications)
-        assert (dataset.is_cross_sectional()), \
-            "Cannot estimate a PGA from a non cross-sectional dataset."
-
-        # Instantiate model.
-        statistical_model = PrincipalGeodesicAnalysis(template_specifications, **model_options)
-
-        # Runs a tangent pca on a deterministic atlas to initialize
-        individual_RER = statistical_model.initialize(dataset, template_specifications, dataset_specifications,
-                                                      model_options, estimator_options, self.output_dir)
-
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
-
-        # Instantiate estimator.
-        estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
-
-        try:
-            # Launch.
-            self.__launch_estimator(estimator, write_output)
-        finally:
-            statistical_model.cleanup()
-
-        return statistical_model
 
     def compute_parallel_transport(self, template_specifications, model_options={}):
         """ Given a known progression of shapes, to transport this progression onto a new shape.
@@ -1319,8 +1276,6 @@ class Deformetrica:
             model_options['initial_cp_spacing'] = default.initial_cp_spacing
         if 'deformation_kernel_width' not in model_options:
             model_options['deformation_kernel_width'] = default.deformation_kernel_width
-        if 'deformation_kernel_type' not in model_options:
-            model_options['deformation_kernel_type'] = default.deformation_kernel_type
         if 'number_of_processes' not in model_options:
             model_options['number_of_processes'] = default.number_of_processes
         if 't0' not in model_options:

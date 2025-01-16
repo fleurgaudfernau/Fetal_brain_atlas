@@ -36,7 +36,7 @@ class Geodesic:
     ####################################################################################################################
 
     def __init__(self, dense_mode=default.dense_mode,
-                 kernel=default.deformation_kernel, shoot_kernel_type=None,
+                 kernel=default.deformation_kernel,
                  t0=default.t0, concentration_of_time_points=default.concentration_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow):
 
@@ -50,11 +50,11 @@ class Geodesic:
         self.template_points_t0 = None
 
         self.backward_exponential = Exponential(
-            dense_mode=dense_mode, kernel=kernel, shoot_kernel_type=shoot_kernel_type,
+            dense_mode=dense_mode, kernel=kernel,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
         self.forward_exponential = Exponential(
-            dense_mode=dense_mode, kernel=kernel, shoot_kernel_type=shoot_kernel_type,
+            dense_mode=dense_mode, kernel=kernel,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
         # Flags to save extra computations that have already been made in the update methods.
@@ -75,9 +75,6 @@ class Geodesic:
     def set_use_rk2_for_flow(self, flag):
         self.backward_exponential.set_use_rk2_for_flow(flag)
         self.forward_exponential.set_use_rk2_for_flow(flag)
-
-    def get_kernel_type(self):
-        return self.backward_exponential.get_kernel_type()
 
     def set_kernel(self, kernel):
         self.backward_exponential.kernel = kernel
@@ -369,7 +366,6 @@ class Geodesic:
 
         new_expo = Exponential(dense_mode=self.backward_exponential.dense_mode, 
                                 kernel=self.backward_exponential.kernel, 
-                                shoot_kernel_type=self.backward_exponential.shoot_kernel_type,
                                 use_rk2_for_shoot=self.backward_exponential.use_rk2_for_shoot, 
                                 use_rk2_for_flow=self.backward_exponential.use_rk2_for_flow,
                                 transport_cp = self.backward_exponential.transport_cp)

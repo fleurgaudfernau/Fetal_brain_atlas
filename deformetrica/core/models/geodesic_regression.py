@@ -29,10 +29,8 @@ class GeodesicRegression(AbstractStatisticalModel):
                  dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
-                 deformation_kernel_type=default.deformation_kernel_type,
                  deformation_kernel_width=default.deformation_kernel_width,
 
-                 shoot_kernel_type=default.shoot_kernel_type,
                  concentration_of_time_points=default.concentration_of_time_points, t0=default.t0,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
 
@@ -84,8 +82,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Deformation.
         self.geodesic = Geodesic(
             dense_mode=dense_mode,
-            kernel=kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
-            shoot_kernel_type=shoot_kernel_type,
+            kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
             t0=t0, concentration_of_time_points=concentration_of_time_points,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
@@ -114,7 +111,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.number_of_subjects = 1
         
         if self.use_sobolev_gradient:
-            self.sobolev_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=smoothing_kernel_width)
+            self.sobolev_kernel = kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=smoothing_kernel_width)
 
         # Template data.
         self.fixed_effects['template_data'] = self.template.get_data()

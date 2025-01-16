@@ -28,7 +28,6 @@ class Exponential:
 
     def __init__(self, dense_mode=default.dense_mode,
                  kernel=default.deformation_kernel,
-                 shoot_kernel_type=None,
                  number_of_time_points=None,
                  initial_control_points=None, control_points_t=None,
                  initial_momenta=None, momenta_t=None,
@@ -39,10 +38,8 @@ class Exponential:
         self.dense_mode = dense_mode
         self.kernel = kernel
 
-        self.shoot_kernel_type = shoot_kernel_type #ajout fg
-
-        if shoot_kernel_type is not None:
-            self.shoot_kernel = kernel_factory.factory(shoot_kernel_type, gpu_mode=kernel.gpu_mode, kernel_width=kernel.kernel_width)
+        if self.kernel is None:
+            self.shoot_kernel = kernel_factory.factory(gpu_mode=kernel.gpu_mode, kernel_width=kernel.kernel_width)
         else:
             self.shoot_kernel = self.kernel
 
@@ -89,7 +86,7 @@ class Exponential:
 
     def light_copy(self):
         light_copy = Exponential(self.dense_mode,
-                                 deepcopy(self.kernel), self.shoot_kernel.kernel_type,
+                                 deepcopy(self.kernel),
                                  self.number_of_time_points,
                                  self.initial_control_points, self.control_points_t,
                                  self.initial_momenta, self.momenta_t,
@@ -109,9 +106,6 @@ class Exponential:
     def set_use_rk2_for_flow(self, flag):
         self.flow_is_modified = True
         self.use_rk2_for_flow = flag
-
-    def get_kernel_type(self):
-        return self.kernel.kernel_type
 
     def get_kernel_width(self):
         return self.kernel.kernel_width

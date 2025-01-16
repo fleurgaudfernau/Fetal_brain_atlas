@@ -5,18 +5,16 @@ from ...support.kernels.abstract_kernel import AbstractKernel
 
 
 class Type(Enum):
-    from ...support.kernels.torch_kernel import TorchKernel
     from ...support.kernels.keops_kernel import KeopsKernel
 
     UNDEFINED = None
     NO_KERNEL = None
-    TORCH = TorchKernel
     KEOPS = KeopsKernel
 
 
 instance_map = dict()
 
-def factory(kernel_type, cuda_type=None, gpu_mode=None, *args, **kwargs):
+def factory(cuda_type=None, gpu_mode=None, *args, **kwargs):
     """Return an instance of a kernel corresponding to the requested kernel_type"""
     
     if cuda_type is None:
@@ -24,14 +22,7 @@ def factory(kernel_type, cuda_type=None, gpu_mode=None, *args, **kwargs):
     if gpu_mode is None:
         gpu_mode = default.gpu_mode
 
-    # turn enum string to enum object
-    if isinstance(kernel_type, str):
-        try:
-            for c in [' ', '-']:    # chars to be replaced for normalization
-                kernel_type = kernel_type.replace(c, '_')
-            kernel_type = Type[kernel_type.upper()]
-        except:
-            raise TypeError('kernel_type ' + kernel_type + ' could not be found')
+    kernel_type = Type["KEOPS"]
 
     #modif fg
     if not isinstance(kernel_type, Type):

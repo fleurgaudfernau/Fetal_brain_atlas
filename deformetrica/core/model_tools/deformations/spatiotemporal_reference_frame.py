@@ -19,14 +19,14 @@ class SpatiotemporalReferenceFrame:
     ####################################################################################################################
 
     def __init__(self, dense_mode=default.dense_mode,
-                 kernel=default.deformation_kernel, shoot_kernel_type=default.shoot_kernel_type, t0=default.t0,
+                 kernel=default.deformation_kernel, t0=default.t0,
                  concentration_of_time_points=default.concentration_of_time_points,
                  number_of_time_points=default.number_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow):
 
         self.exponential = Exponential(
             dense_mode=dense_mode,
-            kernel=kernel, shoot_kernel_type=shoot_kernel_type,
+            kernel=kernel,
             number_of_time_points=number_of_time_points, use_rk2_for_shoot=use_rk2_for_shoot,
             use_rk2_for_flow=use_rk2_for_flow)
 
@@ -65,9 +65,6 @@ class SpatiotemporalReferenceFrame:
     def set_kernel(self, kernel):
         self.geodesic.set_kernel(kernel)
         self.exponential.set_kernel(kernel)
-
-    def get_kernel_type(self):
-        return self.exponential.kernel.kernel_type
 
     def get_kernel_width(self):
         return self.exponential.kernel.kernel_width
