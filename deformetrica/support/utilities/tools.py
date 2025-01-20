@@ -30,11 +30,11 @@ def norm_squared(cp, momenta, deformation_kernel_width):
     cp = utilities.move_data(cp, dtype=default.tensor_scalar_type, device=device)
     momenta = utilities.move_data(momenta, dtype=default.tensor_scalar_type, device=device)
     
-    deformation_kernel = kernel_factory.factory(default.deformation_kernel_type, gpu_mode=gpu_mode, 
+    deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, 
                                                 kernel_width=deformation_kernel_width)
     
     exponential = Exponential(dense_mode=default.dense_mode,
-                            kernel=deformation_kernel, shoot_kernel_type=default.shoot_kernel_type,
+                            kernel=deformation_kernel,
                             number_of_time_points=default.number_of_time_points,
                             use_rk2_for_shoot=default.use_rk2_for_shoot, 
                             use_rk2_for_flow=default.use_rk2_for_flow,
@@ -50,17 +50,26 @@ def norm(cp, momenta, deformation_kernel_width):
 
     return np.sqrt(squared)
 
+
+def current_distance(cp, momenta, momenta2, deformation_kernel_width):
+
+    norm = norm_squared(cp, momenta, deformation_kernel_width)
+    norm_ = norm_squared(cp, momenta2, deformation_kernel_width)
+    sp = scalar_product(cp, momenta, momenta2, deformation_kernel_width)
+
+    return norm + norm_ - 2 * sp
+
 def scalar_product(cp, momenta, momenta2, deformation_kernel_width):
     device, _ = utilities.get_best_device(gpu_mode)
     cp = utilities.move_data(cp, dtype=default.tensor_scalar_type, device=device)
     momenta = utilities.move_data(momenta, dtype=default.tensor_scalar_type, device=device)
     momenta_ = utilities.move_data(momenta2, dtype=default.tensor_scalar_type, device=device)
     
-    deformation_kernel = kernel_factory.factory(default.deformation_kernel_type, gpu_mode=gpu_mode, 
+    deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, 
                                                 kernel_width=deformation_kernel_width)
     
     exponential = Exponential(dense_mode=default.dense_mode,
-                            kernel=deformation_kernel, shoot_kernel_type=default.shoot_kernel_type,
+                            kernel=deformation_kernel,
                             number_of_time_points=default.number_of_time_points,
                             use_rk2_for_shoot=default.use_rk2_for_shoot, 
                             use_rk2_for_flow=default.use_rk2_for_flow,
@@ -70,10 +79,30 @@ def scalar_product(cp, momenta, momenta2, deformation_kernel_width):
 
     return sp.cpu().numpy()
 
-def current_distance(cp, momenta, momenta2, deformation_kernel_width):
 
-    norm = norm_squared(cp, momenta, deformation_kernel_width)
-    norm_ = norm_squared(cp, momenta2, deformation_kernel_width)
-    sp = scalar_product(cp, momenta, momenta2, deformation_kernel_width)
+def scalar_product_(kernel, cp, mom1, mom2):
+    return torch.sum(mom1 * kernel.convolve(cp, cp, mom2))
 
-    return norm + norm_ - 2 * sp
+def get_norm_squared(cp, momenta):
+    return scalar_product_(cp, momenta, momenta) 
+
+def orthogonal_projection(cp, momenta_to_project, momenta):
+    sp = scalar_product_(cp, momenta_to_project, momenta) / get_norm_squared(cp, momenta)
+    orthogonal_momenta = momenta_to_project - sp * momenta
+
+    return orthogonal_momenta
+
+
+def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
+    K = torch.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
+    global_initial_cp = torch.from_numpy(global_initial_cp)
+    #K = np.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
+    for i in range(global_cp_nb):
+        for j in range(global_cp_nb):
+            cp_i = global_initial_cp[i, :]
+            cp_j = global_initial_cp[j, :]
+            kernel_distance = torch.exp(- torch.sum((cp_j - cp_i) ** 2) / (kernel_width ** 2))
+            for d in range(dimension):
+                K[dimension * i + d, dimension * j + d] = kernel_distance
+                K[dimension * j + d, dimension * i + d] = kernel_distance
+    return K

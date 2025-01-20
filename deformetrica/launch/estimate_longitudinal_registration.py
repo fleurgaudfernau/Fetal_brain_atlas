@@ -15,7 +15,7 @@ def estimate_longitudinal_registration_for_subject(
         model_options, estimator_options,
         registration_output,
         full_subject_ids, full_dataset_filenames, full_visit_ages,
-        global_dimension, global_tensor_scalar_type, global_tensor_integer_type, overwrite=True):
+        global_dimension, global_tensor_integer_type, overwrite=True):
     """
     Create the dataset object.
     """
@@ -143,8 +143,6 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
 
     # Global variables.
     global_dimension = model_options['dimension']
-    global_tensor_scalar_type = model_options['tensor_scalar_type']
-    global_tensor_integer_type = model_options['tensor_integer_type']
 
     """
     Launch the individual longitudinal registrations.
@@ -156,7 +154,7 @@ def estimate_longitudinal_registration(template_specifications, dataset_specific
             model_options, estimator_options,
             registration_output,
             full_subject_ids, full_dataset_filenames, full_visit_ages,
-            global_dimension, global_tensor_scalar_type, global_tensor_integer_type, overwrite)
+            global_dimension, overwrite)
 
     """
     Gather all the individual registration results.

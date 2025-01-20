@@ -31,34 +31,12 @@ from ..core.observations.deformable_objects.deformable_multi_object import Defor
 from ..in_out.deformable_object_reader import DeformableObjectReader
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
+from .tools import *
 from . initialize_longitudinal_atlas_development_simple import CrossSectionalLongitudinalAtlasInitializer
 from .initialize_piecewise_geodesic_regression_with_space_shift import BayesianRegressionInitializer
 
 import warnings
 warnings.filterwarnings("ignore")
-
-def scalar_product(kernel, cp, mom1, mom2):
-    return torch.sum(mom1 * kernel.convolve(cp, cp, mom2))
-
-def get_norm_squared(cp, momenta):
-    return scalar_product(cp, momenta, momenta) 
-
-def orthogonal_projection(cp, momenta_to_project, momenta):
-    sp = scalar_product(cp, momenta_to_project, momenta) / get_norm_squared(cp, momenta)
-    orthogonal_momenta = momenta_to_project - sp * momenta
-
-    return orthogonal_momenta
-
-def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
-    K = np.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
-    for i in range(global_cp_nb):
-        for j in range(global_cp_nb):
-            cp_i = global_initial_cp[i, :]
-            cp_j = global_initial_cp[j, :]
-            kernel_distance = math.exp(- np.sum((cp_j - cp_i) ** 2) / (kernel_width ** 2))
-            for d in range(dimension):
-                K[dimension * i + d, dimension * j + d] = kernel_distance
-                K[dimension * j + d, dimension * i + d] = kernel_distance
 
 class LongitudinalAtlasInitializer():
     def __init__(self, model_xml_path, dataset_xml_path, optimization_parameters_xml_path):
@@ -117,12 +95,9 @@ class LongitudinalAtlasInitializer():
         self.dataset_type = "mixed" if self.nb_of_longitudinal_subjects > 0 else "single_points"
 
         # Deformation parameters
-        self.dense_mode = self.xml_parameters.dense_mode #landmark points or not
-        self.tensor_scalar_type = default.tensor_scalar_type #the type of float...
-        self.global_kernel_type = self.xml_parameters.deformation_kernel_type #torch or keops
         self.global_kernel_width = self.xml_parameters.deformation_kernel_width
         self.global_kernel_device = self.xml_parameters.deformation_kernel_device
-        self.kernel = kernel_factory.factory(self.global_kernel_type, kernel_width=self.global_kernel_width)
+        self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
         self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
@@ -137,7 +112,7 @@ class LongitudinalAtlasInitializer():
             self.number_of_sources = self.xml_parameters.number_of_sources            
   
     def to_torch_tensor(self, array):
-        return Variable(torch.from_numpy(array).type(self.tensor_scalar_type), requires_grad=False)
+        return Variable(torch.from_numpy(array).type(default.tensor_scalar_type), requires_grad=False)
 
     def create_folders(self):
         self.regressions_output = join(self.output_dir, '1_longitudinal_subjects_geodesic_regressions')
@@ -300,7 +275,7 @@ class LongitudinalAtlasInitializer():
                             initial_control_points=self.regression_cp_path[i], initial_momenta=self.regression_momenta_path[i], 
                             concentration_of_time_points=1,
                             t0=self.global_visit_ages[ind][0], tmin=min([self.global_t0, self.global_visit_ages[ind][0]]), 
-                            tmax=max([self.global_t0, self.global_visit_ages[ind][0]]), dense_mode=self.dense_mode,
+                            tmax=max([self.global_t0, self.global_visit_ages[ind][0]]),
                             output_dir=self.longitudinal_shooted_subjects_paths[i])  
 
             # Copy shooting outputs to the atlas folder
@@ -415,8 +390,8 @@ class LongitudinalAtlasInitializer():
             # Parallel transport of the regression momenta to the template space
             _, transported_regression_momenta = parallel_transport(
                 self.regression_control_points, regression_momenta, - registration_to_atlas_momenta, 
-                self.global_kernel_width, self.global_kernel_type, self.global_kernel_device, 
-                self.global_nb_of_tp, self.dense_mode, self.tensor_scalar_type)
+                self.global_kernel_width, self.global_kernel_device, 
+                self.global_nb_of_tp)
             
             # Increment the global initial momenta.
             self.global_initial_momenta += transported_regression_momenta / float(self.nb_of_longitudinal_subjects)
@@ -428,7 +403,7 @@ class LongitudinalAtlasInitializer():
 
         logger.info('\nCompute average template trajectory\n')
 
-        geodesic = Geodesic(self.dense_mode, self.kernel, t0=self.global_t0, concentration_of_time_points=10)
+        geodesic = Geodesic(self.kernel, t0=self.global_t0, concentration_of_time_points=10)
 
         geodesic.set_tmin(min([self.global_t0, self.global_tmin]))
         geodesic.set_tmax(max([self.global_t0, self.global_tmax]))
@@ -459,7 +434,7 @@ class LongitudinalAtlasInitializer():
         #                 initial_momenta=self.global_initial_momenta_for_atlas, 
         #                 concentration_of_time_points=10, t0=self.global_t0, 
         #                 tmin=min([self.global_t0, self.global_tmin]), 
-        #                 tmax=max([self.global_t0, self.global_tmax]), dense_mode=self.dense_mode,
+        #                 tmax=max([self.global_t0, self.global_tmax]),
         #                 output_dir=self.atlas_trajectory_output_2)
 
     def define_registration_outputs(self):
@@ -519,13 +494,13 @@ class LongitudinalAtlasInitializer():
 
             _, transported_momenta = parallel_transport(
                 self.global_initial_cp, momenta_to_transport, registration_momenta, 
-                self.global_kernel_width, self.global_kernel_type, self.global_kernel_device, 
-                self.global_nb_of_tp, self.dense_mode, self.tensor_scalar_type)
+                self.global_kernel_width, self.global_kernel_device, 
+                self.global_nb_of_tp)
                 
                 # transported_regression_momenta = parallel_transport(
                 # self.regression_control_points, regression_momenta, - registration_to_atlas_momenta, 
-                # self.global_kernel_width, self.global_kernel_type, self.global_kernel_device, 
-                # self.global_nb_of_tp, self.dense_mode, self.tensor_scalar_type)
+                # self.global_kernel_width, self.global_kernel_device, 
+                # self.global_nb_of_tp)
 
             # Save
             np.savetxt(self.momenta_for_single_subjects[i], transported_momenta)
@@ -559,7 +534,7 @@ class LongitudinalAtlasInitializer():
             logger.info('\Compute trajectory of subject {}\n'.format(self.global_subject_ids[i]))
             
             # Instantiate a geodesic.
-            geodesic = Geodesic(self.dense_mode, self.kernel, t0=self.global_tmin, 
+            geodesic = Geodesic(self.kernel, t0=self.global_tmin, 
                                 concentration_of_time_points=self.concentration_of_tp)
 
             geodesic.set_tmin(min([self.global_t0, self.global_visit_ages[i][0]]))

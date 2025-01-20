@@ -32,13 +32,10 @@ class PolyLine(Landmark):
     ####################################################################################################################
 
     @staticmethod
-    def _get_centers_and_normals(points, segments,
-                                 tensor_scalar_type=default.tensor_scalar_type,
-                                 tensor_integer_type=default.tensor_integer_type,
-                                 device='cpu'):
+    def _get_centers_and_normals(points, segments, device='cpu'):
 
-        points = utilities.move_data(points, dtype=tensor_scalar_type, device=device)
-        segments = utilities.move_data(segments, dtype=tensor_integer_type, device=device)
+        points = utilities.move_data(points, device=device)
+        segments = utilities.move_data(segments, integer = True, device=device)
 
         a = points[segments[:, 0]]
         b = points[segments[:, 1]]
@@ -48,10 +45,7 @@ class PolyLine(Landmark):
         assert torch.device(device) == centers.device == normals.device
         return centers, normals
 
-    def get_centers_and_normals(self, points=None,
-                                tensor_scalar_type=default.tensor_scalar_type,
-                                tensor_integer_type=default.tensor_integer_type,
-                                device='cpu'):
+    def get_centers_and_normals(self, points=None, device='cpu'):
         """
         Given a new set of points, use the corresponding connectivity available in the polydata
         to compute the new normals (which are tangents in this case) and centers
@@ -59,14 +53,13 @@ class PolyLine(Landmark):
         """
         if points is None:
             if not self.is_modified:
-                return (utilities.move_data(self.centers, dtype=tensor_scalar_type, device=device),
-                        utilities.move_data(self.normals, dtype=tensor_scalar_type, device=device))
+                return (utilities.move_data(self.centers, device=device),
+                        utilities.move_data(self.normals, device=device))
 
             else:
                 logger.debug('Call of PolyLine.get_centers_and_normals with is_modified=True flag.')
                 points = torch.from_numpy(self.points)
 
         return PolyLine._get_centers_and_normals(
-            points, torch.from_numpy(self.connectivity),
-            tensor_scalar_type=tensor_scalar_type, tensor_integer_type=tensor_integer_type, device=device)
+                points, torch.from_numpy(self.connectivity),device=device)
 

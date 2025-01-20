@@ -95,12 +95,9 @@ class LongitudinalAtlasInitializer():
         self.dataset_type = "mixed" if self.nb_of_longitudinal_subjects > 0 else "single_points"
 
         # Deformation parameters
-        self.global_dense_mode = self.xml_parameters.dense_mode #landmark points or not
-        self.global_tensor_scalar_type = default.tensor_scalar_type
-        self.global_kernel_type = self.xml_parameters.deformation_kernel_type #torch or keops
         self.global_kernel_width = self.xml_parameters.deformation_kernel_width
         self.global_kernel_device = self.xml_parameters.deformation_kernel_device
-        self.kernel = kernel_factory.factory(self.global_kernel_type, kernel_width=self.global_kernel_width)
+        self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
         self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
@@ -383,8 +380,8 @@ class LongitudinalAtlasInitializer():
 
                     # Find the control points and momenta that transforms the previously computed template into the individual.
                     registration_cp, registration_momenta = shoot(self.global_initial_cp, self.global_atlas_momenta[i],
-                                                                    self.global_kernel_width, self.global_kernel_type, 
-                                                                    self.global_nb_of_tp, self.global_dense_mode, self.global_tensor_scalar_type)
+                                                                    self.global_kernel_width, 
+                                                                    self.global_nb_of_tp)
 
                     # Use those cp for the regression.
                     np.savetxt(self.path_to_regression_cp[i], registration_cp)
@@ -398,8 +395,7 @@ class LongitudinalAtlasInitializer():
                     # Parallel transport of the estimated momenta.
                     _, transported_regression_momenta = parallel_transport(
                         regression_cp, regression_momenta, - registration_momenta, self.global_kernel_width, 
-                        self.global_kernel_type, self.global_kernel_device, self.global_nb_of_tp,
-                        self.global_dense_mode, self.global_tensor_scalar_type)
+                         self.global_kernel_device, self.global_nb_of_tp)
                     
                     # Increment the global initial momenta.
                     self.global_initial_momenta += transported_regression_momenta/float(self.nb_of_longitudinal_subjects)
@@ -421,8 +417,8 @@ class LongitudinalAtlasInitializer():
 
         self.define_heuristics_outputs()
 
-        global_initial_cp_torch = torch.from_numpy(self.global_initial_cp).type(self.global_tensor_scalar_type)
-        global_initial_momenta_torch = torch.from_numpy(self.global_initial_momenta).type(self.global_tensor_scalar_type)
+        global_initial_cp_torch = torch.from_numpy(self.global_initial_cp).type(default.tensor_scalar_type)
+        global_initial_momenta_torch = torch.from_numpy(self.global_initial_momenta).type(default.tensor_scalar_type)
         global_initial_momenta_norm_squared = torch.dot(global_initial_momenta_torch.view(-1), 
                                                         self.kernel.convolve(
                                                         global_initial_cp_torch, global_initial_cp_torch,
@@ -440,7 +436,7 @@ class LongitudinalAtlasInitializer():
                 heuristic_accelerations.append(1.0)
             else:
                 regression_momenta = read_3D_array(self.transported_regression_momenta_path[i])
-                regression_momenta_torch = torch.from_numpy(regression_momenta).type(self.global_tensor_scalar_type)
+                regression_momenta_torch = torch.from_numpy(regression_momenta).type(default.tensor_scalar_type)
                 sc_product_with_pop_momenta = torch.dot(global_initial_momenta_torch.view(-1), self.kernel.convolve(
                                                     global_initial_cp_torch, global_initial_cp_torch, 
                                                     regression_momenta_torch).view(-1)).detach().cpu().numpy()
@@ -496,8 +492,8 @@ class LongitudinalAtlasInitializer():
 
         self.define_heuristics_outputs()
 
-        global_initial_cp_torch = torch.from_numpy(self.global_initial_cp).type(self.global_tensor_scalar_type)
-        global_initial_momenta_torch = torch.from_numpy(self.global_initial_momenta).type(self.global_tensor_scalar_type)
+        global_initial_cp_torch = torch.from_numpy(self.global_initial_cp).type(default.tensor_scalar_type)
+        global_initial_momenta_torch = torch.from_numpy(self.global_initial_momenta).type(default.tensor_scalar_type)
         global_initial_momenta_norm_squared = torch.dot(global_initial_momenta_torch.view(-1), 
                                                         self.kernel.convolve(
                                                         global_initial_cp_torch, global_initial_cp_torch,
@@ -515,7 +511,7 @@ class LongitudinalAtlasInitializer():
                 heuristic_accelerations.append(1.0)
             else:
                 regression_momenta = read_3D_array(self.transported_regression_momenta_path[i])
-                regression_momenta_torch = torch.from_numpy(regression_momenta).type(self.global_tensor_scalar_type)
+                regression_momenta_torch = torch.from_numpy(regression_momenta).type(default.tensor_scalar_type)
                 sc_product_with_pop_momenta = torch.dot(global_initial_momenta_torch.view(-1), self.kernel.convolve(
                                                     global_initial_cp_torch, global_initial_cp_torch, 
                                                     regression_momenta_torch).view(-1)).detach().cpu().numpy()
@@ -572,16 +568,16 @@ class LongitudinalAtlasInitializer():
             logger.info('\n[ shoot from the average baseline age to the global average ]')
 
             # Instantiate a geodesic.
-            geodesic = Geodesic(self.global_dense_mode, self.kernel, t0=self.global_tmin, 
+            geodesic = Geodesic(self.kernel, t0=self.global_tmin, 
                                 concentration_of_time_points=self.concentration_of_tp)
             geodesic.set_tmin(self.global_tmin) #average 1st observation age
             geodesic.set_tmax(self.global_t0) #average observation ages
 
             # Set the template, control points and momenta and update.
-            template_points_t0 = {key: Variable(torch.from_numpy(value).type(self.global_tensor_scalar_type), requires_grad=False)
+            template_points_t0 = {key: Variable(torch.from_numpy(value).type(default.tensor_scalar_type), requires_grad=False)
                                 for key, value in self.global_initial_template.get_points().items()}
-            control_points_t0 = Variable(torch.from_numpy(self.global_initial_cp).type(self.global_tensor_scalar_type))
-            momenta_t0 = Variable(torch.from_numpy(self.global_initial_momenta).type(self.global_tensor_scalar_type), requires_grad=False)
+            control_points_t0 = Variable(torch.from_numpy(self.global_initial_cp).type(default.tensor_scalar_type))
+            momenta_t0 = Variable(torch.from_numpy(self.global_initial_momenta).type(default.tensor_scalar_type), requires_grad=False)
             
             geodesic.set_template_points_t0(template_points_t0)
             geodesic.set_control_points_t0(control_points_t0)
@@ -589,7 +585,7 @@ class LongitudinalAtlasInitializer():
             geodesic.update()
 
             geodesic.write('Shooting', self.global_objects_name, self.global_objects_ext, self.global_initial_template,
-                        template_data = {key: Variable(torch.from_numpy(value).type(self.global_tensor_scalar_type), requires_grad=False)
+                        template_data = {key: Variable(torch.from_numpy(value).type(default.tensor_scalar_type), requires_grad=False)
                         for key, value in self.global_initial_template_data.items()}, 
                         output_dir = self.shooting_output_path, write_adjoint_parameters=True)
 

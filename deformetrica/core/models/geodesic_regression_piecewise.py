@@ -23,9 +23,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
                  deformation_kernel_width=default.deformation_kernel_width,
@@ -39,11 +36,9 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
                  initial_momenta=default.initial_momenta,
                  freeze_rupture_time = default.freeze_rupture_time,
-                 freeze_components = default.freeze_rupture_time,
                  freeze_t0 = default.freeze_rupture_time, # ajout fg
 
                  gpu_mode=default.gpu_mode,
@@ -57,9 +52,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
         self.number_of_processes = number_of_processes
 
         # Declare model structure.
@@ -70,15 +62,12 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         self.freeze_template = freeze_template
         self.freeze_momenta = False
-        self.freeze_control_points = freeze_control_points
         self.freeze_rupture_time = freeze_rupture_time
-        self.freeze_components = True
 
         self.weights = weights
 
         # Deformation.
-        self.geodesic = PiecewiseGeodesic(dense_mode=dense_mode,
-                t0 = t0, nb_components = self.nb_components, template_tR=None,
+        self.geodesic = PiecewiseGeodesic(t0 = t0, nb_components = self.nb_components, template_tR=None,
                 kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
                 concentration_of_time_points=concentration_of_time_points,
                 use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
@@ -116,7 +105,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Make the template bouding box wider in order to array dim x 2 (max and min)
         # Control points and Momenta.
         self.fixed_effects['control_points'] = initialize_control_points(initial_control_points, 
-            self.template, initial_cp_spacing, deformation_kernel_width, self.dimension, self.dense_mode, 
+            self.template, initial_cp_spacing, deformation_kernel_width, self.dimension, 
             new_bounding_box = new_bounding_box)
         self.fixed_effects['momenta']= initialize_momenta(
             initial_momenta, len(self.fixed_effects['control_points']), self.dimension, 
@@ -199,8 +188,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         if not self.freeze_template:
             for key, value in self.fixed_effects['template_data'].items():
                 out[key] = value
-        if not self.freeze_control_points:
-            out['control_points'] = self.fixed_effects['control_points']
         if not self.freeze_rupture_time:
             out['rupture_time'] = self.fixed_effects['rupture_time']
 
@@ -212,8 +199,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         if not self.freeze_template:
             template_data = {key: fixed_effects[key] for key in self.fixed_effects['template_data'].keys()}
             self.set_template_data(template_data)
-        if not self.freeze_control_points:
-            self.set_control_points(fixed_effects['control_points'])
         if not self.freeze_rupture_time:
             for i in range(self.nb_components - 1):
                 self.set_rupture_time(fixed_effects['rupture_time'], i)
@@ -244,8 +229,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
                         gradient['landmark_points'].detach())
 
             # Control points and momenta.
-            if not self.freeze_control_points: 
-                gradient['control_points'] = control_points.grad
             if not self.freeze_rupture_time:
                 gradient['rupture_time'] = rupture_time.grad
             if not self.freeze_momenta:
@@ -351,7 +334,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         return self.compute_gradients(attachement, regularity, template_data, template_points,
                                         control_points, momenta, rupture_time, with_grad=with_grad)
         
-
     def mini_batches(self, dataset, number_of_batches):
         batch_size = len(dataset.deformable_objects[0])//number_of_batches
 
@@ -444,108 +426,36 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         """
         # Template data.
         template_data = self.fixed_effects['template_data']
-        template_data = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_data = {key: utilities.move_data(value, 
                                                   requires_grad=(not self.freeze_template and with_grad),
                                                   device=device)
                          for key, value in template_data.items()}
 
         # Template points.
         template_points = self.template.get_points()
-        template_points = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_points = {key: utilities.move_data(value,
                                                     requires_grad=(not self.freeze_template and with_grad),
                                                     device=device)
                            for key, value in template_points.items()}
 
         # Control points.
-        if self.dense_mode:
-            assert (('landmark_points' in self.template.get_points().keys()) and
-                    ('image_points' not in self.template.get_points().keys())), \
-                'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template_points['landmark_points']
-        else:
-            control_points = self.fixed_effects['control_points']
-            control_points = utilities.move_data(control_points, dtype=self.tensor_scalar_type,
-                                                 requires_grad=(not self.freeze_control_points and with_grad),
-                                                 device=device)
+        control_points = self.fixed_effects['control_points']
+        control_points = utilities.move_data(control_points, requires_grad=False, device=device)
 
         # Momenta.
         momenta = self.get_momenta()
-        momenta = utilities.move_data(momenta, dtype=self.tensor_scalar_type,
-                                      requires_grad=with_grad, device=device)
+        momenta = utilities.move_data(momenta, requires_grad=with_grad, device=device)
         
         # Rupture time
         rupture_time = self.fixed_effects['rupture_time']
-        rupture_time = utilities.move_data(rupture_time, dtype=self.tensor_scalar_type,
-                                            requires_grad=with_grad, device=device)
+        rupture_time = utilities.move_data(rupture_time, requires_grad=with_grad, device=device)
 
         return template_data, template_points, control_points, momenta, rupture_time
         
 
     ####################################################################################################################
     ### Writing methods:
-    ####################################################################################################################        
-    # def add_component(self, dataset, c, new_tR=None):
-        
-    #     # Add rupture time
-    #     tmin = min(math.trunc(min(dataset.times[0])), self.t0)
-    #     tmax = math.ceil(max(dataset.times[0]))
-    #     tR = self.get_rupture_time().tolist()
-
-    #     rupture_times = [tmin] + tR + [tmax]
-
-    #     if rupture_times[c + 1] - rupture_times[c] <= 1:
-    #         return False
-        
-    #     if new_tR is None:
-    #         new_tR = (rupture_times[c] + rupture_times[c + 1])/2
-        
-    #     self.nb_components += 1
-        
-    #     tR.insert(c, new_tR)
-    #     self.fixed_effects['rupture_time'] = np.array(tR)
-    #     self.get_template_index()
-        
-    #     logger.info("Adding component at time {}, breaking geodesic nb {}".format(new_tR, c))
-    #     print("new tR", tR)
-    #     print(self.nb_components)
-
-    #     # # /!\ Momenta is divided by old length in here (mandatory)
-
-    #     # Update momenta
-    #     momenta = np.zeros((self.nb_components, self.get_control_points().shape[0], self.dimension))
-
-    #     for i in range(self.nb_components):
-    #         if i <= c:
-    #             print("momenta of component {} (time)= momenta {}".format(i, i, tR[i]))
-    #             momenta[i] = self.get_momenta()[i]
-    #         elif i == c+1:
-    #             start_time_t = self.geodesic.nb_of_tp(tR[c] - tmin) -1   
-    #             momenta[i] = self.geodesic.get_momenta_trajectory()[start_time_t].cpu().numpy()
-    #         elif i > c + 1:
-    #             momenta[i] = self.get_momenta()[i-1]  
-        
-    #     self.set_momenta(momenta)
-
-    #     # Get torch tensors
-    #     device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
-    #     _, template_points, _, momenta, tR = self._fixed_effects_to_torch_tensors(False, device=device)
-    #     self.geodesic.add_component()
-
-    #     self.geodesic.set_tR(tR)
-    #     self.geodesic.set_t0(tR[self.template_index]) #ajout fg
-    #     self.geodesic.set_tmax(tmax)
-    #     self.geodesic.set_tmin(tmin)
-
-    #     self.geodesic.set_momenta_tR(momenta)
-        
-    #     # Update geodesic and spt
-    #     self.geodesic.add_exponential(c)
-
-    #     self.geodesic.set_template_points_tR(template_points)
-    #     self.geodesic.update()
-
-    #     return True
-    
+    ####################################################################################################################            
     def prepare_geodesic(self, dataset, device = "cpu", tmax = None):
         template_data, template_points, control_points, momenta, rupture_time = \
             self._fixed_effects_to_torch_tensors(False)

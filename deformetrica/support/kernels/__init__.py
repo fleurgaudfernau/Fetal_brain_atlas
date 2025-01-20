@@ -11,10 +11,9 @@ class Type(Enum):
     NO_KERNEL = None
     KEOPS = KeopsKernel
 
-
 instance_map = dict()
 
-def factory(cuda_type=None, gpu_mode=None, *args, **kwargs):
+def factory(kernel_type = "KEOPS", cuda_type=None, gpu_mode=None, *args, **kwargs):
     """Return an instance of a kernel corresponding to the requested kernel_type"""
     
     if cuda_type is None:
@@ -22,9 +21,15 @@ def factory(cuda_type=None, gpu_mode=None, *args, **kwargs):
     if gpu_mode is None:
         gpu_mode = default.gpu_mode
 
-    kernel_type = Type["KEOPS"]
+    # turn enum string to enum object
+    if isinstance(kernel_type, str):
+        try:
+            for c in [' ', '-']:    # chars to be replaced for normalization
+                kernel_type = kernel_type.replace(c, '_')
+            kernel_type = Type[kernel_type.upper()]
+        except:
+            raise TypeError('kernel_type ' + kernel_type + ' could not be found')
 
-    #modif fg
     if not isinstance(kernel_type, Type):
         raise TypeError('kernel_type must be an instance of KernelType Enum')
 

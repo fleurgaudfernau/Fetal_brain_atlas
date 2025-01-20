@@ -30,7 +30,6 @@ def get_estimator_options(xml_parameters):
         options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
 
     elif xml_parameters.optimization_method_type.lower() == 'ScipyLBFGS'.lower():
-        options['memory_length'] = xml_parameters.memory_length
         options['freeze_template'] = xml_parameters.freeze_template
         options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
         options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
@@ -66,7 +65,6 @@ def get_model_options(xml_parameters):
         'use_rk2_for_shoot': xml_parameters.use_rk2_for_shoot,
         'use_rk2_for_flow': xml_parameters.use_rk2_for_flow,
         'freeze_template': xml_parameters.freeze_template,
-        'freeze_control_points': xml_parameters.freeze_control_points,
         'freeze_momenta': xml_parameters.freeze_momenta,
         'freeze_noise_variance': xml_parameters.freeze_noise_variance,
         'use_sobolev_gradient': xml_parameters.use_sobolev_gradient,
@@ -74,20 +72,16 @@ def get_model_options(xml_parameters):
         'initial_control_points': xml_parameters.initial_control_points,
         'initial_cp_spacing': xml_parameters.initial_cp_spacing,
         'initial_momenta': xml_parameters.initial_momenta,
-        'dense_mode': xml_parameters.dense_mode,
         'number_of_processes': xml_parameters.number_of_processes,
         'downsampling_factor': xml_parameters.downsampling_factor,
         'dimension': xml_parameters.dimension,
         'gpu_mode': xml_parameters.gpu_mode,
-        'dtype': xml_parameters.dtype,
-        'tensor_scalar_type': utilities.get_torch_scalar_type(dtype=xml_parameters.dtype),
-        'tensor_integer_type': utilities.get_torch_integer_type(dtype=xml_parameters.dtype),
-        'random_seed': xml_parameters.random_seed,
         'perform_shooting':xml_parameters.perform_shooting, #ajout fg
         'interpolation':xml_parameters.interpolation #ajout fg
     }
 
-    if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 'LongitudinalAtlasSimplified'.lower(), 
+    if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 
+                                            'LongitudinalAtlasSimplified'.lower(), 
                                             'LongitudinalRegistration'.lower()]:
         options['t0'] = xml_parameters.t0
         options['tR'] = xml_parameters.tR
@@ -124,7 +118,6 @@ def get_model_options(xml_parameters):
         options['t1'] = xml_parameters.t1
         options['freeze_reference_time'] = xml_parameters.freeze_reference_time
         options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
-        options['freeze_components'] = xml_parameters.freeze_components 
 
     elif xml_parameters.model_type.lower() == 'ParallelTransport'.lower():
         options['t0'] = xml_parameters.t0
@@ -150,11 +143,6 @@ class XmlParameters:
     ####################################################################################################################
 
     def __init__(self):
-        self.dtype = default.dtype
-        self.random_seed = default.random_seed
-        self.tensor_scalar_type = default.tensor_scalar_type
-        self.tensor_integer_type = default.tensor_scalar_type
-
         self.model_type = default.model_type
         self.template_specifications = default.template_specifications
         self.deformation_kernel_width = 0
@@ -192,12 +180,9 @@ class XmlParameters:
         self.line_search_shrink = default.line_search_shrink
         self.line_search_expand = default.line_search_expand
         self.convergence_tolerance = default.convergence_tolerance
-        self.memory_length = default.memory_length
         self.scale_initial_step_size = default.scale_initial_step_size
         self.downsampling_factor = default.downsampling_factor
         self.interpolation = default.interpolation #ajout fg
-
-        self.dense_mode = default.dense_mode
 
         self.gpu_mode = default.gpu_mode
         self._cuda_is_used = default._cuda_is_used  # true if at least one operation will use CUDA.
@@ -207,7 +192,6 @@ class XmlParameters:
         self.load_state_file = False
 
         self.freeze_template = default.freeze_template
-        self.freeze_control_points = default.freeze_control_points
         self.multiscale_momenta = default.multiscale_momenta #ajout fg
         self.multiscale_images = default.multiscale_images #ajout fg
         self.multiscale_meshes = default.multiscale_meshes
@@ -221,7 +205,6 @@ class XmlParameters:
         self.freeze_modulation_matrix = default.freeze_modulation_matrix
         self.freeze_reference_time = default.freeze_reference_time
         self.freeze_rupture_time = default.freeze_rupture_time
-        self.freeze_components = default.freeze_rupture_time
         self.freeze_time_shift_variance = default.freeze_time_shift_variance
         self.freeze_acceleration_variance = default.freeze_acceleration_variance
         self.freeze_noise_variance = default.freeze_noise_variance
@@ -250,30 +233,12 @@ class XmlParameters:
         self.acceleration_proposal_std = default.acceleration_proposal_std
         self.sources_proposal_std = default.sources_proposal_std
 
-        # For scalar inputs:
-        # self.group_file = default.group_file
-        # self.observations_file = default.observations_file
-        # self.timepoints_file = default.timepoints_file
-        # self.v0 = default.v0
-        # self.p0 = default.p0
-        # self.metric_parameters_file = default.metric_parameters_file
-        # self.interpolation_points_file = default.interpolation_points_file
-        # self.initial_noise_variance = default.initial_noise_variance
-        # self.exponential_type = default.exponential_type
-        # self.number_of_metric_parameters = default.number_of_metric_parameters  # number of parameters in metric learning.
-        # self.number_of_interpolation_points = default.number_of_interpolation_points
-        # self.latent_space_dimension = default.latent_space_dimension  # For deep metric learning
-
-        self.normalize_image_intensity = default.normalize_image_intensity
-        self.initialization_heuristic = default.initialization_heuristic
-
         self.nb_classes = 1
 
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
 
-    # Read the parameters from the three PyDeformetrica input xmls, and some further parameters initialization.
     def read_all_xmls(self, model_xml_path, dataset_xml_path, optimization_parameters_xml_path):
         self._read_model_xml(model_xml_path)
         self._read_dataset_xml(dataset_xml_path)
@@ -293,12 +258,8 @@ class XmlParameters:
             if model_xml_level1.tag.lower() == 'model-type':
                 self.model_type = model_xml_level1.text.lower()
             
-            #ajouts vd
             elif model_xml_level1.tag.lower() == 'nb-classes':
                 self.nb_classes = int(model_xml_level1.text)
-
-            elif model_xml_level1.tag.lower() == 'space-between-modules':
-                self.space_between_modules = int(model_xml_level1.text)
 
             elif model_xml_level1.tag.lower() == 'num-component':
                 if self.nb_classes > 1:
@@ -310,18 +271,8 @@ class XmlParameters:
                 else:
                     self.num_component = int(model_xml_level1.text)
 
-            ##########
             elif model_xml_level1.tag.lower() == 'dimension':
                 self.dimension = int(model_xml_level1.text)
-
-            elif model_xml_level1.tag.lower() == 'dtype':
-                self.dtype = model_xml_level1.text.lower()
-                self.tensor_scalar_type = utilities.get_torch_scalar_type(dtype=self.dtype)
-                self.tensor_integer_type = utilities.get_torch_integer_type(dtype=self.dtype)
-                # default.update_dtype(new_dtype=self.dtype)
-
-            elif model_xml_level1.tag.lower() == 'random-seed':
-                self.random_seed = int(model_xml_level1.text)
 
             elif model_xml_level1.tag.lower() == 'initial-cp-spacing':
                 self.initial_cp_spacing = float(model_xml_level1.text)
@@ -386,10 +337,7 @@ class XmlParameters:
             elif model_xml_level1.tag.lower() == 'template':
                 for model_xml_level2 in model_xml_level1:
 
-                    if model_xml_level2.tag.lower() == 'dense-mode':
-                        self.dense_mode = self._on_off_to_bool(model_xml_level2.text)
-
-                    elif model_xml_level2.tag.lower() == 'object':
+                    if model_xml_level2.tag.lower() == 'object':
 
                         template_object = self._initialize_template_object_xml_parameters()
                         for model_xml_level3 in model_xml_level2:
@@ -495,16 +443,6 @@ class XmlParameters:
                     
                     visit_ages.append(subject_ages)
 
-                # For scalar input, following leasp model
-                if dataset_xml_level1.tag.lower() == 'group-file':
-                    self.group_file = dataset_xml_level1.text
-
-                if dataset_xml_level1.tag.lower() == 'timepoints-file':
-                    self.timepoints_file = dataset_xml_level1.text
-
-                if dataset_xml_level1.tag.lower() == 'observations-file':
-                    self.observations_file = dataset_xml_level1.text
-
             self.dataset_filenames = dataset_filenames
             self.visit_ages = visit_ages
             self.subject_ids = subject_ids
@@ -526,8 +464,6 @@ class XmlParameters:
                     self.max_iterations = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'convergence-tolerance':
                     self.convergence_tolerance = float(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'memory-length':
-                    self.memory_length = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'downsampling-factor':
                     self.downsampling_factor = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'interpolation':
@@ -544,8 +480,6 @@ class XmlParameters:
                     self.initial_step_size = float(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-template':
                     self.freeze_template = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-control-points':
-                    self.freeze_control_points = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-momenta': #ajout fg
                     self.multiscale_momenta = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'multiscale-images': #ajout fg
@@ -596,8 +530,6 @@ class XmlParameters:
                     self.freeze_reference_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-rupture-time':
                     self.freeze_rupture_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-components':
-                    self.freeze_components = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-time-shift-variance':
                     self.freeze_time_shift_variance = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-acceleration-variance':

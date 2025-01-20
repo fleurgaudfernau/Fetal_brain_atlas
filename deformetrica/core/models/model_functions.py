@@ -2,7 +2,6 @@ import math
 import torch
 
 from ...in_out.array_readers_and_writers import *
-from ...in_out.image_functions import points_to_voxels_transform, metric_to_image_radial_length
 
 
 import logging
@@ -58,10 +57,8 @@ def initialize_momenta(initial_momenta, number_of_control_points, dimension,
 
     return momenta
 
-
 def initialize_covariance_momenta_inverse(control_points, kernel, dimension):
     return np.kron(kernel.get_kernel_matrix(torch.from_numpy(control_points)).detach().numpy(), np.eye(dimension))
-
 
 def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_points, number_of_sources, dimension):
     if initial_modulation_matrix is not None:
@@ -78,7 +75,6 @@ def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_po
         modulation_matrix = np.zeros((number_of_control_points * dimension, number_of_sources))
 
     return modulation_matrix
-
 
 
 def initialize_sources(initial_sources, number_of_subjects, number_of_sources):
@@ -116,7 +112,6 @@ def create_regular_grid_of_points(box, spacing, dimension):
     Creates a regular grid of 2D or 3D points, as a numpy array of size nb_of_points x dimension.
     box: (dimension, 2)
     """
-
     axis = []
     for d in range(dimension):
         min = box[d, 0]
@@ -172,15 +167,13 @@ def create_regular_grid_of_points(box, spacing, dimension):
     return control_points
 
 
-def remove_useless_control_points(control_points, image, kernel_width):
-    control_voxels = points_to_voxels_transform(control_points, image.affine)  # To be modified if image + mesh case.
-    kernel_voxel_width = metric_to_image_radial_length(kernel_width, image.affine)
+def remove_useless_control_points(control_voxels, image, kernel_width):
 
     intensities = image.get_intensities()
     image_shape = intensities.shape
 
     threshold = 1e-5
-    region_size = 2 * kernel_voxel_width
+    region_size = 2 * kernel_width
 
     final_control_points = []
     for control_point, control_voxel in zip(control_points, control_voxels):

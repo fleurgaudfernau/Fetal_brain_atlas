@@ -95,13 +95,10 @@ class KeopsKernel(AbstractKernel):
                     "Py = Vj(" + str(dimension) + ")"],
                     reduction_op='Sum', axis=1))
 
-                
-
     def __eq__(self, other):
         return AbstractKernel.__eq__(self, other) and self.cuda_type == other.cuda_type
 
     def convolve(self, x, y, p, mode='gaussian'):
-        #print(self.kernel_width)
         if mode == 'gaussian':
             assert isinstance(x, torch.Tensor), 'x variable must be a torch Tensor'
             assert isinstance(y, torch.Tensor), 'y variable must be a torch Tensor'

@@ -1,22 +1,18 @@
-import os.path
+import os.path as op
 import PIL.Image as pimg
 import nibabel as nib
 import numpy as np
 import torch
 from copy import deepcopy
 
-from ....in_out.image_functions import rescale_image_intensities, points_to_voxels_transform
+from ....in_out.image_functions import rescale_image_intensities
 from ....support import utilities
 from ....core import default
-from skimage.restoration import denoise_tv_chambolle
-from cv2 import bilateralFilter, blur, cvtColor
+from cv2 import blur
 from scipy.ndimage import gaussian_filter, median_filter
-
-
 
 import logging
 logger = logging.getLogger(__name__)
-
 
 def image_average_filter(intensities):
         return blur(intensities, ksize=(2,2))
@@ -37,12 +33,10 @@ class Image:
     have the same number of points with a point-to-point correspondence.
 
     """
-
     ####################################################################################################################
     ### Constructor:
     ####################################################################################################################
 
-    # Constructor.
     def __init__(self, intensities, intensities_dtype, affine, interpolation=default.interpolation, object_filename = None):
         self.object_filename = object_filename
         
@@ -113,8 +107,7 @@ class Image:
 
         return intensities
 
-    # @jit(parallel=True)
-    def get_deformed_intensities(self, deformed_points, intensities):
+    def get_deformed_intensities(self, deformed_voxels, intensities):
         """
         Torch input / output.
         Interpolation function with zero-padding.
@@ -122,27 +115,24 @@ class Image:
         
         # for intensities: mode = "bi/trilinear"
         # for segmentations: mode = "nearest"
+
         options = {}        
         options["align_corners"] = True
         options["mode"] = "bilinear" if self.dimension == 2 else "trilinear"
-        #options["mode"], options["align_corners"] = "nearest", None
-        #self.interpolation = "nearest"
 
-        assert isinstance(deformed_points, torch.Tensor)
+        assert isinstance(deformed_voxels, torch.Tensor)
         assert isinstance(intensities, torch.Tensor)
 
-        intensities = utilities.move_data(intensities, dtype=deformed_points.type(), device=deformed_points.device)
-        assert deformed_points.device == intensities.device
+        intensities = utilities.move_data(intensities, dtype=deformed_voxels.type(), device=deformed_voxels.device)
+        assert deformed_voxels.device == intensities.device
 
-        tensor_integer_type = {'cpu': 'torch.LongTensor','cuda': 'torch.cuda.LongTensor'}[deformed_points.device.type]
+        tensor_integer_type = {'cpu': 'torch.LongTensor','cuda': 'torch.cuda.LongTensor'}[deformed_voxels.device.type]
 
         image_shape = self.intensities.shape
-        deformed_voxels = points_to_voxels_transform(deformed_points, self.affine) #does nothin: returns deformed_points
-        assert deformed_points.device == deformed_voxels.device, 'tensors must be on the same device'
 
         if self.dimension == 2:
             if not self.downsampling_factor == 1:
-                shape = deformed_points.shape
+                shape = deformed_voxels.shape
                 deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(2, 0, 1).contiguous().view(1, shape[2], shape[0], shape[1]),
                                                                   size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 0).contiguous()
 
@@ -174,18 +164,17 @@ class Image:
 
         elif self.dimension == 3:
             if not self.downsampling_factor == 1:
-                shape = deformed_points.shape
+                shape = deformed_voxels.shape
                 deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(3, 0, 1, 2).contiguous().view(1, shape[3], shape[0], shape[1], shape[2]),
                                                                   size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 3, 0).contiguous()
 
             u, v, w = deformed_voxels.view(-1, 3)[:, 0], \
                       deformed_voxels.view(-1, 3)[:, 1], \
                       deformed_voxels.view(-1, 3)[:, 2]
-            #print("1.11: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
+
             u1 = torch.floor(u.detach()) #a new tensor from u
             v1 = torch.floor(v.detach())
             w1 = torch.floor(w.detach())
-            #print("1.12: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
             u1 = torch.clamp(u1, 0, image_shape[0] - 1)
             v1 = torch.clamp(v1, 0, image_shape[1] - 1)
@@ -193,7 +182,6 @@ class Image:
             u2 = torch.clamp(u1 + 1, 0, image_shape[0] - 1)
             v2 = torch.clamp(v1 + 1, 0, image_shape[1] - 1)
             w2 = torch.clamp(w1 + 1, 0, image_shape[2] - 1)
-            #print("1.13: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
             fu = u - u1
             fv = v - v1
@@ -201,7 +189,6 @@ class Image:
             gu = (u1 + 1) - u
             gv = (v1 + 1) - v
             gw = (w1 + 1) - w
-            #print("1.14: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
             if self.interpolation == "nearest":
                 gu = gu > 0.5
@@ -219,101 +206,15 @@ class Image:
                                     intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * gv * fw +
                                     intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * fv * gw +
                                     intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * fv * fw).view(image_shape)
-            #print("1.2: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-            del u
-            del v
-            del w
-            del u1
-            del v1
-            del w1
-            del u2
-            del v2
-            del w2
-            del fu
-            del fv 
-            del fw
-            del gu
-            del gv
-            del gw
-            torch.cuda.empty_cache()
-            # print("1.3: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-        
-            # if not self.downsampling_factor == 1:
-            #     shape = deformed_points.shape
-            #     deformed_voxels = torch.nn.functional.interpolate(deformed_voxels.permute(3, 0, 1, 2).contiguous().view(1, shape[3], shape[0], shape[1], shape[2]),
-            #                                                       size=image_shape, mode=options["mode"], align_corners=options["align_corners"])[0].permute(1, 2, 3, 0).contiguous()
-            
-            # u1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 0].detach()), 0, image_shape[0] - 1)
-            # v1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 1].detach()), 0, image_shape[1] - 1)
-            # w1 = torch.clamp(torch.floor(deformed_voxels.view(-1, 3)[:, 2].detach()), 0, image_shape[2] - 1)
-            # u2 = torch.clamp(u1 + 1, 0, image_shape[0] - 1)
-            # v2 = torch.clamp(v1 + 1, 0, image_shape[1] - 1)
-            # w2 = torch.clamp(w1 + 1, 0, image_shape[2] - 1)
-            # #print("1.13: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-
-            # fu = deformed_voxels.view(-1, 3)[:, 0] - u1
-            # fv = deformed_voxels.view(-1, 3)[:, 1] - v1
-            # fw = deformed_voxels.view(-1, 3)[:, 2] - w1
-            # gu = (u1 + 1) - deformed_voxels.view(-1, 3)[:, 0] - u1
-            # gv = (v1 + 1) - deformed_voxels.view(-1, 3)[:, 1]
-            # gw = (w1 + 1) - deformed_voxels.view(-1, 3)[:, 2]
-            # #print("1.14: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-
-            # if self.interpolation == "nearest":
-            #     gu = gu > 0.5
-            #     fu = ~ gu
-            #     gv = gv > 0.5
-            #     fv = ~gv
-            #     gw = gw > 0.5
-            #     fw = ~gw
-            
-            # deformed_intensities = (intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * gv * gw +
-            #                         intensities[u1.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * gu * gv * fw +
-            #                         intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * gu * fv * gw +
-            #                         intensities[u1.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * gu * fv * fw +
-            #                         intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * gv * gw +
-            #                         intensities[u2.type(tensor_integer_type), v1.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * gv * fw +
-            #                         intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w1.type(tensor_integer_type)] * fu * fv * gw +
-            #                         intensities[u2.type(tensor_integer_type), v2.type(tensor_integer_type), w2.type(tensor_integer_type)] * fu * fv * fw).view(image_shape)
-            # #print("1.2: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-            
-            
-            # del u1
-            # del v1
-            # del w1
-            # del u2
-            # del v2
-            # del w2
-            # del fu
-            # del fv 
-            # del fw
-            # del gu
-            # del gv
-            # del gw
-            # torch.cuda.empty_cache()
-            #print("1.3: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
 
         else:
             raise RuntimeError('Incorrect dimension of the ambient space: %d' % self.dimension)
         
-        del deformed_points
-        del deformed_voxels
-        del intensities
-        torch.cuda.empty_cache()
-        #print("1.4: %fGB"%(100*torch.cuda.memory_allocated("cuda")/torch.cuda.memory_reserved("cuda")))
-
         return deformed_intensities
 
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
-
-    # # Update the relevant information.
-    # def update(self):
-    #     if self.is_modified:
-    #         self._update_corner_point_positions()
-    #         self.update_bounding_box()
-    #         self.is_modified = False
 
     def update_bounding_box(self):
         """
@@ -331,14 +232,14 @@ class Image:
         intensities_rescaled = rescale_image_intensities(intensities, self.intensities_dtype)
 
         if name.find(".png") > 0:
-            pimg.fromarray(intensities_rescaled).save(os.path.join(output_dir, name))
+            pimg.fromarray(intensities_rescaled).save(op.join(output_dir, name))
         elif name.find(".nii") > 0:
             if "/" in name:
                 name = name.split("/")[-1] #ajout fg
             img = nib.Nifti1Image(intensities_rescaled, self.affine)
-            nib.save(img, os.path.join(output_dir, name))
+            nib.save(img, op.join(output_dir, name))
         elif name.find(".npy") > 0:
-            np.save(os.path.join(output_dir, name), intensities_rescaled)
+            np.save(op.join(output_dir, name), intensities_rescaled)
         else:
             raise ValueError('Writing images with the given extension "%s" is not coded yet.' % name)
 
@@ -350,22 +251,20 @@ class Image:
         if self.dimension == 2:
             corner_points = np.zeros((4, 2))
             umax, vmax = np.subtract(self.intensities.shape, (1, 1))
-            corner_points[0] = np.array([0, 0])
-            corner_points[1] = np.array([umax, 0])
-            corner_points[2] = np.array([0, vmax])
-            corner_points[3] = np.array([umax, vmax])
+            corner_points[1] = [umax, 0]
+            corner_points[2] = [0, vmax]
+            corner_points[3] = [umax, vmax]
 
         elif self.dimension == 3:
             corner_points = np.zeros((8, 3))
             umax, vmax, wmax = np.subtract(self.intensities.shape, (1, 1, 1))
-            corner_points[0] = np.array([0, 0, 0])
-            corner_points[1] = np.array([umax, 0, 0])
-            corner_points[2] = np.array([0, vmax, 0])
-            corner_points[3] = np.array([umax, vmax, 0])
-            corner_points[4] = np.array([0, 0, wmax])
-            corner_points[5] = np.array([umax, 0, wmax])
-            corner_points[6] = np.array([0, vmax, wmax])
-            corner_points[7] = np.array([umax, vmax, wmax])
+            corner_points[1] = [umax, 0, 0]
+            corner_points[2] = [0, vmax, 0]
+            corner_points[3] = [umax, vmax, 0]
+            corner_points[4] = [0, 0, wmax]
+            corner_points[5] = [umax, 0, wmax]
+            corner_points[6] = [0, vmax, wmax]
+            corner_points[7] = [umax, vmax, wmax]
 
         #################################
         # VERSION FOR IMAGE + MESH DATA #
@@ -373,22 +272,22 @@ class Image:
         # if self.dimension == 2:
         #     corner_points = np.zeros((4, 2))
         #     umax, vmax = np.subtract(self.intensities.shape, (1, 1))
-        #     corner_points[0] = np.dot(self.affine[0:2, 0:2], np.array([0, 0])) + self.affine[0:2, 2]
-        #     corner_points[1] = np.dot(self.affine[0:2, 0:2], np.array([umax, 0])) + self.affine[0:2, 2]
-        #     corner_points[2] = np.dot(self.affine[0:2, 0:2], np.array([0, vmax])) + self.affine[0:2, 2]
-        #     corner_points[3] = np.dot(self.affine[0:2, 0:2], np.array([umax, vmax])) + self.affine[0:2, 2]
+        #     corner_points[0] = np.dot(self.affine[0:2, 0:2], [0, 0]) + self.affine[0:2, 2]
+        #     corner_points[1] = np.dot(self.affine[0:2, 0:2], [umax, 0]) + self.affine[0:2, 2]
+        #     corner_points[2] = np.dot(self.affine[0:2, 0:2], [0, vmax]) + self.affine[0:2, 2]
+        #     corner_points[3] = np.dot(self.affine[0:2, 0:2], [umax, vmax]) + self.affine[0:2, 2]
         #
         # elif self.dimension == 3:
         #     corner_points = np.zeros((8, 3))
         #     umax, vmax, wmax = np.subtract(self.intensities.shape, (1, 1, 1))
-        #     corner_points[0] = np.dot(self.affine[0:3, 0:3], np.array([0, 0, 0])) + self.affine[0:3, 3]
-        #     corner_points[1] = np.dot(self.affine[0:3, 0:3], np.array([umax, 0, 0])) + self.affine[0:3, 3]
-        #     corner_points[2] = np.dot(self.affine[0:3, 0:3], np.array([0, vmax, 0])) + self.affine[0:3, 3]
-        #     corner_points[3] = np.dot(self.affine[0:3, 0:3], np.array([umax, vmax, 0])) + self.affine[0:3, 3]
-        #     corner_points[4] = np.dot(self.affine[0:3, 0:3], np.array([0, 0, wmax])) + self.affine[0:3, 3]
-        #     corner_points[5] = np.dot(self.affine[0:3, 0:3], np.array([umax, 0, wmax])) + self.affine[0:3, 3]
-        #     corner_points[6] = np.dot(self.affine[0:3, 0:3], np.array([0, vmax, wmax])) + self.affine[0:3, 3]
-        #     corner_points[7] = np.dot(self.affine[0:3, 0:3], np.array([umax, vmax, wmax])) + self.affine[0:3, 3]
+        #     corner_points[0] = np.dot(self.affine[0:3, 0:3], [0, 0, 0]) + self.affine[0:3, 3]
+        #     corner_points[1] = np.dot(self.affine[0:3, 0:3], [umax, 0, 0]) + self.affine[0:3, 3]
+        #     corner_points[2] = np.dot(self.affine[0:3, 0:3], [0, vmax, 0]) + self.affine[0:3, 3]
+        #     corner_points[3] = np.dot(self.affine[0:3, 0:3], [umax, vmax, 0]) + self.affine[0:3, 3]
+        #     corner_points[4] = np.dot(self.affine[0:3, 0:3], [0, 0, wmax]) + self.affine[0:3, 3]
+        #     corner_points[5] = np.dot(self.affine[0:3, 0:3], [umax, 0, wmax]) + self.affine[0:3, 3]
+        #     corner_points[6] = np.dot(self.affine[0:3, 0:3], [0, vmax, wmax]) + self.affine[0:3, 3]
+        #     corner_points[7] = np.dot(self.affine[0:3, 0:3], [umax, vmax, wmax]) + self.affine[0:3, 3]
 
         else:
             raise RuntimeError('Invalid dimension: %d' % self.dimension)

@@ -32,9 +32,6 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
                  deformation_kernel_width=default.deformation_kernel_width,
@@ -48,13 +45,11 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
                  initial_momenta=default.initial_momenta,
                  initial_modulation_matrix = default.initial_modulation_matrix,
                  freeze_modulation_matrix = False,
                  freeze_rupture_time = default.freeze_rupture_time,
-                 freeze_components = default.freeze_rupture_time,
                  freeze_noise_variance = default.freeze_noise_variance,
 
                  gpu_mode=default.gpu_mode,
@@ -71,14 +66,10 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
         self.number_of_processes = number_of_processes
         self.number_of_observations = number_of_observations
         self.freeze_template = freeze_template
         self.freeze_momenta = False
-        self.freeze_components = freeze_components
         self.freeze_rupture_time = freeze_rupture_time
 
         self.weights = weights
@@ -89,7 +80,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.nb_components = num_component
 
         self.is_frozen = {'template_data': False, 
-                          'control_points': freeze_control_points,
+                          'control_points': True,
                           'momenta': False, 
                           'modulation_matrix': freeze_modulation_matrix,
                           'rupture_time': freeze_rupture_time, 
@@ -97,13 +88,12 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
     
         # Deformation.
         self.spt_reference_frame = SpatiotemporalReferenceFrame(
-            dense_mode=dense_mode, 
             kernel=kernel_factory.factory(gpu_mode=self.gpu_mode,
                                           kernel_width=deformation_kernel_width),
             concentration_of_time_points = concentration_of_time_points, 
             nb_components = self.nb_components, template_tR = None,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow,
-            transport_cp = not freeze_control_points)
+            transport_cp = False)
         self.spt_reference_frame_is_modified = True
         
 
@@ -136,7 +126,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Control points.
         self.set_control_points(initialize_control_points(
             initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width,
-            self.dimension, self.dense_mode, new_bounding_box = new_bounding_box))
+            self.dimension, new_bounding_box = new_bounding_box))
 
         # Momenta.
         self.set_momenta(initialize_momenta(initial_momenta, len(self.fixed_effects['control_points']), 
@@ -385,8 +375,6 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                         template_data['landmark_points'].detach(), template_data['landmark_points'].detach(),
                         gradient['landmark_points'].detach())
 
-            if not self.is_frozen['control_points']: 
-                gradient['control_points'] = cp.grad
             if not self.is_frozen['rupture_time']:
                 gradient['rupture_time'] = rupture_time.grad
             if not self.is_frozen["momenta"]:
@@ -463,14 +451,14 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         if not self.is_frozen['template_data']:
             for key, value in template_data.items():
                 regularity += self.priors['template_data'][key].compute_log_likelihood_torch(
-                    value, self.tensor_scalar_type)
+                    value)
 
         if not self.is_frozen['momenta']:
-            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta, self.tensor_scalar_type)
+            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta)
             
         if not self.is_frozen['modulation_matrix']:
             regularity += self.priors['modulation_matrix'].compute_log_likelihood_torch(
-                mod_matrix, self.tensor_scalar_type)        
+                mod_matrix)        
 
         return regularity
     
@@ -484,7 +472,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Sources random effect.
         for i in range(number_of_subjects):
             regularity += self.individual_random_effects['sources'].compute_log_likelihood_torch(
-                sources[i], self.tensor_scalar_type, device=device)
+                sources[i], device=device)
 
         return regularity
 
@@ -534,7 +522,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Individual attachments
         device = residuals[0][0].device
-        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'], dtype=self.tensor_scalar_type, device=device)
+        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'], device=device)
 
         attachment = 0.0
         for i in range(len(residuals)):
@@ -681,7 +669,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         """
         # Sources.
         sources = individual_RER['sources']
-        sources = utilities.move_data(sources, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        sources = utilities.move_data(sources, requires_grad=with_grad, device=device)
 
         return sources
 
@@ -691,14 +679,14 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         """
         # Template data.
         template_data = self.fixed_effects['template_data']
-        template_data = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_data = {key: utilities.move_data(value,
                                                   requires_grad=(not self.is_frozen['template_data'] and with_grad),
                                                   device=device)
                          for key, value in template_data.items()}
 
         # Template points.
         template_points = self.template.get_points()
-        template_points = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_points = {key: utilities.move_data(value, 
                                                     requires_grad=(not self.is_frozen['template_data'] and with_grad),
                                                     device=device)
                            for key, value in template_points.items()}
@@ -707,10 +695,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         for k, v in self.fixed_effects.items():
             if not isinstance(v, dict):
-                if self.dense_mode and k == "control_points":
-                    effect = template_points['landmark_points']
-                else:
-                    effect = utilities.move_data(v, dtype=self.tensor_scalar_type,
+                effect = utilities.move_data(v,
                                             requires_grad=(with_grad and not self.is_frozen[k]), device=device)
                 liste.append(effect)
 

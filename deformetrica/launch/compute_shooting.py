@@ -69,7 +69,7 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
             new_spacing = new_spacing / 2
 
         # Create the control points for the new image
-        kernel = kernel_factory.factory(default.deformation_kernel_type, gpu_mode=default.gpu_mode, kernel_width = old_spacing)
+        kernel = kernel_factory.factory(gpu_mode=default.gpu_mode, kernel_width = old_spacing)
         new_control_points_1 = create_regular_grid_of_points(new_template.bounding_box, new_spacing * 2, new_template.dimension)
         new_control_points = create_regular_grid_of_points(new_template.bounding_box, new_spacing, new_template.dimension)
 
@@ -92,18 +92,15 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
 
 def compute_shooting(template_specifications,
                      dimension=default.dimension,
-                     tensor_scalar_type=default.tensor_scalar_type,
                      tensor_integer_type=default.tensor_integer_type,
 
-                     deformation_kernel_type=default.deformation_kernel_type,
                      deformation_kernel_width=default.deformation_kernel_width,
                      deformation_kernel_device=default.deformation_kernel_device,
 
-                     shoot_kernel_type=None,
                      initial_control_points=default.initial_control_points,
                      initial_momenta=default.initial_momenta,
                      concentration_of_time_points=default.concentration_of_time_points,
-                     t0=None, tmin=default.tmin, tmax=default.tmax, dense_mode=default.dense_mode,
+                     t0=None, tmin=default.tmin, tmax=default.tmax,
                      number_of_time_points=default.number_of_time_points,
                      use_rk2_for_shoot=default.use_rk2_for_shoot,
                      use_rk2_for_flow=default.use_rk2_for_flow,
@@ -140,18 +137,17 @@ def compute_shooting(template_specifications,
     if dimension == 2 and len(control_points.shape) == 3:
         control_points = control_points[:,:,0]
 
-    deformation_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
+    deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
 
-    momenta_torch = torch.from_numpy(momenta).type(tensor_scalar_type)
-    template_points = {key: torch.from_numpy(value).type(tensor_scalar_type)
+    momenta_torch = torch.from_numpy(momenta).type(default.tensor_scalar_type)
+    template_points = {key: torch.from_numpy(value).type(default.tensor_scalar_type)
                        for key, value in template.get_points().items()}
-    template_data = {key: torch.from_numpy(value).type(tensor_scalar_type)
+    template_data = {key: torch.from_numpy(value).type(default.tensor_scalar_type)
                      for key, value in template.get_data().items()}
     
-    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
-    geodesic = Geodesic(dense_mode=dense_mode,
-                        concentration_of_time_points=concentration_of_time_points, t0=t0,
-                        kernel=deformation_kernel, shoot_kernel_type=shoot_kernel_type,
+    control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
+    geodesic = Geodesic(concentration_of_time_points=concentration_of_time_points, t0=t0,
+                        kernel=deformation_kernel,
                         use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
 
     print("Old Norm", geodesic.forward_exponential.scalar_product(control_points_torch, momenta_torch, momenta_torch))
@@ -160,9 +156,9 @@ def compute_shooting(template_specifications,
     control_points, momenta_torch, deformation_kernel_width = vector_field_to_new_support(control_points, momenta_torch, template)
     write_2D_array(control_points, output_dir, "NewControlPoints.txt")
     
-    deformation_kernel = kernel_factory.factory(deformation_kernel_type, gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
+    deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)
 
-    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
+    control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
     geodesic.set_kernel(deformation_kernel)
 
     if t0 is None:

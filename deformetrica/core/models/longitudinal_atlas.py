@@ -37,7 +37,7 @@ def compute_exponential_and_attachment(args):
     # start = time.perf_counter()
 
     # Read arguments.
-    (template, multi_object_attachment, tensor_scalar_type, gpu_mode, exponential) = process_initial_data
+    (template, multi_object_attachment, gpu_mode, exponential) = process_initial_data
     # (i, j, exponential, template_data, target, with_grad) = args
     (ijs, initial_template_points, initial_control_points, initial_momenta, template_data, targets, with_grad) = args
 
@@ -131,9 +131,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
     def __init__(self, template_specifications,
 
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
                  gpu_mode=default.gpu_mode,
 
@@ -150,7 +147,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
 
                  initial_momenta=default.initial_momenta,
@@ -181,9 +177,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
 
         # Declare model structure.
         self.fixed_effects['template_data'] = None
@@ -195,7 +188,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         self.fixed_effects['acceleration_variance'] = None
         self.fixed_effects['noise_variance'] = None
 
-        self.is_frozen = {'template_data': freeze_template, 'control_points': freeze_control_points,
+        self.is_frozen = {'template_data': freeze_template, 'control_points': True,
                           'momenta': freeze_momenta, 'modulation_matrix': freeze_modulation_matrix,
                           'reference_time': freeze_reference_time, 'time_shift_variance': freeze_time_shift_variance,
                           'acceleration_variance': freeze_acceleration_variance,
@@ -217,7 +210,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
 
         # Deformation.
         self.spatiotemporal_reference_frame = SpatiotemporalReferenceFrame(
-            dense_mode=dense_mode,
             kernel=kernel_factory.factory(gpu_mode=self.gpu_mode,
                                           kernel_width=deformation_kernel_width),
             concentration_of_time_points=concentration_of_time_points, number_of_time_points=number_of_time_points,
@@ -238,8 +230,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         self.use_sobolev_gradient = use_sobolev_gradient
         self.smoothing_kernel_width = smoothing_kernel_width
         if self.use_sobolev_gradient:
-            self.sobolev_kernel = kernel_factory.factory(
-                                                         gpu_mode=self.gpu_mode,
+            self.sobolev_kernel = kernel_factory.factory(gpu_mode=self.gpu_mode,
                                                          kernel_width=smoothing_kernel_width)
 
         # Template data.
@@ -249,9 +240,8 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         # Control points.
         self.set_control_points(initialize_control_points(
             initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width,
-            self.dimension, self.dense_mode))
+            self.dimension))
         self.number_of_control_points = len(self.fixed_effects['control_points'])
-        self.__initialize_control_points_prior()
 
         # Momenta.
         self.set_momenta(
@@ -388,17 +378,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                     std = 0.5
                     logger.info('Template image intensities prior std parameter is ARBITRARILY set to %.3f.' % std)
                     self.priors['template_data'][key].set_variance_sqrt(std)
-
-    def __initialize_control_points_prior(self):
-        """
-        Initialize the control points prior.
-        """
-        # If needed (i.e. control points not frozen), initialize the associated prior.
-        if not self.is_frozen['control_points']:
-            # Set the control points prior mean as the initial control points.
-            self.priors['control_points'].set_mean(self.get_control_points())
-            # Set the control points prior standard deviation to the deformation kernel width.
-            self.priors['control_points'].set_variance_sqrt(self.spatiotemporal_reference_frame.get_kernel_width())
 
     def __initialize_momenta_prior(self):
         """
@@ -539,8 +518,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
             if not self.is_frozen['template_data']:
                 for key, value in self.fixed_effects['template_data'].items():
                     out[key] = value
-            if not self.is_frozen['control_points']:
-                out['control_points'] = self.fixed_effects['control_points']
             if not self.is_frozen['momenta']:
                 out['momenta'] = self.fixed_effects['momenta']
             if not self.is_frozen['modulation_matrix']:
@@ -563,7 +540,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         if not self.is_frozen['template_data']:
             template_data = {key: fixed_effects[key] for key in self.fixed_effects['template_data'].keys()}
             self.set_template_data(template_data)
-        if not self.is_frozen['control_points']: self.set_control_points(fixed_effects['control_points'])
         if not self.is_frozen['momenta']: self.set_momenta(fixed_effects['momenta'])
         if not self.is_frozen['modulation_matrix']: self.set_modulation_matrix(fixed_effects['modulation_matrix'])
 
@@ -573,7 +549,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
 
     def setup_multiprocess_pool(self, dataset):
         self._setup_multiprocess_pool(initargs=(
-            self.template, self.multi_object_attachment, self.tensor_scalar_type, self.gpu_mode,
+            self.template, self.multi_object_attachment, self.gpu_mode,
             self.spatiotemporal_reference_frame.exponential))
 
     def compute_gradients(self, attachments, attachment, regularity, checkpoints_tensors, 
@@ -590,7 +566,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                 torch.autograd.backward(
                     checkpoints_tensors + [regularity],
                     grad_checkpoints_tensors + [torch.ones(regularity.size(),
-                                                            device=regularity.device, dtype=regularity.dtype)])
+                                                            device=regularity.device, dtype=torch.float)])
 
             logger.debug('time taken for backwards: ' + str(time.perf_counter() - start))
 
@@ -609,8 +585,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                         gradient['landmark_points'].detach())
 
             # Other gradients.
-            if not self.is_frozen['control_points']:
-                gradient['control_points'] = control_points.grad
             if not self.is_frozen['momenta']:
                 gradient['momenta'] = momenta.grad
             if not self.is_frozen['modulation_matrix']:
@@ -677,7 +651,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         attachment = torch.sum(attachments)
 
         # Compute the regularity terms according to the mode.
-        regularity = utilities.move_data(np.array(0.0), dtype=self.tensor_scalar_type, device=device)
+        regularity = utilities.move_data(np.array(0.0), device=device)
         if mode == 'complete':
             regularity = self._compute_random_effects_regularity(sources, onset_ages, accelerations, device=device)
             regularity += self._compute_class1_priors_regularity()
@@ -926,8 +900,8 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         number_of_subjects = len(residuals)
         device = residuals[0][0].device
 
-        attachments = torch.zeros((number_of_subjects,), dtype=self.tensor_scalar_type.dtype, device=device)
-        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'], dtype=self.tensor_scalar_type, device=device)
+        attachments = torch.zeros((number_of_subjects,), dtype=torch.float, device=device)
+        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'], device=device)
 
         for i in range(number_of_subjects):
             attachment_i = 0.0
@@ -952,18 +926,18 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         # Sources random effect.
         for i in range(number_of_subjects):
             regularity += self.individual_random_effects['sources'].compute_log_likelihood_torch(
-                sources[i], self.tensor_scalar_type, device=device)
+                sources[i], device=device)
 
         # Onset age random effect.
         for i in range(number_of_subjects):
             regularity += self.individual_random_effects['onset_age'].compute_log_likelihood_torch(
-                onset_ages[i], self.tensor_scalar_type, device=device)
+                onset_ages[i], device=device)
 
         # Acceleration random effect.
         for i in range(number_of_subjects):
             regularity += \
                 self.individual_random_effects['acceleration'].compute_log_likelihood_torch(
-                    accelerations[i], self.tensor_scalar_type, device=device)
+                    accelerations[i], device=device)
 
         # # Noise random effect (if not frozen).
         # if not self.is_frozen['noise_variance']:
@@ -1013,21 +987,16 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         if not self.is_frozen['template_data']:
             for key, value in template_data.items():
                 regularity += self.priors['template_data'][key].compute_log_likelihood_torch(
-                    value, self.tensor_scalar_type)
-
-        # Prior on control_points fixed effects (if not frozen).
-        if not self.is_frozen['control_points']:
-            regularity += self.priors['control_points'].compute_log_likelihood_torch(
-                control_points, self.tensor_scalar_type)
+                    value)
 
         # Prior on momenta fixed effects (if not frozen).
         if not self.is_frozen['momenta']:
-            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta, self.tensor_scalar_type)
+            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta)
 
         # Prior on modulation_matrix fixed effects (if not frozen).
         if not self.is_frozen['modulation_matrix']:
             regularity += self.priors['modulation_matrix'].compute_log_likelihood_torch(
-                modulation_matrix, self.tensor_scalar_type)
+                modulation_matrix)
 
         return regularity
 
@@ -1201,7 +1170,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
                              % (np.max(accelerations.data.cpu().numpy()), acceleration_std))
 
         reference_time = self.get_reference_time()
-        reference_time_torch = torch.from_numpy(np.array(reference_time)).type(self.tensor_scalar_type)
+        reference_time_torch = torch.from_numpy(np.array(reference_time)).type(default.tensor_scalar_type)
         clamped_accelerations = torch.clamp(accelerations, 0.0)
 
         absolute_times = []
@@ -1209,7 +1178,7 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         for i in range(len(times)):
             absolute_times_i = []
             for j in range(len(times[i])):
-                t_ij = torch.from_numpy(np.array(times[i][j])).type(self.tensor_scalar_type)
+                t_ij = torch.from_numpy(np.array(times[i][j])).type(default.tensor_scalar_type)
 
                 assert i < len(onset_ages), 'i=' + str(i) + ', len(onset_ages)=' + str(len(onset_ages))
 
@@ -1232,7 +1201,6 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         # Template data.
         template_data = self.fixed_effects['template_data']
         template_data = {key: utilities.move_data(value,
-                                                  dtype=self.tensor_scalar_type,
                                                   requires_grad=with_grad and not self.is_frozen['template_data'],
                                                   device=device)
                          for key, value in template_data.items()}
@@ -1240,35 +1208,22 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         # Template points.
         template_points = self.template.get_points()
         template_points = {key: utilities.move_data(value,
-                                                    dtype=self.tensor_scalar_type,
                                                     requires_grad=with_grad and not self.is_frozen['template_data'],
                                                     device=device)
                            for key, value in template_points.items()}
 
-        # Control points.
-        if self.dense_mode:
-            assert (('landmark_points' in self.template.get_points().keys()) and
-                    ('image_points' not in self.template.get_points().keys())), \
-                'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template_points['landmark_points']
-        else:
-            control_points = self.fixed_effects['control_points']
-            control_points = utilities.move_data(control_points,
-                                                 dtype=self.tensor_scalar_type,
-                                                 requires_grad=with_grad and not self.is_frozen['control_points'],
-                                                 device=device)
+        control_points = self.fixed_effects['control_points']
+        control_points = utilities.move_data(control_points, requires_grad=False, device=device)
 
         # Momenta.
         momenta = self.fixed_effects['momenta']
         momenta = utilities.move_data(momenta,
-                                      dtype=self.tensor_scalar_type,
                                       requires_grad=(with_grad and not self.is_frozen['momenta']),
                                       device=device)
 
         # Modulation matrix.
         modulation_matrix = self.fixed_effects['modulation_matrix']
         modulation_matrix = utilities.move_data(modulation_matrix,
-                                                dtype=self.tensor_scalar_type,
                                                 requires_grad=with_grad and not self.is_frozen['modulation_matrix'],
                                                 device=device)
 
@@ -1280,13 +1235,13 @@ class LongitudinalAtlas(AbstractStatisticalModel):
         """
         # Sources.
         sources = individual_RER['sources']
-        sources = utilities.move_data(sources, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        sources = utilities.move_data(sources, requires_grad=with_grad, device=device)
         # Onset ages.
         onset_ages = individual_RER['onset_age']
-        onset_ages = utilities.move_data(onset_ages, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        onset_ages = utilities.move_data(onset_ages, requires_grad=with_grad, device=device)
         # Accelerations.
         accelerations = individual_RER['acceleration']
-        accelerations = utilities.move_data(accelerations, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        accelerations = utilities.move_data(accelerations, requires_grad=with_grad, device=device)
         return sources, onset_ages, accelerations
 
     ####################################################################################################################

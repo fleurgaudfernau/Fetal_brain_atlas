@@ -26,7 +26,7 @@ class Exponential:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, dense_mode=default.dense_mode,
+    def __init__(self, 
                  kernel=default.deformation_kernel,
                  number_of_time_points=None,
                  initial_control_points=None, control_points_t=None,
@@ -35,7 +35,6 @@ class Exponential:
                  shoot_is_modified=True, flow_is_modified=True, use_rk2_for_shoot=False, 
                  use_rk2_for_flow=False, transport_cp = True):
 
-        self.dense_mode = dense_mode
         self.kernel = kernel
 
         if self.kernel is None:
@@ -85,7 +84,7 @@ class Exponential:
                                             self.initial_template_points.items()}
 
     def light_copy(self):
-        light_copy = Exponential(self.dense_mode,
+        light_copy = Exponential(
                                  deepcopy(self.kernel),
                                  self.number_of_time_points,
                                  self.initial_control_points, self.control_points_t,
@@ -186,14 +185,14 @@ class Exponential:
             self.shoot()
             if self.initial_template_points is not None:
                 self.flow()
-            elif not self.dense_mode:
+            else:
                 msg = "In exponential update, I am not flowing because I don't have any template points to flow"
                 logger.warning(msg)
 
         if self.flow_is_modified:
             if self.initial_template_points is not None:
                 self.flow()
-            elif not self.dense_mode:
+            else:
                 msg = "In exponential update, I am not flowing because I don't have any template points to flow"
                 logger.warning(msg)
 
@@ -239,13 +238,6 @@ class Exponential:
         # Initialization.
         dt = 1.0 / float(self.number_of_time_points - 1)
         self.template_points_t = {}
-
-        # Special case of the dense mode.
-        if self.dense_mode:
-            assert 'image_points' not in self.initial_template_points.keys(), 'Dense mode not allowed with image data.'
-            self.template_points_t['landmark_points'] = self.control_points_t
-            self.flow_is_modified = False
-            return
 
         # Flow landmarks points.
         if 'landmark_points' in self.initial_template_points.keys():
@@ -480,29 +472,21 @@ class Exponential:
             self.control_points_t.append(new_cp)
             self.momenta_t.append(new_mom)
 
-        # Extended flow.
-        # Special case of the dense mode.
-        if self.dense_mode:
-            assert 'image_points' not in self.initial_template_points.keys(), 'Dense mode not allowed with image data.'
-            self.template_points_t['landmark_points'] = self.control_points_t
+        # Flow landmark points.
+        if 'landmark_points' in self.initial_template_points.keys():
+            for ii in range(number_of_additional_time_points):
+                i = len(self.template_points_t['landmark_points']) - 1
+                d_pos = self.kernel.convolve(self.template_points_t['landmark_points'][i], self.control_points_t[i],
+                                                self.momenta_t[i])
+                self.template_points_t['landmark_points'].append(
+                    self.template_points_t['landmark_points'][i] + dt * d_pos)
 
-        # Standard case.
-        else:
-            # Flow landmark points.
-            if 'landmark_points' in self.initial_template_points.keys():
-                for ii in range(number_of_additional_time_points):
-                    i = len(self.template_points_t['landmark_points']) - 1
-                    d_pos = self.kernel.convolve(self.template_points_t['landmark_points'][i], self.control_points_t[i],
-                                                 self.momenta_t[i])
-                    self.template_points_t['landmark_points'].append(
-                        self.template_points_t['landmark_points'][i] + dt * d_pos)
-
-                    if self.use_rk2_for_flow:
-                        # In this case improved euler (= Heun's method) to save one computation of convolve gradient.
-                        self.template_points_t['landmark_points'][i + 1] = (
-                            self.template_points_t['landmark_points'][i] + dt / 2 * (self.kernel.convolve(
-                            self.template_points_t['landmark_points'][i + 1], self.control_points_t[i + 1],
-                            self.momenta_t[i + 1]) + d_pos))
+                if self.use_rk2_for_flow:
+                    # In this case improved euler (= Heun's method) to save one computation of convolve gradient.
+                    self.template_points_t['landmark_points'][i + 1] = (
+                        self.template_points_t['landmark_points'][i] + dt / 2 * (self.kernel.convolve(
+                        self.template_points_t['landmark_points'][i + 1], self.control_points_t[i + 1],
+                        self.momenta_t[i + 1]) + d_pos))
 
             # Flow image points.
             if 'image_points' in self.initial_template_points.keys():

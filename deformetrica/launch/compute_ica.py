@@ -81,9 +81,7 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
 
 def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_specifications,
             dimension=default.dimension, tensor_scalar_type=default.tensor_scalar_type,
-            deformation_kernel_type=default.deformation_kernel_type,
             deformation_kernel_width=default.deformation_kernel_width,
-            dense_mode=default.dense_mode, shoot_kernel_type=None, 
             initial_control_points=default.initial_control_points,
             initial_momenta_tR=default.initial_momenta, tmin=default.tmin, tmax=default.tmax,
             concentration_of_time_points=default.concentration_of_time_points,
@@ -127,8 +125,8 @@ def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_speci
         #Initialize for later shooting
         initial_momenta_to_transport = op.join(output_dir, "Space_shift_{}.txt".format(s))
 
-        pt.initialize_(deformation_kernel_type, deformation_kernel_width, dense_mode, 
-                        shoot_kernel_type, initial_control_points, initial_momenta_tR,
+        pt.initialize_(deformation_kernel_width,
+                        initial_control_points, initial_momenta_tR,
                         initial_momenta_to_transport, number_of_time_points,
                         use_rk2_for_shoot, use_rk2_for_flow, nb_components)   
         pt.set_geodesic()     

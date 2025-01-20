@@ -47,14 +47,8 @@ def main():
     parser_initialize = subparsers.add_parser('finalize', add_help=False, parents=[common_parser])
     parser_initialize.add_argument('model', type=str, help='model xml file')
 
-    #age command
-
-    # gui command
-    subparsers.add_parser('gui', add_help=False, parents=[common_parser])
-
     args = parser.parse_args()
 
-    # set logging level
     try:
         logger.setLevel(args.verbosity)
     except ValueError:
@@ -90,7 +84,6 @@ def main():
 
         deformetrica = dfca.Deformetrica(output_dir=output_dir, verbosity=logger.level)
 
-        # logger.info('[ read_all_xmls function ]')
         xml_parameters = dfca.io.XmlParameters()
         xml_parameters.read_all_xmls(args.model,
                                      args.dataset if args.command == 'estimate' else None,
@@ -106,7 +99,7 @@ def main():
                 estimator_options=dfca.io.get_estimator_options(xml_parameters),
                 model_options=dfca.io.get_model_options(xml_parameters))
             
-        if xml_parameters.model_type == 'Barycenter'.lower():
+        elif xml_parameters.model_type == 'Barycenter'.lower():
             assert args.command == 'estimate', \
                 'The estimation of a registration model should be launched with the command: ' \
                 '"deformetrica estimate" (and not "%s").' % args.command
@@ -203,7 +196,7 @@ def main():
                     args.model, args.dataset, args.parameters, output_dir=output_dir, overwrite=True)
             elif args.command == 'finalize':
                 dfca.finalize_longitudinal_atlas(args.model, output_dir=output_dir)
-        #ajout fg
+
         elif xml_parameters.model_type == 'LongitudinalAtlasSimplified'.lower():
             assert args.command in ['estimate', 'initialize'], \
                 'The initialization or estimation of a simplified longitudinal atlas model should be launched with the command: ' \
@@ -228,7 +221,6 @@ def main():
                     model_options=dfca.io.get_model_options(xml_parameters))
             elif args.command == 'initialize':
                 dfca.initialize_longitudinal_atlas_development(args.model, args.dataset, args.parameters)
-        ########
         elif xml_parameters.model_type == 'LongitudinalRegistration'.lower():
             assert args.command == 'estimate', \
                 'The estimation of a longitudinal registration model should be launched with the command: ' \
@@ -259,10 +251,7 @@ def main():
             raise RuntimeError(
                 'Unrecognized model-type: "' + xml_parameters.model_type + '". Check the corresponding field in the model.xml input file.')
         
-        #tracker.stop()
-
 
 if __name__ == "__main__":
-    # execute only if run as a script
     main()
     sys.exit(0)

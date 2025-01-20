@@ -115,20 +115,6 @@ class Deformetrica:
     def __exit__(self, exc_type, exc_value, traceback):
         logger.debug('Deformetrica.__exit__()')
 
-    @staticmethod
-    def set_seed(seed=None):
-        """
-        Set the random number generator's seed.
-        :param seed: Can be set to None to reset to the original seed
-        """
-        if seed is None:
-            torch.manual_seed(torch.initial_seed())
-            np.random.seed(seed)
-        else:
-            assert isinstance(seed, int)
-            torch.manual_seed(seed)
-            np.random.seed(seed)
-
     ####################################################################################################################
     # Main methods.
     ####################################################################################################################
@@ -1123,8 +1109,6 @@ class Deformetrica:
         template_specifications, model_options, _ = self.further_initialization(
             'ParallelTransport', template_specifications, model_options)
 
-        logger.debug("dtype=" + default.dtype)
-
         # Launch.
         compute_parallel_transport(template_specifications, output_dir=self.output_dir, **model_options)
 
@@ -1140,8 +1124,6 @@ class Deformetrica:
         # Check and completes the input parameters.
         template_specifications, model_options, _ = self.further_initialization(
             'ParallelTransport', template_specifications, model_options)
-
-        logger.debug("dtype=" + default.dtype)
 
         # Launch.
         compute_shooting(template_specifications, output_dir=self.output_dir, **model_options)
@@ -1161,7 +1143,6 @@ class Deformetrica:
         if estimator.stop:
             return 
         
-        logger.debug("dtype=" + default.dtype)
         start_time = time.time()
         logger.info('>> Started estimator: ' + estimator.name)
         write = estimator.update() 
@@ -1236,8 +1217,6 @@ class Deformetrica:
                 estimator_options['state_file'] = default.state_file
             if 'load_state_file' not in estimator_options:
                 estimator_options['load_state_file'] = default.load_state_file
-            if 'memory_length' not in estimator_options:
-                estimator_options['memory_length'] = default.memory_length
             
             if 'multiscale_momenta' not in estimator_options: #ajout fg
                 estimator_options['multiscale_momenta'] = default.multiscale_momenta
@@ -1254,18 +1233,7 @@ class Deformetrica:
 
         if 'dimension' not in model_options:
             model_options['dimension'] = default.dimension
-        if 'dtype' not in model_options:
-            model_options['dtype'] = default.dtype
-        else:
-            default.update_dtype(new_dtype=model_options['dtype'])
 
-        model_options['tensor_scalar_type'] = default.tensor_scalar_type
-        model_options['tensor_integer_type'] = default.tensor_integer_type
-
-        if 'dense_mode' not in model_options:
-            model_options['dense_mode'] = default.dense_mode
-        if 'freeze_control_points' not in model_options:
-            model_options['freeze_control_points'] = default.freeze_control_points
         if 'perform_shooting' not in model_options: #ajout fg
             model_options['perform_shooting'] = default.perform_shooting
         if 'freeze_template' not in model_options:
@@ -1307,10 +1275,6 @@ class Deformetrica:
         # Check and completes the user-given parameters.
         #
 
-        # Optional random seed.
-        if 'random_seed' in model_options and model_options['random_seed'] is not None:
-            self.set_seed(model_options['random_seed'])
-
         # If needed, infer the dimension from the template specifications.
         if model_options['dimension'] is None:
             model_options['dimension'] = self.__infer_dimension(template_specifications)
@@ -1320,26 +1284,7 @@ class Deformetrica:
             model_options['smoothing_kernel_width'] = \
                 model_options['deformation_kernel_width'] * model_options['sobolev_kernel_width_ratio']
 
-        # Dense mode.
-        if model_options['dense_mode']:
-            logger.info('>> Dense mode activated. No distinction will be made between template and control points.')
-            assert len(template_specifications) == 1, \
-                'Only a single object can be considered when using the dense mode.'
-            if not model_options['freeze_control_points']:
-                model_options['freeze_control_points'] = True
-                msg = 'With active dense mode, the freeze_template (currently %s) and freeze_control_points ' \
-                      '(currently %s) flags are redundant. Defaulting to freeze_control_points = True.' \
-                      % (str(model_options['freeze_template']), str(model_options['freeze_control_points']))
-                logger.info('>> ' + msg)
-            if model_options['initial_control_points'] is not None:
-                # model_options['initial_control_points'] = None
-                msg = 'With active dense mode, specifying initial_control_points is useless. Ignoring this xml entry.'
-                logger.info('>> ' + msg)
-
-        if model_options['initial_cp_spacing'] is None and model_options['initial_control_points'] is None \
-                and not model_options['dense_mode']:
-            # logger.info('>> No initial CP spacing given: using diffeo kernel width of '
-            #             + str(model_options['deformation_kernel_width']))
+        if model_options['initial_cp_spacing'] is None and model_options['initial_control_points'] is None:
             model_options['initial_cp_spacing'] = model_options['deformation_kernel_width']
 
         # Multi-threading/processing only available for the deterministic atlas for the moment.
@@ -1450,10 +1395,8 @@ class Deformetrica:
 
             # Warning if scipy-LBFGS with memory length > 1 and sobolev gradient.
             if estimator_options['optimization_method_type'].lower() == 'ScipyLBFGS'.lower() \
-                    and estimator_options['memory_length'] > 1 \
                     and not model_options['freeze_template'] and model_options['use_sobolev_gradient']:
-                logger.info(
-                    '>> Using a Sobolev gradient for the template data with the ScipyLBFGS estimator memory length '
+                logger.info('>> Using a Sobolev gradient for the template data with the ScipyLBFGS estimator memory length '
                     'being larger than 1. Beware: that can be tricky.')
 
         # Freeze the fixed effects in case of a registration.
@@ -1465,7 +1408,6 @@ class Deformetrica:
             model_options['visit_ages'] = []
         elif model_type.lower() == 'LongitudinalRegistration'.lower():
             model_options['freeze_template'] = True
-            model_options['freeze_control_points'] = True
             model_options['freeze_momenta'] = True
             model_options['freeze_modulation_matrix'] = True
             model_options['freeze_reference_time'] = True

@@ -20,21 +20,19 @@ class SpatiotemporalReferenceFrame:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, dense_mode=default.dense_mode,
-                 kernel=default.deformation_kernel, tR=default.t0,
+    def __init__(self, kernel=default.deformation_kernel, tR=default.t0,
                  concentration_of_time_points=default.concentration_of_time_points,
                  number_of_time_points=default.number_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                  template_tR=None, nb_components=2, num_components=None, transport_cp = True):
 
         self.exponential = Exponential(
-            dense_mode=dense_mode,
             kernel=kernel, 
             number_of_time_points=number_of_time_points, use_rk2_for_shoot=use_rk2_for_shoot,
             use_rk2_for_flow=use_rk2_for_flow, transport_cp = transport_cp)
 
-        self.geodesic = PiecewiseGeodesic(
-            dense_mode=dense_mode, kernel=kernel, concentration_of_time_points=concentration_of_time_points,
+        self.geodesic = PiecewiseGeodesic(kernel=kernel, 
+            concentration_of_time_points=concentration_of_time_points,
             use_rk2_for_shoot=True, use_rk2_for_flow=use_rk2_for_flow, template_tR=template_tR,
             nb_components=nb_components, num_components=num_components, transport_cp = transport_cp)
 

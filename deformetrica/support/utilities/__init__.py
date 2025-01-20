@@ -72,11 +72,9 @@ def get_torch_dtype(t):
     return t
 
 
-def move_data(data, device='cpu', dtype=None, requires_grad=None):
+def move_data(data, device='cpu', requires_grad=None, interger = False):
     """
     Move given data to target Torch Tensor to the given device
-    :param data:    TODO
-    :param device:  TODO
     :param requires_grad: None: do nothing, True: set requires_grad flag, False: unset requires_grad flag (detach)
     :param dtype:  dtype that the returned tensor should be formatted as.
                    If not defined, the same dtype as the input data will be used.
@@ -85,8 +83,12 @@ def move_data(data, device='cpu', dtype=None, requires_grad=None):
     assert data is not None, 'given input data cannot be None !'
     assert device is not None, 'given input device cannot be None !'
 
-    if dtype is None:
-        dtype = get_torch_dtype(data.dtype)
+    if interger:
+        dtype = get_torch_scalar_type("float32")    
+    else:
+        dtype = get_torch_scalar_type("int32")
+
+    #dtype = get_torch_dtype(data.dtype)
 
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data).type(dtype)
@@ -98,21 +100,14 @@ def move_data(data, device='cpu', dtype=None, requires_grad=None):
     # move data to device. Note: tensor.to() does not move if data is already on target device
     data = data.type(dtype).to(device=device)
 
-
-    # handle requires_grad flag
     if requires_grad is not None and requires_grad:
-        # user wants grad
         if data.requires_grad is False:
             data.requires_grad_() #tell autograd to begin recording operations on a Tensor
-        # else data already has requires_grad flag to True
     elif requires_grad is not None:
-        # user does not want grad
         if data.requires_grad is True:
             data.detach_()
-        # else data already has requires_grad flag to False
 
     return data
-
 
 def convert_deformable_object_to_torch(deformable_object, device='cpu'):
     from core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject

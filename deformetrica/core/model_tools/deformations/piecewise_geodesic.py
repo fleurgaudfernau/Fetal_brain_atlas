@@ -29,8 +29,7 @@ class PiecewiseGeodesic:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, dense_mode=default.dense_mode,
-                 kernel=default.deformation_kernel,
+    def __init__(self, kernel=default.deformation_kernel,
                  t0=default.t0, concentration_of_time_points=default.concentration_of_time_points,
                  use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                  nb_components=2, num_components = None, template_tR=None, transport_cp = True):
@@ -52,7 +51,7 @@ class PiecewiseGeodesic:
         self.exponential = []
         for i in range(self.nb_components):
             self.exponential.append(
-                Exponential(dense_mode=dense_mode, kernel=kernel,
+                Exponential(kernel=kernel,
                             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow,
                             transport_cp = transport_cp))
 
@@ -64,8 +63,7 @@ class PiecewiseGeodesic:
         self.template_index = None
 
     def new_exponential(self):
-        return Exponential(dense_mode=self.exponential[0].dense_mode, 
-                            kernel=self.exponential[0].kernel, 
+        return Exponential(kernel=self.exponential[0].kernel, 
                             use_rk2_for_shoot=self.exponential[0].use_rk2_for_shoot, 
                             use_rk2_for_flow=self.exponential[0].use_rk2_for_flow,
                             transport_cp = self.exponential[0].transport_cp)

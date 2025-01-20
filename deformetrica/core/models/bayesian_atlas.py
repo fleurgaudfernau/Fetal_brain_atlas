@@ -34,9 +34,6 @@ class BayesianAtlas(AbstractStatisticalModel):
     def __init__(self, template_specifications,
 
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
                  deformation_kernel_width=default.deformation_kernel_width,
@@ -49,7 +46,6 @@ class BayesianAtlas(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
 
                  gpu_mode=default.gpu_mode,
@@ -60,9 +56,6 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
         self.number_of_processes = number_of_processes
         self.deformation_kernel_width = deformation_kernel_width
 
@@ -73,7 +66,6 @@ class BayesianAtlas(AbstractStatisticalModel):
         self.fixed_effects['noise_variance'] = None
 
         self.freeze_template = freeze_template
-        self.freeze_control_points = freeze_control_points
         self.freeze_momenta = False
 
         self.priors['covariance_momenta'] = InverseWishartDistribution()
@@ -83,7 +75,6 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Deformation.
         self.exponential = Exponential(
-            dense_mode=dense_mode,
             kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
             number_of_time_points=number_of_time_points,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
@@ -111,7 +102,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         # Control points.
         self.fixed_effects['control_points'] = initialize_control_points(
             initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width,
-            self.dimension, self.dense_mode)
+            self.dimension)
         self.number_of_control_points = len(self.fixed_effects['control_points'])
 
         # Covariance momenta.
@@ -222,8 +213,6 @@ class BayesianAtlas(AbstractStatisticalModel):
             if not self.freeze_template:
                 for key, value in self.fixed_effects['template_data'].items():
                     out[key] = value
-            if not self.freeze_control_points:
-                out['control_points'] = self.fixed_effects['control_points']
 
         elif mode == 'all':
             for key, value in self.fixed_effects['template_data'].items():
@@ -238,8 +227,6 @@ class BayesianAtlas(AbstractStatisticalModel):
         if not self.freeze_template:
             template_data = {key: fixed_effects[key] for key in self.fixed_effects['template_data'].keys()}
             self.set_template_data(template_data)
-        if not self.freeze_control_points:
-            self.set_control_points(fixed_effects['control_points'])
 
     ####################################################################################################################
     ### Public methods:
@@ -277,7 +264,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         attachment = torch.sum(attachments)
 
         # Compute the regularity terms according to the mode.
-        regularity = torch.from_numpy(np.array(0.0)).type(self.tensor_scalar_type)
+        regularity = torch.from_numpy(np.array(0.0)).type(default.tensor_scalar_type)
         if mode == 'complete':
             regularity = self._compute_random_effects_regularity(momenta)
             regularity += self._compute_class1_priors_regularity()
@@ -306,7 +293,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         attachment = torch.sum(attachments)
 
         # Compute the regularity terms according to the mode.
-        regularity = torch.from_numpy(np.array(0.0)).type(self.tensor_scalar_type)
+        regularity = torch.from_numpy(np.array(0.0)).type(default.tensor_scalar_type)
         if mode == 'complete':
             regularity = self._compute_random_effects_regularity_batch(batch, momenta)
             regularity += self._compute_class1_priors_regularity()
@@ -334,8 +321,7 @@ class BayesianAtlas(AbstractStatisticalModel):
                         gradient['landmark_points'] = template_points['landmark_points'].grad.detach().cpu().numpy()
                 if 'image_intensities' in template_data.keys():
                     gradient['image_intensities'] = template_data['image_intensities'].grad.detach().cpu().numpy()
-            if not self.freeze_control_points:
-                gradient['control_points'] = control_points.grad.detach().cpu().numpy()
+
             if mode == 'complete':
                 gradient['momenta'] = momenta.grad.detach().cpu().numpy()
 
@@ -468,10 +454,10 @@ class BayesianAtlas(AbstractStatisticalModel):
         Fully torch.
         """
         number_of_subjects = len(residuals)
-        attachments = torch.zeros((number_of_subjects,)).type(self.tensor_scalar_type)
+        attachments = torch.zeros((number_of_subjects,)).type(default.tensor_scalar_type)
         for i in range(number_of_subjects):
             attachments[i] = - 0.5 * torch.sum(residuals[i] / utilities.move_data(
-                self.fixed_effects['noise_variance'], dtype=self.tensor_scalar_type, device=residuals[i].device))
+                self.fixed_effects['noise_variance'], device=residuals[i].device))
         return attachments
     
     def _compute_random_effects_regularity(self, momenta):
@@ -492,7 +478,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         # Momenta random effect.
         for i, _ in targets:
             regularity += self.individual_random_effects['momenta'].compute_log_likelihood_torch(
-                                                                momenta[i], self.tensor_scalar_type)
+                                                                momenta[i])
 
         # Noise random effect.
         for k in range(self.number_of_objects):
@@ -529,10 +515,6 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Prior on template_data fixed effects (if not frozen). None implemented yet TODO.
         if not self.freeze_template:
-            regularity += 0.0
-
-        # Prior on control_points fixed effects (if not frozen). None implemented yet TODO.
-        if not self.freeze_control_points:
             regularity += 0.0
 
         return regularity
@@ -575,24 +557,17 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         # Template data.
         template_data = self.fixed_effects['template_data']
-        template_data = {key: torch.from_numpy(value).type(self.tensor_scalar_type).requires_grad_(
+        template_data = {key: torch.from_numpy(value).type(default.tensor_scalar_type).requires_grad_(
             not self.freeze_template and with_grad) for key, value in template_data.items()}
 
         # Template points.
         template_points = self.template.get_points()
-        template_points = {key: torch.from_numpy(value).type(self.tensor_scalar_type).requires_grad_(
+        template_points = {key: torch.from_numpy(value).type(default.tensor_scalar_type).requires_grad_(
             not self.freeze_template and with_grad) for key, value in template_points.items()}
 
         # Control points.
-        if self.dense_mode:
-            assert (('landmark_points' in self.template.get_points().keys()) and
-                    ('image_points' not in self.template.get_points().keys())), \
-                'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template_points['landmark_points']
-        else:
-            control_points = self.fixed_effects['control_points']
-            control_points = torch.from_numpy(control_points).type(self.tensor_scalar_type).requires_grad_(
-                not self.freeze_control_points and with_grad)
+        control_points = self.fixed_effects['control_points']
+        control_points = torch.from_numpy(control_points).type(default.tensor_scalar_type).requires_grad_(with_grad)
 
         return template_data, template_points, control_points
 
@@ -602,7 +577,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         # Momenta.
         momenta = individual_RER['momenta']
-        momenta = torch.from_numpy(momenta).type(self.tensor_scalar_type).requires_grad_(with_grad)
+        momenta = torch.from_numpy(momenta).type(default.tensor_scalar_type).requires_grad_(with_grad)
         return momenta
 
 
@@ -731,11 +706,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         for i, _ in enumerate(dataset.subject_ids):
             subject_residuals, _ = self.subject_residuals(i, dataset, template_data, momenta, control_points)
             residuals_by_point += (1/dataset.number_of_subjects) * subject_residuals
-        
-        #residuals heat map
-        #if (not current_iteration % save_every_n_iters) or current_iteration in [0, 1]:
-        #    self.save_heat_map(current_iteration, deformed_template, residuals_by_point, output_dir)
-        
+                
         if current_iteration == 0:
             print("First residuals computed")
             self.initial_residuals = residuals_by_point.cpu().numpy()

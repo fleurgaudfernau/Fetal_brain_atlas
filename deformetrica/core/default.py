@@ -7,10 +7,7 @@ logger_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 #ajout fg
 interpolation = "linear"
 
-dtype = 'float32'
-random_seed = None
-tensor_scalar_type = utilities.get_torch_scalar_type(dtype)
-tensor_integer_type = utilities.get_torch_integer_type(dtype)
+tensor_scalar_type = utilities.get_torch_scalar_type('float32')
 
 # deformation_kernel = kernel_factory.factory(kernel_factory.Type.TORCH, kernel_width=1.)
 deformation_kernel = None
@@ -27,10 +24,8 @@ process_per_gpu = 1
 model_type = 'undefined'
 template_specifications = {}
 deformation_kernel_width = 1.0
-deformation_kernel_type = 'keops'
 deformation_kernel_device = 'auto'
 
-shoot_kernel_type = None
 number_of_time_points = 11
 concentration_of_time_points = 10
 number_of_sources = None
@@ -66,14 +61,12 @@ scale_initial_step_size = True #before 27/01 TRUE
 downsampling_factor = 1
 gamma = 1
 
-dense_mode = False
 gpu_mode = GpuMode.KERNEL
 # use_cuda = True if torch.cuda.is_available() else False
 _cuda_is_used = False   # true if at least one operation will use CUDA.
 _keops_is_used = False  # true if at least one keops kernel operation will take place.
 
 freeze_template = False
-freeze_control_points = True
 multiscale_momenta = False
 multiscale_images = False
 multiscale_meshes = False
@@ -128,34 +121,11 @@ sources_proposal_std = 1
 
 kernel_regression = False
 
-# For scalar inputs:
-group_file = None
-observations_file = None
-timepoints_file = None
-v0 = None
-p0 = None
-metric_parameters_file = None
-interpolation_points_file = None
-initial_noise_variance = None
-exponential_type = None
-number_of_interpolation_points = None
-normalize_image_intensity = False
-initialization_heuristic = False
-
 verbose = 1
 
 perform_shooting = True
 
 def update_dtype(new_dtype):
-    global dtype
     global tensor_scalar_type
-    global tensor_integer_type
-    dtype = new_dtype
     tensor_scalar_type = utilities.get_torch_scalar_type(dtype)
-    tensor_integer_type = utilities.get_torch_integer_type(dtype)
 
-
-# def update_use_cuda(new_use_cuda):
-#     global use_cuda
-#     assert isinstance(new_use_cuda, bool)
-#     use_cuda = new_use_cuda

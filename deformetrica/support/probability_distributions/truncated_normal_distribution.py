@@ -68,13 +68,15 @@ class TruncatedNormalDistribution:
             delta = observation.ravel() - self.mean.ravel()
             return - 0.5 * self.variance_inverse * np.sum(delta ** 2)
 
-    def compute_log_likelihood_torch(self, observation, tensor_scalar_type, device='cpu'):
+    def compute_log_likelihood_torch(self, observation, device='cpu'):
         """
         Fully torch method.
         Returns only the part that includes the observation argument.
         """
-        mean = utilities.move_data(self.mean, dtype=tensor_scalar_type, requires_grad=False, device=device)
-        observation = utilities.move_data(observation, dtype=tensor_scalar_type, device=device)
+        tensor_scalar_type = get_torch_scalar_type("float32")
+
+        mean = utilities.move_data(self.mean, requires_grad=False, device=device)
+        observation = utilities.move_data(observation,  device=device)
         assert mean.detach().cpu().numpy().size == observation.detach().cpu().numpy().size, \
             'mean.detach().cpu().numpy().size = %d, \t observation.detach().cpu().numpy().size = %d' \
             % (mean.detach().cpu().numpy().size, observation.detach().cpu().numpy().size)

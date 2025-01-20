@@ -24,9 +24,6 @@ class GeodesicRegression(AbstractStatisticalModel):
     def __init__(self, template_specifications,
 
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
 
                  deformation_kernel_width=default.deformation_kernel_width,
@@ -39,14 +36,11 @@ class GeodesicRegression(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
                  initial_momenta=default.initial_momenta,
 
                  gpu_mode=default.gpu_mode,
 
-                 nb_components = 1, # ajout fg
-                 freeze_rupture_time = True,
                  write_adjoint_parameters = False,
                  new_bounding_box = None,
 
@@ -54,14 +48,8 @@ class GeodesicRegression(AbstractStatisticalModel):
 
         AbstractStatisticalModel.__init__(self, name='GeodesicRegression', gpu_mode=gpu_mode)
         
-        # Ajout fg for piecewise geodesic
-        self.nb_components = nb_components
-
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
         self.number_of_processes = number_of_processes
 
         self.write_adjoint_parameters = write_adjoint_parameters
@@ -70,18 +58,14 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.fixed_effects['template_data'] = None
         self.fixed_effects['control_points'] = None
         self.fixed_effects['momenta'] = None
-        self.fixed_effects['rupture_time'] = [None] * (self.nb_components - 1)
 
         self.freeze_template = freeze_template
         self.freeze_momenta = False
-        self.freeze_control_points = freeze_control_points
-        self.freeze_rupture_time = freeze_rupture_time
 
         self.t0 = t0
 
         # Deformation.
         self.geodesic = Geodesic(
-            dense_mode=dense_mode,
             kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
             t0=t0, concentration_of_time_points=concentration_of_time_points,
             use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
@@ -119,7 +103,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Control points.
         self.fixed_effects['control_points'] = initialize_control_points(initial_control_points, 
             self.template, initial_cp_spacing, deformation_kernel_width, self.dimension, 
-            self.dense_mode, new_bounding_box = new_bounding_box)
+            new_bounding_box = new_bounding_box)
 
         self.number_of_control_points = len(self.fixed_effects['control_points'])
 
@@ -179,7 +163,6 @@ class GeodesicRegression(AbstractStatisticalModel):
 
     def set_control_points(self, cp):
         self.fixed_effects['control_points'] = cp
-        # self.number_of_control_points = len(cp)
 
     # Momenta ----------------------------------------------------------------------------------------------------------
     def get_momenta(self):
@@ -194,8 +177,6 @@ class GeodesicRegression(AbstractStatisticalModel):
         if not self.freeze_template:
             for key, value in self.fixed_effects['template_data'].items():
                 out[key] = value
-        if not self.freeze_control_points:
-            out['control_points'] = self.fixed_effects['control_points']
         out['momenta'] = self.fixed_effects['momenta']
         return out
 
@@ -203,8 +184,6 @@ class GeodesicRegression(AbstractStatisticalModel):
         if not self.freeze_template:
             template_data = {key: fixed_effects[key] for key in self.fixed_effects['template_data'].keys()}
             self.set_template_data(template_data)
-        if not self.freeze_control_points:
-            self.set_control_points(fixed_effects['control_points'])
         self.set_momenta(fixed_effects['momenta'])
 
     ####################################################################################################################
@@ -230,9 +209,6 @@ class GeodesicRegression(AbstractStatisticalModel):
                     gradient['landmark_points'] = self.sobolev_kernel.convolve(
                         template_data['landmark_points'].detach(), template_data['landmark_points'].detach(),
                         gradient['landmark_points'].detach())
-
-            # Control points and momenta.
-            if not self.freeze_control_points: gradient['control_points'] = control_points.grad
             
             gradient['momenta'] = momenta.grad
 
@@ -442,7 +418,6 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Template data.
         template_data = self.fixed_effects['template_data']
         template_data = {key: utilities.move_data(value,
-                                                  dtype=self.tensor_scalar_type,
                                                   requires_grad=(not self.freeze_template and with_grad),
                                                   device=device)
                          for key, value in template_data.items()}
@@ -450,30 +425,17 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Template points.
         template_points = self.template.get_points()
         template_points = {key: utilities.move_data(value,
-                                                    dtype=self.tensor_scalar_type,
                                                     requires_grad=(not self.freeze_template and with_grad),
                                                     device=device)
                            for key, value in template_points.items()}
 
         # Control points.
-        if self.dense_mode:
-            assert (('landmark_points' in self.template.get_points().keys()) and
-                    ('image_points' not in self.template.get_points().keys())), \
-                'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template_points['landmark_points']
-        else:
-            control_points = self.fixed_effects['control_points']
-            control_points = utilities.move_data(control_points,
-                                                 dtype=self.tensor_scalar_type,
-                                                 requires_grad=(not self.freeze_control_points and with_grad),
-                                                 device=device)
+        control_points = self.fixed_effects['control_points']
+        control_points = utilities.move_data(control_points, requires_grad=(False), device=device)
 
         # Momenta.
         momenta = self.fixed_effects['momenta']
-        momenta = utilities.move_data(momenta,
-                                      dtype=self.tensor_scalar_type,
-                                      requires_grad=with_grad,
-                                      device=device)
+        momenta = utilities.move_data(momenta,requires_grad=with_grad, device=device)
 
         return template_data, template_points, control_points, momenta
         

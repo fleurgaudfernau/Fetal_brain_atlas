@@ -225,10 +225,7 @@ class SurfaceMesh(Landmark):
         """
         points = torch.from_numpy(self.polydata.points)
         connectivity = torch.from_numpy(self.connectivity)
-        centers, normals = self._get_centers_and_normals(points, connectivity,
-                                            tensor_scalar_type=utilities.get_torch_scalar_type(dtype=str(points.dtype)),
-                                            tensor_integer_type=utilities.get_torch_integer_type(dtype=str(points.dtype)),
-                                            device=points.device)
+        centers, normals = self._get_centers_and_normals(points, connectivity, device=points.device)
         self.polydata.cell_data["Normals"] = normals
         self.polydata.cell_data["Centers"] = centers
     
@@ -238,24 +235,19 @@ class SurfaceMesh(Landmark):
         """
         points = torch.from_numpy(self.polydata.points)
         connectivity = torch.from_numpy(self.connectivity)
-        _, normals = self._get_centers_and_normals(points, connectivity,
-                                            tensor_scalar_type=utilities.get_torch_scalar_type(dtype=str(points.dtype)),
-                                            tensor_integer_type=utilities.get_torch_integer_type(dtype=str(points.dtype)),
-                                            device=points.device)
+        _, normals = self._get_centers_and_normals(points, connectivity, device=points.device)
 
         normals_normalized = normals / torch.norm(normals, 2, 1).unsqueeze(1)
         self.polydata.cell_data["Normals_normalized"] = normals_normalized.cpu().numpy()    
     
     @staticmethod
     def _get_centers_and_normals(points, triangles,
-                                 tensor_scalar_type=default.tensor_scalar_type,
-                                 tensor_integer_type=default.tensor_integer_type,
                                  device='cpu'):
         """
          Computed by hand so that centers and normals keep the autograd of point
         """
-        points = utilities.move_data(points, dtype=tensor_scalar_type, device=device)
-        triangles = utilities.move_data(triangles, dtype=tensor_integer_type, device=device)
+        points = utilities.move_data(points, device=device)
+        triangles = utilities.move_data(triangles, integer = True, device=device)
 
         a = points[triangles[:, 0]]
         b = points[triangles[:, 1]]
@@ -269,8 +261,6 @@ class SurfaceMesh(Landmark):
         return centers, normals
 
     def get_centers_and_normals(self, points=None,
-                                tensor_scalar_type=default.tensor_scalar_type,
-                                tensor_integer_type=default.tensor_integer_type,
                                 device='cpu', residuals = False):
         """
         Given a new set of points, use the corresponding connectivity available in the polydata
@@ -280,30 +270,27 @@ class SurfaceMesh(Landmark):
             if not self.is_modified:
 
                 #print("self.normals[", self.normals[:1])
-                return (utilities.move_data(self.centers, dtype=tensor_scalar_type, device=device),
-                        utilities.move_data(self.normals, dtype=tensor_scalar_type, device=device))
+                return (utilities.move_data(self.centers, device=device),
+                        utilities.move_data(self.normals, device=device))
 
             else:
                 logger.debug('Call of SurfaceMesh.get_centers_and_normals with is_modified=True flag.')
                 points = torch.from_numpy(self.points)
 
         centers, normals = SurfaceMesh._get_centers_and_normals(points, torch.from_numpy(self.connectivity), 
-                            tensor_scalar_type=tensor_scalar_type, tensor_integer_type=tensor_integer_type, device=device)
+                             device=device)
 
         # Haar transform normals
         if self.multiscale_mesh and self.current_scale is not None: # iter 0, 1st residuals computation
             if not residuals:
                 self.filter_new_normals(centers.clone(), normals.clone())
-                normals = utilities.move_data(self.normals, dtype = tensor_scalar_type, 
+                normals = utilities.move_data(self.normals, 
                                             requires_grad = (normals.grad_fn is not None), 
                                                 device=device)
         ##print("normals[:1]", normals[:1])
         return (centers, normals)
 
-    def get_centers_and_normals_pyvista(self, points = None,
-                                    tensor_scalar_type=default.tensor_scalar_type,
-                                    tensor_integer_type=default.tensor_integer_type,
-                                    device='cpu'):
+    def get_centers_and_normals_pyvista(self, points = None, device='cpu'):
         
         if points is not None:
             self.polydata.points = points

@@ -191,11 +191,8 @@ class BayesianRegressionInitializer():
         self.global_observations_nb = sum([len(elt) for elt in self.global_visit_ages])
 
         # Deformation parameters
-        self.dense_mode = self.xml_parameters.dense_mode #landmark points or not
-        self.tensor_scalar_type = default.tensor_scalar_type #the type of float...
-        self.global_kernel_type = self.xml_parameters.deformation_kernel_type #torch or keops
         self.global_kernel_width = self.xml_parameters.deformation_kernel_width
-        self.kernel = kernel_factory.factory(self.global_kernel_type, kernel_width=self.global_kernel_width)
+        self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
         self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
@@ -220,7 +217,7 @@ class BayesianRegressionInitializer():
             self.number_of_sources = self.xml_parameters.number_of_sources            
     
     def to_torch_tensor(self, array):
-        return Variable(torch.from_numpy(array).type(self.tensor_scalar_type), requires_grad=False)
+        return Variable(torch.from_numpy(array).type(default.tensor_scalar_type), requires_grad=False)
 
     def create_folders(self):
         self.regression_output = join(self.output_dir, '2_subjects_geodesic_regression')
@@ -390,8 +387,8 @@ class BayesianRegressionInitializer():
 
     def parallel_transport(self, xml_parameters, i):        
             compute_piecewise_parallel_transport(xml_parameters.template_specifications, self.dimension, 
-                                    self.tensor_scalar_type, self.global_kernel_type, self.global_kernel_width,
-                                    self.dense_mode, None, self.global_initial_cp_path, self.global_initial_momenta_path, # initial mom
+                                   self.global_kernel_width,
+                                    None, self.global_initial_cp_path, self.global_initial_momenta_path, # initial mom
                                     self.subjects.registration_momenta_path(i), # mom to transport
                                     tmin, tmax, self.concentration_of_tp,
                                     t0 = self.global_t0,
@@ -423,8 +420,7 @@ class BayesianRegressionInitializer():
                 logger.info('\n[ Parallel transport registration momenta of subject {} of age {} to t0 {}]'.format(self.subjects.id(i), self.subjects.age(i), self.global_t0_for_pt))
                 xml_parameters = self.set_template_xml(xml_parameters, self.subjects.same_age_template(i))
                 compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
-                                self.tensor_scalar_type, self.global_kernel_type, self.global_kernel_width,
-                                self.dense_mode, None, self.global_initial_cp_path, 
+                                 self.global_kernel_width, None, self.global_initial_cp_path, 
                                 self.subjects.same_age_momenta(i), # initial mom
                                 self.subjects.registration_momenta_path(i), # mom to transport
                                 self.subjects.tmin(i), self.subjects.tmax(i), 
@@ -455,8 +451,7 @@ class BayesianRegressionInitializer():
                     logger.info('\n[ Parallel transport regression momenta along registration momenta of subject {} of age]'.format(self.subjects.age(i)))
                     
                     compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
-                                        self.tensor_scalar_type, self.global_kernel_type, self.global_kernel_width,
-                                        self.dense_mode, None, self.global_initial_cp_path, 
+                                        self.global_kernel_width,None, self.global_initial_cp_path, 
                                         self.subjects.registration_momenta_path(i),
                                         self.subjects.same_age_momenta(i),
                                         tmin=0, tmax=1, t0 = 0,
@@ -475,7 +470,6 @@ class BayesianRegressionInitializer():
                                     concentration_of_time_points=1, 
                                     t0=self.subjects.age(i), 
                                     tmin=self.subjects.tmin(i), tmax=self.subjects.tmax(i), 
-                                    dense_mode=self.dense_mode,
                                     output_dir=self.subjects.shooting_path(i), 
                                     write_adjoint_parameters = False)   
 
@@ -567,7 +561,6 @@ class BayesianRegressionInitializer():
                             initial_control_points=self.global_initial_cp_path, 
                             initial_momenta=self.subjects.shot_momenta_path(i), 
                             concentration_of_time_points=1, 
-                            dense_mode=self.dense_mode,
                             output_dir=self.ICA_output, 
                             write_adjoint_parameters = False) 
             

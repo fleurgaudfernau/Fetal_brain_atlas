@@ -26,40 +26,10 @@ from ..core.observations.deformable_objects.deformable_multi_object import Defor
 from ..in_out.deformable_object_reader import DeformableObjectReader
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
+from .tools import *
 from .compute_parallel_transport import compute_parallel_transport
 
 warnings.filterwarnings("ignore")
-
-#############################################################################""
-
-
-def scalar_product(kernel, cp, mom1, mom2):
-    return torch.sum(mom1 * kernel.convolve(cp, cp, mom2))
-
-def get_norm_squared(cp, momenta):
-    return scalar_product(cp, momenta, momenta) 
-
-def orthogonal_projection(cp, momenta_to_project, momenta):
-    sp = scalar_product(cp, momenta_to_project, momenta) / get_norm_squared(cp, momenta)
-    orthogonal_momenta = momenta_to_project - sp * momenta
-
-    return orthogonal_momenta
-
-
-def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
-    K = np.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
-    for i in range(global_cp_nb):
-        for j in range(global_cp_nb):
-            cp_i = global_initial_cp[i, :]
-            cp_j = global_initial_cp[j, :]
-            kernel_distance = math.exp(- np.sum((cp_j - cp_i) ** 2) / (kernel_width ** 2))
-            for d in range(dimension):
-                K[dimension * i + d, dimension * j + d] = kernel_distance
-                K[dimension * j + d, dimension * i + d] = kernel_distance
-    return K
-
-#############################################################################""
-
 
 class CrossSectionalLongitudinalAtlasInitializer():
     def __init__(self, model_xml_path, dataset_xml_path, optimization_parameters_xml_path):
@@ -118,12 +88,9 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.dataset_type = "single_points"
 
         # Deformation parameters
-        self.dense_mode = self.xml_parameters.dense_mode #landmark points or not
-        self.tensor_scalar_type = default.tensor_scalar_type #the type of float...
-        self.global_kernel_type = self.xml_parameters.deformation_kernel_type #torch or keops
         self.global_kernel_width = self.xml_parameters.deformation_kernel_width
         self.global_kernel_device = self.xml_parameters.deformation_kernel_device
-        self.kernel = kernel_factory.factory(self.global_kernel_type, kernel_width=self.global_kernel_width)
+        self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
         self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
@@ -138,7 +105,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
             self.number_of_sources = self.xml_parameters.number_of_sources            
     
     def to_torch_tensor(self, array):
-        return Variable(torch.from_numpy(array).type(self.tensor_scalar_type), requires_grad=False)
+        return Variable(torch.from_numpy(array).type(default.tensor_scalar_type), requires_grad=False)
 
     def create_folders(self):
         self.atlas_output_path = join(self.output_dir, '1_bayesian_atlas_all_subjects')
@@ -497,10 +464,10 @@ class CrossSectionalLongitudinalAtlasInitializer():
                 # and shoot subject to subject age + 1 using transported momenta
                 
                 compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
-                                            self.tensor_scalar_type, self.global_kernel_type, self.global_kernel_width,
+                                            self.global_kernel_width,
                                             None, self.regression_cp_path, self.registration_momenta[i],
                                             self.regression_cp_path, self.momenta_shot_to_subjects[i],
-                                            tmin=0, tmax=1, t0 = 0, dense_mode=self.dense_mode,
+                                            tmin=0, tmax=1, t0 = 0, 
                                             concentration_of_time_points=self.concentration_of_tp,
                                             number_of_time_points=self.global_nb_of_tp,
                                             output_dir=self.registration_subjects_paths[i], perform_shooting = False)
@@ -514,7 +481,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
                                 initial_momenta=self.transported_regression_momenta_path[i], 
                                 concentration_of_time_points=self.concentration_of_tp, t0=self.global_visit_ages[i][0], 
                                 tmin=min([self.global_t0, self.global_visit_ages[i][0]]), 
-                                tmax=max([self.global_t0, self.global_visit_ages[i][0]]), dense_mode=self.dense_mode,
+                                tmax=max([self.global_t0, self.global_visit_ages[i][0]]),
                                 output_dir=self.shooted_subjects_paths[i], write_adjoint_parameters = False)  
 
                 # Copy shooting outputs to the atlas folder

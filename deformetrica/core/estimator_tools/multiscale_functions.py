@@ -140,7 +140,6 @@ class Multiscale():
         """
         cond = True        
         cond = self.momenta.convergence(iteration, cond)
-        #cond = self.momenta_piecewise.convergence(iteration, cond)
         cond = self.images.convergence(iteration, cond)
         cond = self.meshes.convergence(iteration, cond)
 

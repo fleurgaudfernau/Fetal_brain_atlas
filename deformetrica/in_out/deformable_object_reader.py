@@ -13,13 +13,9 @@ from vtk.util import numpy_support as nps
 
 from ..core.observations.deformable_objects.image import Image
 from ..core.observations.deformable_objects.landmarks.landmark import Landmark
-from ..core.observations.deformable_objects.landmarks.point_cloud import PointCloud
 from ..core.observations.deformable_objects.landmarks.poly_line import PolyLine
 from ..core.observations.deformable_objects.landmarks.surface_mesh import SurfaceMesh
 from ..in_out.image_functions import normalize_image_intensities
-
-# ajout fg
-from ..support import kernels as kernel_factory
 
 logger = logging.getLogger(__name__)
 logging.getLogger('PIL').setLevel(logging.WARNING)
@@ -37,7 +33,7 @@ class DeformableObjectReader:
     @staticmethod
     def create_object(object_filename, object_type, dimension=None, interpolation = "linear",
                         kernel = None, gpu_mode=None, kernel_width=None):
-        if object_type.lower() in ['SurfaceMesh'.lower(), 'PolyLine'.lower(), 'PointCloud'.lower(), 'Landmark'.lower()]:
+        if object_type.lower() in ['SurfaceMesh'.lower(), 'PolyLine'.lower(), 'Landmark'.lower()]:
 
             if object_type.lower() == 'SurfaceMesh'.lower():
                 points, dimension, connectivity = DeformableObjectReader.read_file(
@@ -50,17 +46,6 @@ class DeformableObjectReader:
                 points, dimension, connectivity = DeformableObjectReader.read_file(
                     object_filename, dimension, extract_connectivity=True)
                 out_object = PolyLine(points, connectivity, object_filename)
-
-            elif object_type.lower() == 'PointCloud'.lower():
-                try:
-                    points, dimension, connectivity = DeformableObjectReader.read_file(
-                        object_filename, dimension, extract_connectivity=True)
-                    out_object = PointCloud(points, connectivity, object_filename)
-
-                except KeyError:
-                    points, dimension = DeformableObjectReader.read_file(
-                        object_filename, dimension, extract_connectivity=False)
-                    out_object = PointCloud(points, object_filename)
 
             elif object_type.lower() == 'Landmark'.lower():
                 try:

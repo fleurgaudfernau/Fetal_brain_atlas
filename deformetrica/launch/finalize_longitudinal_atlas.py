@@ -24,7 +24,6 @@ def insert_model_xml_level1_entry(model_xml_level0, key, value):
         new_element_xml.text = value
     return model_xml_level0
 
-
 def insert_model_xml_template_spec_entry(model_xml_level0, key, values):
     for model_xml_level1 in model_xml_level0:
         if model_xml_level1.tag.lower() == 'template':

@@ -8,20 +8,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + os.path.sep + '../.
 import numpy as np
 
 
-def points_to_voxels_transform(points, affine):
-    """
-    Only useful for image + mesh cases. Not implemented yet.
-    """
-    return points
-
-
-def metric_to_image_radial_length(length, affine):
-    """
-    Only useful for image + mesh cases. Not implemented yet.
-    """
-    return length
-
-
 def normalize_image_intensities(intensities):
 
     dtype = str(intensities.dtype)

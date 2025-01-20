@@ -78,7 +78,6 @@ def set_xml_for_regression(xml_parameters):
     xml_parameters.model_type = 'Regression'.lower()
     xml_parameters.optimization_method_type = 'GradientAscent'.lower()
     xml_parameters.freeze_template = True
-    xml_parameters.freeze_control_points = True
     xml_parameters.state_file = None
     xml_parameters.print_every_n_iters = 50
 
@@ -209,27 +208,23 @@ def insert_model_xml_deformation_parameters(model_xml_0, key, value):
     return model_xml_0
 
 
-def shoot(control_points, momenta, kernel_width, kernel_type,
-          number_of_time_points=default.number_of_time_points,
-          dense_mode=default.dense_mode,
-          tensor_scalar_type=default.tensor_scalar_type):
-    control_points_torch = torch.from_numpy(control_points).type(tensor_scalar_type)
-    momenta_torch = torch.from_numpy(momenta).type(tensor_scalar_type)
-    exponential = Exponential(
-                            dense_mode=dense_mode, number_of_time_points=number_of_time_points,
-                            kernel=kernel_factory.factory(kernel_type, kernel_width=kernel_width),
+def shoot(control_points, momenta, kernel_width,
+          number_of_time_points=default.number_of_time_points):
+    control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
+    momenta_torch = torch.from_numpy(momenta).type(default.tensor_scalar_type)
+    exponential = Exponential(number_of_time_points=number_of_time_points,
+                            kernel=kernel_factory.factory(kernel_width=kernel_width),
                             initial_control_points=control_points_torch, initial_momenta=momenta_torch)
     exponential.shoot()
     return exponential.control_points_t[-1].detach().cpu().numpy(), exponential.momenta_t[-1].detach().cpu().numpy()
 
 
 def reproject_momenta(source_control_points, source_momenta, target_control_points,
-                      kernel_width, kernel_type='torch', kernel_device='cpu',
-                      tensor_scalar_type=default.tensor_scalar_type):
-    kernel = kernel_factory.factory(kernel_type, kernel_width=kernel_width)
-    source_cp_torch = tensor_scalar_type(source_control_points)
-    source_momenta_torch = tensor_scalar_type(source_momenta)
-    target_control_points_torch = tensor_scalar_type(target_control_points)
+                      kernel_width, kernel_device='cpu'):
+    kernel = kernel_factory.factory(kernel_width=kernel_width)
+    source_cp_torch = default.tensor_scalar_type(source_control_points)
+    source_momenta_torch = default.tensor_scalar_type(source_momenta)
+    target_control_points_torch = default.tensor_scalar_type(target_control_points)
     target_momenta_torch = torch.cholesky_solve(
                             kernel.convolve(target_control_points_torch, source_cp_torch, source_momenta_torch),
                             torch.cholesky(kernel.get_kernel_matrix(target_control_points_torch), upper=True), upper=True)
@@ -238,21 +233,18 @@ def reproject_momenta(source_control_points, source_momenta, target_control_poin
 
 
 def parallel_transport(source_control_points, source_momenta, driving_momenta,
-                       kernel_width, kernel_type='torch', kernel_device='cpu',
-                       number_of_time_points=default.number_of_time_points,
-                       dense_mode=default.dense_mode,
-                       tensor_scalar_type=default.tensor_scalar_type):
+                       kernel_width, kernel_device='cpu',
+                       number_of_time_points=default.number_of_time_points):
     
-    source_cp_torch = tensor_scalar_type(source_control_points)
-    source_momenta_torch = tensor_scalar_type(source_momenta)
-    driving_momenta_torch = tensor_scalar_type(driving_momenta)
+    source_cp_torch = default.tensor_scalar_type(source_control_points)
+    source_momenta_torch = default.tensor_scalar_type(source_momenta)
+    driving_momenta_torch = default.tensor_scalar_type(driving_momenta)
 
      
     #
     print("1")
-    exponential = Exponential(
-        dense_mode=dense_mode, number_of_time_points=number_of_time_points, use_rk2_for_shoot=True,
-        kernel = kernel_factory.factory(kernel_type, kernel_width=kernel_width),
+    exponential = Exponential(number_of_time_points=number_of_time_points, use_rk2_for_shoot=True,
+        kernel = kernel_factory.factory(kernel_width=kernel_width),
         initial_control_points=source_cp_torch, initial_momenta=driving_momenta_torch)
     print("2")
     # Usually there is an error shooting the exponential

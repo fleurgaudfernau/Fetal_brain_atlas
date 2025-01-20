@@ -35,7 +35,7 @@ def compute_exponential_and_attachment(args):
         raise RuntimeError('process_initial_data is not set !')
 
     # Read arguments.
-    (template, multi_object_attachment, tensor_scalar_type, gpu_mode, exponential) = process_initial_data
+    (template, multi_object_attachment, gpu_mode, exponential) = process_initial_data
     (ijs, initial_template_points, initial_control_points, initial_momenta, template_data, targets, with_grad) = args
 
     ret_residuals = []
@@ -105,9 +105,6 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
     def __init__(self, template_specifications,
 
                  dimension=default.dimension,
-                 tensor_scalar_type=default.tensor_scalar_type,
-                 tensor_integer_type=default.tensor_integer_type,
-                 dense_mode=default.dense_mode,
                  number_of_processes=default.number_of_processes,
                  gpu_mode=default.gpu_mode,
 
@@ -124,7 +121,6 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 freeze_control_points=default.freeze_control_points,
                  initial_cp_spacing=default.initial_cp_spacing,
 
                  initial_momenta=default.initial_momenta,
@@ -154,9 +150,6 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.tensor_scalar_type = tensor_scalar_type
-        self.tensor_integer_type = tensor_integer_type
-        self.dense_mode = dense_mode
 
         # Declare model structure.
         self.fixed_effects['template_data'] = None
@@ -172,13 +165,12 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         freeze_reference_time = True
         freeze_time_shift_variance = True
         freeze_acceleration_variance = True
-        freeze_control_points= True
         freeze_modulation_matrix = False
         self.freeze_template = freeze_template
         self.freeze_momenta = freeze_momenta
         initial_time_shift_variance = 0
 
-        self.is_frozen = {'template_data': freeze_template, 'control_points': freeze_control_points,
+        self.is_frozen = {'template_data': freeze_template, 'control_points': True,
                           'momenta': freeze_momenta, 'modulation_matrix': freeze_modulation_matrix,
                           'reference_time': freeze_reference_time, 'time_shift_variance': freeze_time_shift_variance,
                           'acceleration_variance': freeze_acceleration_variance,
@@ -207,7 +199,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
 
         # Deformation.
         self.deformation_kernel_width = deformation_kernel_width
-        self.spatiotemporal_reference_frame = SpatiotemporalReferenceFrame(dense_mode=dense_mode,
+        self.spatiotemporal_reference_frame = SpatiotemporalReferenceFrame(
                                             kernel=kernel_factory.factory(
                                           gpu_mode=self.gpu_mode, kernel_width=deformation_kernel_width),
                         concentration_of_time_points=concentration_of_time_points, 
@@ -234,7 +226,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         self.__initialize_template_data_prior()
 
         # Control points.
-        self.set_control_points(initialize_control_points(initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width, self.dimension, self.dense_mode))
+        self.set_control_points(initialize_control_points(initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width, self.dimension))
         self.number_of_control_points = len(self.fixed_effects['control_points'])
 
         # Momenta.
@@ -537,7 +529,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
 
     def setup_multiprocess_pool(self, dataset):
         self._setup_multiprocess_pool(initargs=(
-            self.template, self.multi_object_attachment, self.tensor_scalar_type, self.gpu_mode,
+            self.template, self.multi_object_attachment, self.gpu_mode,
             self.spatiotemporal_reference_frame.exponential))
 
     def compute_log_likelihood(self, dataset, population_RER, individual_RER, mode='complete', with_grad=False,
@@ -580,7 +572,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         attachment = torch.sum(attachments)
 
         # Compute the regularity terms according to the mode.
-        regularity = utilities.move_data(np.array(0.0), dtype=self.tensor_scalar_type, device=device)
+        regularity = utilities.move_data(np.array(0.0), device=device)
         if mode == 'complete':
             # LL of the random effects prior distribution
             # eg for z ~ Multiscalar normal distrib
@@ -774,8 +766,8 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         number_of_subjects = len(residuals)
         device = residuals[0][0].device
 
-        attachments = torch.zeros((number_of_subjects,), dtype=self.tensor_scalar_type.dtype, device=device)
-        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'], dtype=self.tensor_scalar_type, device=device)
+        attachments = torch.zeros((number_of_subjects,), dtype=torch.float, device=device)
+        noise_variance = utilities.move_data(self.fixed_effects['noise_variance'],  device=device)
 
         for i in range(number_of_subjects):
             attachment_i = 0.0
@@ -796,19 +788,19 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         if not self.is_frozen["sources"]:
             for i in range(number_of_subjects):
                 regularity += self.individual_random_effects['sources'].compute_log_likelihood_torch(
-                    sources[i], self.tensor_scalar_type, device=device)
+                    sources[i],  device=device)
 
         # Onset age random effect.
         if not self.is_frozen["onset_age"]:
             for i in range(number_of_subjects):
                 regularity += self.individual_random_effects['onset_age'].compute_log_likelihood_torch(
-                    onset_ages[i], self.tensor_scalar_type, device=device)
+                    onset_ages[i],  device=device)
 
         # Acceleration random effect.
         if not self.is_frozen["acceleration"]:
             for i in range(number_of_subjects):
                 regularity += self.individual_random_effects['acceleration'].compute_log_likelihood_torch(
-                        accelerations[i], self.tensor_scalar_type, device=device)
+                        accelerations[i],  device=device)
 
         return regularity
 
@@ -846,16 +838,16 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         if not self.is_frozen['template_data']:
             for key, value in template_data.items():
                 regularity += self.priors['template_data'][key].compute_log_likelihood_torch(
-                    value, self.tensor_scalar_type)
+                    value)
 
         # Prior on momenta fixed effects (if not frozen).
         if not self.is_frozen['momenta']:
-            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta, self.tensor_scalar_type)
+            regularity += self.priors['momenta'].compute_log_likelihood_torch(momenta)
 
         # Prior on modulation_matrix fixed effects (if not frozen).
         if not self.is_frozen['modulation_matrix']:
             regularity += self.priors['modulation_matrix'].compute_log_likelihood_torch(
-                modulation_matrix, self.tensor_scalar_type)
+                modulation_matrix)
 
         return regularity
 
@@ -940,7 +932,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         
         #get t0
         reference_time = self.get_reference_time()
-        reference_time_torch = torch.from_numpy(np.array(reference_time)).type(self.tensor_scalar_type)
+        reference_time_torch = torch.from_numpy(np.array(reference_time)).type(default.tensor_scalar_type)
         
 
         #modif fg
@@ -971,7 +963,7 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         for i in range(len(times)):
             absolute_times_i = []
             for j in range(len(times[i])):
-                t_ij = torch.from_numpy(np.array(times[i][j])).type(self.tensor_scalar_type)
+                t_ij = torch.from_numpy(np.array(times[i][j])).type(default.tensor_scalar_type)
 
                 assert i < len(onset_ages), 'i=' + str(i) + ', len(onset_ages)=' + str(len(onset_ages))
 
@@ -993,35 +985,27 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
         """
         # Template data.
         template_data = self.fixed_effects['template_data']
-        template_data = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_data = {key: utilities.move_data(value, 
                                                   requires_grad=with_grad and not self.is_frozen['template_data'],
                                                   device=device) for key, value in template_data.items()}
 
         # Template points.
         template_points = self.template.get_points()
-        template_points = {key: utilities.move_data(value, dtype=self.tensor_scalar_type,
+        template_points = {key: utilities.move_data(value, 
                                                     requires_grad=with_grad and not self.is_frozen['template_data'],
                                                     device=device) for key, value in template_points.items()}
 
-        # Control points.
-        if self.dense_mode:
-            assert (('landmark_points' in self.template.get_points().keys()) and ('image_points' not in self.template.get_points().keys())), \
-                    'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template_points['landmark_points']
-        else:
-            control_points = self.fixed_effects['control_points']
-            control_points = utilities.move_data(control_points, dtype=self.tensor_scalar_type,
-                                                 requires_grad=with_grad and not self.is_frozen['control_points'],
-                                                 device=device)
+        control_points = self.fixed_effects['control_points']
+        control_points = utilities.move_data(control_points, requires_grad=False, device=device)
 
         # Momenta.
         momenta = self.fixed_effects['momenta']
-        momenta = utilities.move_data(momenta, dtype=self.tensor_scalar_type,
+        momenta = utilities.move_data(momenta, 
                                       requires_grad=(with_grad and not self.is_frozen['momenta']), device=device)
 
         # Modulation matrix.
         modulation_matrix = self.fixed_effects['modulation_matrix']
-        modulation_matrix = utilities.move_data(modulation_matrix, dtype=self.tensor_scalar_type,
+        modulation_matrix = utilities.move_data(modulation_matrix, 
                                                 requires_grad=with_grad and not self.is_frozen['modulation_matrix'],
                                                 device=device)
 
@@ -1034,13 +1018,13 @@ class LongitudinalAtlasSimplified(AbstractStatisticalModel):
 
         # Sources.
         sources = individual_RER['sources']
-        sources = utilities.move_data(sources, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        sources = utilities.move_data(sources,  requires_grad=with_grad, device=device)
         # Onset ages.
         onset_ages = individual_RER['onset_age']
-        onset_ages = utilities.move_data(onset_ages, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        onset_ages = utilities.move_data(onset_ages,  requires_grad=with_grad, device=device)
         # Accelerations.
         accelerations = individual_RER['acceleration']
-        accelerations = utilities.move_data(accelerations, dtype=self.tensor_scalar_type, requires_grad=with_grad, device=device)
+        accelerations = utilities.move_data(accelerations,  requires_grad=with_grad, device=device)
         
         return sources, onset_ages, accelerations
 

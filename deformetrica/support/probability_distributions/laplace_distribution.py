@@ -41,7 +41,7 @@ class LaplaceDistribution:
         else:
             return -np.linalg.norm(observation.ravel() - self.mean.ravel(),ord=1)/self.scale
 
-    def compute_log_likelihood_torch(self, observation, tensor_scalar_type, device='cpu'):
+    def compute_log_likelihood_torch(self, observation, device='cpu'):
         """
         Torch inputs / outputs.
         Returns only the part that includes the observation argument.
