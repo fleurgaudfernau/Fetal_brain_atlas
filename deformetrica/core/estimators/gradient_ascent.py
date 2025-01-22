@@ -155,7 +155,7 @@ class GradientAscent(AbstractEstimator):
         # Main loop ----------------------------------------------------------------------------------------------------
         while self.callback_ret and self.current_iteration < self.max_iterations:
             self.current_iteration += 1
-            t1 = perf_counter()
+            t1 = round(perf_counter(), 1)
 
             # Line search ----------------------------------------------------------------------------------------------
             found_min = False
@@ -226,10 +226,6 @@ class GradientAscent(AbstractEstimator):
             self.residuals.compute_residuals(self.dataset, self.current_iteration, self.individual_RER, self.multiscale)
             new_parameters = self.coarse_to_fine(new_parameters, end)
 
-            #self.residuals.add_new_component(self.dataset, self.current_iteration)
-            # recover residuals in case a new component was added in piecewise regression
-            #self.current_parameters = self._get_parameters()
-
             # Test the stopping criterion ------------------------------------------------------------------------------
             delta_f_current = last_log_likelihood - self.current_log_likelihood
             delta_f_initial = initial_log_likelihood - self.current_log_likelihood
@@ -239,10 +235,8 @@ class GradientAscent(AbstractEstimator):
                     logger.info('Tolerance threshold met. Stopping the optimization process.')
                     break
             
-            
-
             # Printing and writing -------------------------------------------------------------------------------------
-            t2 = perf_counter()
+            t2 = round(perf_counter(), 1)
             logger.info("Time taken for iteration: {}".format(t2-t1))
             if not self.current_iteration % self.print_every_n_iters: self.print()
             if not self.current_iteration % self.save_every_n_iters: self.write()
@@ -263,7 +257,6 @@ class GradientAscent(AbstractEstimator):
 
             # Reinitialize step sizes after coarse to fine and after gradients recomputation
             self.multiscale.reinitialize_step(self, gradient, self.current_iteration, self.step)
-
             
         # end of estimator loop
         self.write()
@@ -296,14 +289,6 @@ class GradientAscent(AbstractEstimator):
         if output_dir:
             self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, output_dir, 
                                         self.current_iteration, write_all = False)
-    
-    def save_model_after_adding_component(self):
-        output_dir = self.residuals.save_model_after_new_component(self.current_iteration, self.output_dir)
-        if output_dir:
-            self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, output_dir, 
-                                        self.current_iteration, write_all = True, 
-                                        write_adjoint_parameters = False)
-
     
     ####################################################################################################################
     ### Private methods:

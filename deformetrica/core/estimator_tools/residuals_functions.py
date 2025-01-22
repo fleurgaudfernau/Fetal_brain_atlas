@@ -58,8 +58,6 @@ class Residuals():
             self.compute_model_residuals = self.compute_bayesian_atlas_residuals
         elif self.name in ["GeodesicRegression", "BayesianGeodesicRegression", "BayesianPiecewiseRegression"]: #also name of piecewise GR
             self.compute_model_residuals = self.compute_regression_residuals
-        elif self.name in ["LongitudinalAtlas", "LongitudinalAtlasSimplified"]:
-            self.compute_model_residuals = self.gr
 
         self.piecewise = Piecewise(self.model, self.ages, self.n_obs)
 
@@ -108,33 +106,7 @@ class Residuals():
         #self.first_write = [True, True]
         
         #self.compute_mesh_distance(dataset, 0)
-    
-    ####################################################################################################################
-    ### ADD COMPONENTS TO THE PIECEWISE MODEL
-    ####################################################################################################################
-
-    # def add_new_component(self, dataset, iteration):
-    #     target = self.piecewise.add_new_component(dataset, iteration)
-
-    #     # Update residuals functions - residual list at target and target - 1 will have the same list until break up
-    #     if target:
-    #         if self.to_plot("Rupture_time"):
-    #             for c in range(self.piecewise.n_components - 2, target, -1):
-    #                 self.set_value("Rupture_time", self.get_values("Rupture_time", c-1), c)
-
-    #         for c in range(self.piecewise.n_components - 1, target, -1):
-    #             self.set_value("Residuals_components", self.get_values("Residuals_components", c-1), c)
-    #             self.set_value("Momenta_norm", self.get_values("Momenta_norm", c-1), c)
-    
-    # def no_convergence_after_new_component(self, iteration):
-    #     return self.piecewise.no_convergence_after_new_component(iteration)
-    
-    # def check_convergence_condition(self, iteration):
-    #     return self.piecewise.check_convergence_condition(iteration)
-    
-    # def save_model_after_new_component(self, iteration, output_dir):
-    #     return self.piecewise.save_model_after_new_component(iteration, output_dir)
-            
+                
     ####################################################################################################################
     ### Residuals tools
     ####################################################################################################################
@@ -435,10 +407,8 @@ class Residuals():
                 try:
                     plot_value_evolution(output_dir, t, self.plot[t]["plots"], self.plot[t]["iter"],
                                          self.plot[t]["ylab"], [multiscale.images.iter, 
-                                         multiscale.momenta.iter, multiscale.meshes.iter, 
-                                         self.piecewise.add_component],
-                                         ["multiscale_images", "multiscale_momenta", "multiscale_meshes",
-                                          "components addition"])
+                                         multiscale.momenta.iter, multiscale.meshes.iter],
+                                         ["multiscale_images", "multiscale_momenta", "multiscale_meshes"])
                 except:
                       print("\nProblem plotting {}".format(t), "\n", self.plot[t]["plots"])
                 
