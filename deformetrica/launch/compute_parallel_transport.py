@@ -21,7 +21,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class ParallelTransport():
-    def __init__(self, template_specifications, dimension, tensor_scalar_type, 
+    def __init__(self, template_specifications, dimension, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path,
                 initial_control_points = None):
@@ -29,7 +29,6 @@ class ParallelTransport():
         self.data = {}
         self.dimension = dimension
         self.gpu_mode = gpu_mode
-        self.tensor_scalar_type = tensor_scalar_type
         
         self.tmin = tmin
         self.tmax = tmax
@@ -68,8 +67,7 @@ class ParallelTransport():
         
     def initialize(self, deformation_kernel_width, 
                  initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow):
+                initial_momenta_to_transport, number_of_time_points):
         print("initial_momenta", initial_momenta)
         print("initial_momenta_to_transport", initial_momenta_to_transport)
         
@@ -81,22 +79,21 @@ class ParallelTransport():
 
         device, _ = utilities.get_best_device(self.gpu_mode)
         self.device = device
-        self.control_points = utilities.move_data(control_points, dtype=self.tensor_scalar_type, device=device)
-        self.initial_momenta = utilities.move_data(initial_momenta, dtype=self.tensor_scalar_type, device=device)
-        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, dtype=self.tensor_scalar_type, device=device)
+        self.control_points = utilities.move_data(control_points, device=device)
+        self.initial_momenta = utilities.move_data(initial_momenta, device=device)
+        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, device=device)
 
         template_points = self.template.get_points()
-        self.template_points = {key: utilities.move_data(value, dtype=self.tensor_scalar_type, device=device) for key, value in template_points.items()}
+        self.template_points = {key: utilities.move_data(value, device=device) for key, value in template_points.items()}
 
         template_data = self.template.get_data()
-        self.template_data = {key: utilities.move_data(value, dtype=self.tensor_scalar_type, device=device) for key, value in template_data.items()}
+        self.template_data = {key: utilities.move_data(value, device=device) for key, value in template_data.items()}
 
         self.deformation_kernel = kernel_factory.factory(gpu_mode=self.gpu_mode, 
                                                          kernel_width=deformation_kernel_width)
         
         self.exponential = Exponential(kernel=self.deformation_kernel, 
                                        number_of_time_points=number_of_time_points,
-                                        use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow,
                                         transport_cp = False) # by default n_tp = 11/ctp = 10
         
         self.geodesic = None
@@ -106,7 +103,7 @@ class ParallelTransport():
 
     def set_momenta_to_transport(self, initial_momenta_to_transport):
         initial_momenta_to_transport = read_3D_array(initial_momenta_to_transport)
-        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, dtype=self.tensor_scalar_type, device=self.device)  
+        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, device=self.device)  
 
     def get_output(self):
         self.transported_mom_path = {}
@@ -282,7 +279,7 @@ class ParallelTransport():
             if time.is_integer():
                 if not op.exists(self.transported_object_path[time]):
                     transported_mom = read_3D_array(self.transported_mom_path[time])
-                    transported_mom = utilities.move_data(transported_mom, dtype=self.tensor_scalar_type, device=self.device)  
+                    transported_mom = utilities.move_data(transported_mom, device=self.device)  
                     transported_mom = transported_mom * sigma
                     
                     parallel_data = self.shoot_exponential(time, cp, transported_mom)
@@ -312,7 +309,7 @@ class ParallelTransport():
                 objects_list, _, _, _, _ = create_template_metadata(spec, self.dimension, gpu_mode=self.gpu_mode)
                 deformed_template = DeformableMultiObject(objects_list)
                 parallel_data = deformed_template.get_data()
-                parallel_data = {key: utilities.move_data(value, dtype=self.tensor_scalar_type, device=self.device) for key, value in parallel_data.items()}
+                parallel_data = {key: utilities.move_data(value, device=self.device) for key, value in parallel_data.items()}
 
                 # Create the geodesic flow object 
                 spec = {"dataset_filenames" : [[{self.objects_name[0] : self.flow_path[time]}]], 
@@ -329,12 +326,12 @@ class ParallelTransport():
         self.data["scalar_product_with_original_registration_momenta"] = {}
         self.data["current_distance_with_original_registration_momenta"] = {}
         original_momenta = read_3D_array(self.transported_mom_path[self.start_time])
-        original_momenta = utilities.move_data(original_momenta, dtype=self.tensor_scalar_type, device=self.device)
+        original_momenta = utilities.move_data(original_momenta, device=self.device)
 
         for (time) in self.times:
             if time.is_integer():
                 momenta = read_3D_array(self.transported_mom_path[time])
-                momenta = utilities.move_data(momenta, dtype=self.tensor_scalar_type, device=self.device)
+                momenta = utilities.move_data(momenta, device=self.device)
                 self.data["squared_norm"][time] = self.exponential.scalar_product(self.control_points, momenta, momenta)
                 self.data["norm"][time] = torch.sqrt(self.data["squared_norm"][time])
                 self.data["scalar_product_with_original_registration_momenta"][time] = self.exponential.scalar_product(self.control_points, original_momenta,
@@ -348,29 +345,26 @@ class ParallelTransport():
                 self.data["current_distance_with_original_registration_momenta"][time] = self.data["current_distance_with_original_registration_momenta"][time].cpu().numpy()
 
 class SimpleParallelTransport(ParallelTransport):
-    def __init__(self, template_specifications, dimension, tensor_scalar_type, 
+    def __init__(self, template_specifications, dimension, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path):
         
-        super().__init__(template_specifications, dimension, tensor_scalar_type, 
+        super().__init__(template_specifications, dimension, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path) 
         
     
     def initialize_(self, deformation_kernel_width, 
                  initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow):
+                initial_momenta_to_transport, number_of_time_points):
         
         self.initialize(deformation_kernel_width, 
                   initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow)
+                initial_momenta_to_transport, number_of_time_points)
         
         # Deformation tools
         self.geodesic = Geodesic(concentration_of_time_points=self.concentration_of_time_points,
                         kernel=self.deformation_kernel,
-                        use_rk2_for_shoot=True, use_rk2_for_flow=use_rk2_for_flow,
                         t0=self.t0, transport_cp = False)
 
     def set_geodesic(self):
@@ -394,12 +388,12 @@ class SimpleParallelTransport(ParallelTransport):
         
 
 class PiecewiseParallelTransport(ParallelTransport):
-    def __init__(self, template_specifications, dimension, tensor_scalar_type, 
+    def __init__(self, template_specifications, dimension, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, tR, gpu_mode, output_dir, flow_path, 
                 initial_control_points = None):
         
-        super().__init__(template_specifications, dimension, tensor_scalar_type, 
+        super().__init__(template_specifications, dimension, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path,
                 initial_control_points) 
@@ -409,18 +403,16 @@ class PiecewiseParallelTransport(ParallelTransport):
     def initialize_(self, deformation_kernel_width, 
                   initial_control_points, initial_momenta,
                 initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow, nb_components):
+                nb_components):
         
         self.initialize(deformation_kernel_width, 
                   initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow)
+                initial_momenta_to_transport, number_of_time_points)
         
         # Deformation tools
         self.geodesic = PiecewiseGeodesic(
                         concentration_of_time_points=self.concentration_of_time_points,
                         kernel=self.deformation_kernel, 
-                        use_rk2_for_shoot=True, use_rk2_for_flow=use_rk2_for_flow,
                         t0=self.t0, nb_components = nb_components)
         
     def set_geodesic(self):
@@ -446,7 +438,6 @@ class PiecewiseParallelTransport(ParallelTransport):
     
 
 def compute_parallel_transport(template_specifications, dimension=default.dimension,
-                               tensor_scalar_type=default.tensor_scalar_type,
                                deformation_kernel_width=default.deformation_kernel_width,
                                initial_control_points=default.initial_control_points,
                                initial_momenta=default.initial_momenta,
@@ -455,14 +446,13 @@ def compute_parallel_transport(template_specifications, dimension=default.dimens
                                concentration_of_time_points=default.concentration_of_time_points,
                                t0=default.t0, start_time = default.t0, target_time = default.t0,
                                number_of_time_points=default.number_of_time_points,
-                               use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                                gpu_mode=default.gpu_mode,
                                output_dir=default.output_dir, 
                                perform_shooting = default.perform_shooting, 
                                overwrite = True, flow_path = None, **kwargs):
     
     pt = SimpleParallelTransport(template_specifications,
-                                    dimension, tensor_scalar_type, tmin, tmax,
+                                    dimension, tmin, tmax,
                                     concentration_of_time_points, t0, start_time, target_time,
                                     gpu_mode, output_dir, flow_path)
     
@@ -472,8 +462,7 @@ def compute_parallel_transport(template_specifications, dimension=default.dimens
     
     pt.initialize_(deformation_kernel_width, 
                   initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow)
+                initial_momenta_to_transport, number_of_time_points)
     pt.set_geodesic()
     
     if perform_shooting:
@@ -487,7 +476,6 @@ def compute_parallel_transport(template_specifications, dimension=default.dimens
     return pt.transported_mom_path
 
 def compute_piecewise_parallel_transport(template_specifications, dimension=default.dimension,
-                               tensor_scalar_type=default.tensor_scalar_type,
                                deformation_kernel_width=default.deformation_kernel_width,
                                initial_control_points=default.initial_control_points,
                                initial_momenta_tR=default.initial_momenta,
@@ -497,7 +485,6 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
                                t0=default.t0, start_time = default.t0, target_time = default.t0,
                                num_component = 4, tR = [],
                                number_of_time_points=default.number_of_time_points,
-                               use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                                gpu_mode=default.gpu_mode,
                                output_dir=default.output_dir, 
                                perform_shooting = default.perform_shooting, 
@@ -511,7 +498,7 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
     3- self.geodesic.parallel_transport(space_shift) along all trajectory
     """
     print("initial_momenta_tR", initial_momenta_tR)
-    pt = PiecewiseParallelTransport(template_specifications, dimension, tensor_scalar_type, 
+    pt = PiecewiseParallelTransport(template_specifications, dimension, 
                                     tmin, tmax, concentration_of_time_points, t0, start_time, 
                                     target_time, tR, gpu_mode, output_dir, flow_path)
     
@@ -521,8 +508,7 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
     
     pt.initialize_(deformation_kernel_width, 
                   initial_control_points, initial_momenta_tR,
-                initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow, num_component)
+                initial_momenta_to_transport, number_of_time_points)
     pt.set_geodesic()
     
     if perform_shooting:
@@ -538,7 +524,6 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
 
 def compute_distance_to_flow(template_specifications,
                         dimension=default.dimension,
-                        tensor_scalar_type=default.tensor_scalar_type,
                         deformation_kernel_width=default.deformation_kernel_width,
                         initial_control_points=default.initial_control_points,
                         initial_momenta_tR=default.initial_momenta,
@@ -549,14 +534,13 @@ def compute_distance_to_flow(template_specifications,
                         num_component = 4,
                         tR = [],
                         number_of_time_points=default.number_of_time_points,
-                        use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
 
                         gpu_mode=default.gpu_mode,
                         output_dir=default.output_dir, 
                         flow_path = None,
                         **kwargs):
     
-    pt = PiecewiseParallelTransport(template_specifications, dimension, tensor_scalar_type, 
+    pt = PiecewiseParallelTransport(template_specifications, dimension, 
                                     tmin, tmax, concentration_of_time_points, t0, start_time, 
                                     target_time, tR, gpu_mode, output_dir, flow_path)
     
@@ -564,7 +548,7 @@ def compute_distance_to_flow(template_specifications,
     pt.initialize_(deformation_kernel_width, 
                   initial_control_points, initial_momenta_tR,
                 initial_momenta_to_transport, number_of_time_points,
-                use_rk2_for_shoot, use_rk2_for_flow, num_component)
+                num_component)
     pt.get_flow()
 
     pt.compute_distance_to_flow()

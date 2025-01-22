@@ -31,6 +31,7 @@ from ..core.observations.deformable_objects.deformable_multi_object import Defor
 from ..in_out.deformable_object_reader import DeformableObjectReader
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
+from ..support import utilities
 from .tools import *
 from . initialize_longitudinal_atlas_development_simple import CrossSectionalLongitudinalAtlasInitializer
 from .initialize_piecewise_geodesic_regression_with_space_shift import BayesianRegressionInitializer
@@ -112,7 +113,7 @@ class LongitudinalAtlasInitializer():
             self.number_of_sources = self.xml_parameters.number_of_sources            
   
     def to_torch_tensor(self, array):
-        return Variable(torch.from_numpy(array).type(default.tensor_scalar_type), requires_grad=False)
+        return Variable(utilities.move_data(array), requires_grad=False)
 
     def create_folders(self):
         self.regressions_output = join(self.output_dir, '1_longitudinal_subjects_geodesic_regressions')

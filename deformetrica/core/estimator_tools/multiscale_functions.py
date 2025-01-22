@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class Multiscale():
     def __init__(self, multiscale_momenta, multiscale_images, multiscale_meshes, 
-                multiscale_strategy, gamma, naive, model, initial_step_size, 
+                multiscale_strategy, naive, model, initial_step_size, 
                 scale_initial_step_size, output_dir, dataset, start_scale):
         
         # Data information
@@ -22,8 +22,6 @@ class Multiscale():
         self.name = model.name
         self.n_subjects = len(dataset.subject_ids)
         
-        self.initial_cp_spacing = model.initial_cp_spacing
-
         self.initial_step_size = initial_step_size
         self.scale_initial_step_size = scale_initial_step_size
         self.output_dir = output_dir

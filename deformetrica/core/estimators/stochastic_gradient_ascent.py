@@ -43,7 +43,6 @@ class StochasticGradientAscent(AbstractEstimator):
                  multiscale_images = default.multiscale_images, #ajout fg
                  multiscale_meshes = default.multiscale_meshes,
                  multiscale_strategy = default.multiscale_strategy,
-                 gamma = default.gamma,
                  number_of_batches = 9,
                  overwrite = True,
 
@@ -79,7 +78,7 @@ class StochasticGradientAscent(AbstractEstimator):
         
         # Multiscale
         self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, multiscale_strategy,
-                                    gamma, naive, self.statistical_model, self.initial_step_size, 
+                                    naive, self.statistical_model, self.initial_step_size, 
                                     self.scale_initial_step_size, self.output_dir, self.dataset)
         self.multiscale.initialize()
 

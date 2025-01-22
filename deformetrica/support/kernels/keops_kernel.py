@@ -17,7 +17,7 @@ class KeopsKernel(AbstractKernel):
         super().__init__('keops', gpu_mode, kernel_width)
         
         if cuda_type is None:
-            cuda_type = default.dtype
+            cuda_type = "float32"
 
         self.cuda_type = cuda_type
 

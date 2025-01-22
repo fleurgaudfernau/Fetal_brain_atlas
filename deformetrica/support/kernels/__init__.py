@@ -1,5 +1,4 @@
 from enum import Enum
-
 from ...core import default
 from ...support.kernels.abstract_kernel import AbstractKernel
 
@@ -17,7 +16,7 @@ def factory(kernel_type = "KEOPS", cuda_type=None, gpu_mode=None, *args, **kwarg
     """Return an instance of a kernel corresponding to the requested kernel_type"""
     
     if cuda_type is None:
-        cuda_type = default.dtype
+        cuda_type = "float32"
     if gpu_mode is None:
         gpu_mode = default.gpu_mode
 

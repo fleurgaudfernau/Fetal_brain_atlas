@@ -31,11 +31,9 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
     cp = read_3D_array(cp)
     momenta = read_3D_array(momenta)
 
-    tensor_scalar_type = utilities.get_torch_scalar_type('float32')
     device, _ = utilities.get_best_device(gpu_mode=gpu_mode)
-
-    cp = utilities.move_data(cp, dtype=tensor_scalar_type, requires_grad=False, device=device)
-    momenta = utilities.move_data(momenta, dtype=tensor_scalar_type, requires_grad=False, device=device)
+    cp = utilities.move_data(cp, requires_grad=False, device=device)
+    momenta = utilities.move_data(momenta, requires_grad=False, device=device)
     
     # TODO for adapting to different t0
     # Get component at t0
@@ -53,8 +51,7 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
     w = []
     for i in range(len(subjects_momenta)):
         subject_momenta = read_3D_array(subjects_momenta[i])
-        subject_momenta = utilities.move_data(subject_momenta, dtype=tensor_scalar_type, 
-                                              requires_grad=False, device=device)
+        subject_momenta = utilities.move_data(subject_momenta, device=device)
         scalar_product = torch.sum(subject_momenta * kernel.convolve(cp, cp, momenta_t0))
         orthogonal = subject_momenta.flatten() - scalar_product * momenta_t0.flatten() / norm_squared
         w.append(orthogonal.cpu().numpy())
@@ -80,13 +77,12 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
 
 
 def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_specifications,
-            dimension=default.dimension, tensor_scalar_type=default.tensor_scalar_type,
+            dimension=default.dimension,
             deformation_kernel_width=default.deformation_kernel_width,
             initial_control_points=default.initial_control_points,
             initial_momenta_tR=default.initial_momenta, tmin=default.tmin, tmax=default.tmax,
             concentration_of_time_points=default.concentration_of_time_points,
             t0=default.t0, nb_components = 4, tR = [], number_of_time_points=default.number_of_time_points,
-            use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
             gpu_mode=default.gpu_mode, output_dir=default.output_dir, 
             overwrite = True, flow_path = None, target_time = None, **kwargs):
 
@@ -116,7 +112,7 @@ def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_speci
 
         print(">>> Parallel transport along main geodesic of space shift {}".format(s))
         
-        pt = PiecewiseParallelTransport(template_specifications, dimension, tensor_scalar_type, 
+        pt = PiecewiseParallelTransport(template_specifications, dimension, 
                                         tmin, tmax, concentration_of_time_points, t0, 
                                         start_time = target_time, target_time = None, tR = tR, 
                                         gpu_mode = gpu_mode, output_dir = space_shift_folder, 
@@ -128,7 +124,7 @@ def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_speci
         pt.initialize_(deformation_kernel_width,
                         initial_control_points, initial_momenta_tR,
                         initial_momenta_to_transport, number_of_time_points,
-                        use_rk2_for_shoot, use_rk2_for_flow, nb_components)   
+                        nb_components)   
         pt.set_geodesic()     
         
         if not overwrite and pt.check_pt_for_ica():

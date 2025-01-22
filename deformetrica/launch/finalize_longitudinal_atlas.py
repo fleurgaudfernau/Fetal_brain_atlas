@@ -12,7 +12,6 @@ from ..in_out.xml_parameters import XmlParameters
 from ..in_out.dataset_functions import create_template_metadata
 from ..in_out.array_readers_and_writers import *
 
-
 def insert_model_xml_level1_entry(model_xml_level0, key, value):
     found_tag = False
     for model_xml_level1 in model_xml_level0:

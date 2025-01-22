@@ -1,6 +1,5 @@
 import torch
 import time
-
 from ....core import default
 from ....core.model_tools.deformations.exponential import Exponential
 from ....core.model_tools.deformations.piecewise_geodesic import PiecewiseGeodesic
@@ -23,17 +22,14 @@ class SpatiotemporalReferenceFrame:
     def __init__(self, kernel=default.deformation_kernel, tR=default.t0,
                  concentration_of_time_points=default.concentration_of_time_points,
                  number_of_time_points=default.number_of_time_points,
-                 use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                  template_tR=None, nb_components=2, num_components=None, transport_cp = True):
 
         self.exponential = Exponential(
             kernel=kernel, 
-            number_of_time_points=number_of_time_points, use_rk2_for_shoot=use_rk2_for_shoot,
-            use_rk2_for_flow=use_rk2_for_flow, transport_cp = transport_cp)
+            number_of_time_points=number_of_time_points, transport_cp = transport_cp)
 
         self.geodesic = PiecewiseGeodesic(kernel=kernel, 
-            concentration_of_time_points=concentration_of_time_points,
-            use_rk2_for_shoot=True, use_rk2_for_flow=use_rk2_for_flow, template_tR=template_tR,
+            concentration_of_time_points=concentration_of_time_points, template_tR=template_tR,
             nb_components=nb_components, num_components=num_components, transport_cp = transport_cp)
 
         self.modulation_matrix_tR = None
@@ -54,13 +50,6 @@ class SpatiotemporalReferenceFrame:
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
-
-    def set_use_rk2_for_shoot(self, flag):  # Cannot modify the shoot integration of the geodesic, which require rk2.
-        self.exponential.set_use_rk2_for_shoot(flag)
-
-    def set_use_rk2_for_flow(self, flag):
-        self.exponential.set_use_rk2_for_shoot(flag)
-        self.geodesic.set_use_rk2_for_flow(flag)
 
     def set_kernel(self, kernel):
         self.geodesic.set_kernel(kernel)
@@ -145,11 +134,11 @@ class SpatiotemporalReferenceFrame:
 
         # Standard case.
         else:
-            index, weight_left, weight_right = self._get_interpolation_index_and_weights(time)
-            template_points = {key: weight_left * value[index - 1] + weight_right * value[index]
+            index, weight_L, weight_R = self._get_interpolation_index_and_weights(time)
+            template_points = {key: weight_L * value[index - 1] + weight_R * value[index]
                                for key, value in self.template_points_t.items()}
-            control_points = weight_left * self.control_points_t[index - 1] + weight_right * self.control_points_t[index]
-            modulation_matrix = weight_left * self.projected_modulation_matrix_t[index - 1] + weight_right * self.projected_modulation_matrix_t[index]
+            control_points = weight_L * self.control_points_t[index - 1] + weight_R * self.control_points_t[index]
+            modulation_matrix = weight_L * self.projected_modulation_matrix_t[index - 1] + weight_R * self.projected_modulation_matrix_t[index]
             space_shift = torch.mm(modulation_matrix, sources.unsqueeze(1)).view(self.geodesic.momenta[0].size())
 
             initial_template_points = template_points
@@ -180,12 +169,12 @@ class SpatiotemporalReferenceFrame:
             # Get the template points at time t
             # get modulation matrix at time t -> time shift
             # Shoot the template points at time t with space shift using the Exp
-            index, weight_left, weight_right = self._get_interpolation_index_and_weights(time)
-            template_points = {k: weight_left * v[index - 1] + weight_right * v[index]
+            index, weight_L, weight_R = self._get_interpolation_index_and_weights(time)
+            template_points = {k: weight_L * v[index - 1] + weight_R * v[index]
                                for k, v in self.template_points_t.items()}
-            control_points = weight_left * self.control_points_t[index - 1] + weight_right * self.control_points_t[index]
-            modulation_matrix = weight_left * self.projected_modulation_matrix_t[index - 1] \
-                                + weight_right * self.projected_modulation_matrix_t[index]
+            control_points = weight_L * self.control_points_t[index - 1] + weight_R * self.control_points_t[index]
+            modulation_matrix = weight_L * self.projected_modulation_matrix_t[index - 1] \
+                                + weight_R * self.projected_modulation_matrix_t[index]
             space_shift = torch.mm(modulation_matrix, sources.unsqueeze(1)).view(self.geodesic.momenta[0].size())
 
             self.exponential.set_initial_template_points(template_points)
@@ -202,9 +191,9 @@ class SpatiotemporalReferenceFrame:
         for index in range(1, len(self.times)):
             if time - self.times[index] < 0: #before : time.data.cpu().numpy()
                 break
-        weight_left = (self.times[index] - time) / (self.times[index] - self.times[index - 1])
-        weight_right = (time - self.times[index - 1]) / (self.times[index] - self.times[index - 1])
-        return index, weight_left, weight_right
+        weight_L = (self.times[index] - time) / (self.times[index] - self.times[index - 1])
+        weight_R = (time - self.times[index - 1]) / (self.times[index] - self.times[index - 1])
+        return index, weight_L, weight_R
 
     ####################################################################################################################
     ### Public methods:

@@ -25,7 +25,6 @@ class MultiscaleMomenta():
 
         # Model options
         self.freeze_template = model.freeze_template
-        self.initial_cp_spacing = model.initial_cp_spacing
         
         self.initial_convergence_threshold = 0.001
         self.convergence_threshold = 0.001

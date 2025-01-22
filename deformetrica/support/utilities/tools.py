@@ -8,6 +8,9 @@ from ...support import utilities
 
 gpu_mode = GpuMode.KERNEL
 
+def gaussian_kernel(x, y, sigma = 1):
+    return np.exp(-0.5 * ((x-y)/sigma)**2)/ sigma * np.sqrt(2 * np.pi)
+
 def residuals_change(liste):
     return (liste[-2] - liste[-1])/liste[-2]
 
@@ -27,14 +30,13 @@ def change(list, n_subjects = 1):
 
 def norm_squared(cp, momenta, deformation_kernel_width):
     device, _ = utilities.get_best_device(gpu_mode)
-    cp = utilities.move_data(cp, dtype=default.tensor_scalar_type, device=device)
-    momenta = utilities.move_data(momenta, dtype=default.tensor_scalar_type, device=device)
+    cp = utilities.move_data(cp, device=device)
+    momenta = utilities.move_data(momenta, device=device)
     
     deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, 
                                                 kernel_width=deformation_kernel_width)
     
-    exponential = Exponential(dense_mode=default.dense_mode,
-                            kernel=deformation_kernel,
+    exponential = Exponential(kernel=deformation_kernel,
                             number_of_time_points=default.number_of_time_points,
                             use_rk2_for_shoot=default.use_rk2_for_shoot, 
                             use_rk2_for_flow=default.use_rk2_for_flow,
@@ -91,7 +93,6 @@ def orthogonal_projection(cp, momenta_to_project, momenta):
     orthogonal_momenta = momenta_to_project - sp * momenta
 
     return orthogonal_momenta
-
 
 def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
     K = torch.zeros((global_cp_nb * dimension, global_cp_nb * dimension))

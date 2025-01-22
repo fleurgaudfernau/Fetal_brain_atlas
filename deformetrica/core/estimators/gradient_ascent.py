@@ -43,7 +43,6 @@ class GradientAscent(AbstractEstimator):
                  multiscale_images = default.multiscale_images, #ajout fg
                  multiscale_meshes = default.multiscale_meshes,
                  multiscale_strategy = default.multiscale_strategy,
-                 gamma = default.gamma,
                  start_scale = None,
                  overwrite = True,
 
@@ -78,10 +77,9 @@ class GradientAscent(AbstractEstimator):
         self.current_iteration = 0
 
         self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, 
-                                    multiscale_strategy, gamma, naive, self.statistical_model, self.initial_step_size, 
+                                    multiscale_strategy, naive, self.statistical_model, self.initial_step_size, 
                                     self.scale_initial_step_size, self.output_dir, self.dataset, start_scale)
         
-
         if load_state_file:
             self.current_parameters, self.current_iteration, \
             image_scale, momenta_scale, iter_images, iter_momenta, order \

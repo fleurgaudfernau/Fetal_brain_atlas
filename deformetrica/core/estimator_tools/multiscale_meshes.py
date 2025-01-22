@@ -6,7 +6,7 @@ from ...support.utilities.tools import residuals_change
 
 logger = logging.getLogger(__name__)
 
-def compute_mesh_scale(model_name, momenta_scale, initial_cp_spacing, current_mesh_scale = None):
+def compute_mesh_scale(model_name, momenta_scale, current_mesh_scale = None):
     if momenta_scale > 1:
         mesh_scale = min(30000, 7**(momenta_scale)) #before 27/01: 6
     else:

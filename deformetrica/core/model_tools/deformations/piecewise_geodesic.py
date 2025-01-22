@@ -31,7 +31,6 @@ class PiecewiseGeodesic:
 
     def __init__(self, kernel=default.deformation_kernel,
                  t0=default.t0, concentration_of_time_points=default.concentration_of_time_points,
-                 use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
                  nb_components=2, num_components = None, template_tR=None, transport_cp = True):
 
         # usual t0 replaced by tR
@@ -50,36 +49,20 @@ class PiecewiseGeodesic:
         self.tR = [self.tmin] * (self.nb_components + 1) 
         self.exponential = []
         for i in range(self.nb_components):
-            self.exponential.append(
-                Exponential(kernel=kernel,
-                            use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow,
-                            transport_cp = transport_cp))
+            self.exponential.append(Exponential(kernel=kernel, transport_cp = transport_cp))
 
         # Flags to save extra computations that have already been made in the update methods.
         self.shoot_is_modified = [True]*self.nb_components
-        self.backward_extension = 0
-        self.forward_extension = 0
 
         self.template_index = None
 
     def new_exponential(self):
-        return Exponential(kernel=self.exponential[0].kernel, 
-                            use_rk2_for_shoot=self.exponential[0].use_rk2_for_shoot, 
-                            use_rk2_for_flow=self.exponential[0].use_rk2_for_flow,
-                            transport_cp = self.exponential[0].transport_cp)
+        return Exponential(kernel=self.exponential[0].kernel, transport_cp = self.exponential[0].transport_cp)
 
 
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
-
-    def set_use_rk2_for_shoot(self, flag):
-        for l in range(self.nb_components):
-            self.exponential[l].set_use_rk2_for_shoot(flag)
-
-    def set_use_rk2_for_flow(self, flag):
-        for l in range(self.nb_components):
-            self.exponential[l].set_use_rk2_for_flow(flag)
 
     def set_kernel(self, kernel):
         for l in range(self.nb_components):
@@ -172,11 +155,11 @@ class PiecewiseGeodesic:
         # Mean of the two closest template points
         device, _ = utilities.get_best_device(self.exponential[0].kernel.gpu_mode)
 
-        weight_left = utilities.move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
-        weight_right = utilities.move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
+        weight_l = utilities.move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
+        weight_r = utilities.move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
         template_t = {key: [utilities.move_data(v, device=device) for v in value] \
                 for key, value in self.get_template_points_trajectory().items()}
-        deformed_points = {key: weight_left * value[j - 1] + weight_right * value[j]
+        deformed_points = {key: weight_l * value[j - 1] + weight_r * value[j]
                            for key, value in template_t.items()}
 
         return deformed_points

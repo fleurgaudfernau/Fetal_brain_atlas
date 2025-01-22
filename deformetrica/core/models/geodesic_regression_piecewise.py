@@ -7,7 +7,7 @@ from ...core.models.model_functions import initialize_control_points, initialize
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata, create_mesh_attachements
-from ...support import utilities
+from ...support.utilities import get_best_device, move_data
 import os.path as op
 
 logger = logging.getLogger(__name__)
@@ -23,20 +23,16 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
                  dimension=default.dimension,
-                 number_of_processes=default.number_of_processes,
-
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  concentration_of_time_points=default.concentration_of_time_points, 
                  t0=default.t0, tR=[], t1 = default.tmax,
-                 use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
 
                  freeze_template=default.freeze_template,
                  use_sobolev_gradient=default.use_sobolev_gradient,
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 initial_cp_spacing=default.initial_cp_spacing,
                  initial_momenta=default.initial_momenta,
                  freeze_rupture_time = default.freeze_rupture_time,
                  freeze_t0 = default.freeze_rupture_time, # ajout fg
@@ -52,7 +48,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.number_of_processes = number_of_processes
 
         # Declare model structure.
         self.t0 = t0 # t0 AND t1 must be provided to compute the tR
@@ -69,10 +64,11 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Deformation.
         self.geodesic = PiecewiseGeodesic(t0 = t0, nb_components = self.nb_components, template_tR=None,
                 kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
-                concentration_of_time_points=concentration_of_time_points,
-                use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
+                concentration_of_time_points=concentration_of_time_points)
         self.geodesic.set_tR(self.tR)
         #self.geodesic.set_t0(self.t0)
+
+        self.device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
 
         # Template TODO? several templates
         (object_list, self.objects_name, self.objects_name_extension, self.objects_noise_variance, 
@@ -93,7 +89,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.use_sobolev_gradient = use_sobolev_gradient
         self.smoothing_kernel_width = smoothing_kernel_width
         self.deformation_kernel_width = deformation_kernel_width
-        self.initial_cp_spacing = initial_cp_spacing
         self.number_of_subjects = 1
         
         if self.use_sobolev_gradient:
@@ -105,7 +100,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Make the template bouding box wider in order to array dim x 2 (max and min)
         # Control points and Momenta.
         self.fixed_effects['control_points'] = initialize_control_points(initial_control_points, 
-            self.template, initial_cp_spacing, deformation_kernel_width, self.dimension, 
+            self.template, deformation_kernel_width, self.dimension, 
             new_bounding_box = new_bounding_box)
         self.fixed_effects['momenta']= initialize_momenta(
             initial_momenta, len(self.fixed_effects['control_points']), self.dimension, 
@@ -255,10 +250,8 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         :param with_grad: Flag that indicates wether the gradient should be returned as well.
         :return:
         """
-        device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
-
         # Initialize: conversion from numpy to torch -------------------------------------------------------------------
-        template_data, template_points, control_points, momenta, rupture_time = self._fixed_effects_to_torch_tensors(with_grad, device=device)
+        template_data, template_points, control_points, momenta, rupture_time = self._fixed_effects_to_torch_tensors(with_grad)
 
         # Deform -------------------------------------------------------------------------------------------------------
         attachment, regularity = self._compute_attachment_and_regularity(
@@ -323,9 +316,9 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.geodesic.set_tmin(tmin)
         self.geodesic.set_tmax(math.ceil(max(dataset.times[0])))
 
-        device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
+        
         template_data, template_points, control_points, momenta, rupture_time \
-        = self._fixed_effects_to_torch_tensors(with_grad, device=device)
+        = self._fixed_effects_to_torch_tensors(with_grad)
                 
         attachement, regularity = self._compute_batch_attachment_and_regularity(target_times, target_objects, 
                                                                                 template_data, template_points, 
@@ -358,8 +351,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         Compute current distance between deformed template and object
         #obj = a deformablemultiobject
         """
-        device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
-        template_data, _, _ = self.prepare_geodesic(dataset, device)
+        template_data, _, _ = self.prepare_geodesic(dataset)
         
         deformed_points = self.geodesic.get_template_points(dataset.times[0][j])
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
@@ -371,8 +363,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
-        device, _ = utilities.get_best_device(gpu_mode = self.gpu_mode)
-        template_data, _, _ = self.prepare_geodesic(dataset, device)
+        template_data, _, _ = self.prepare_geodesic(dataset)
 
         deformed_points = self.geodesic.get_template_points(time)
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
@@ -404,8 +395,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         if iter == 0:
             return self.compute_initial_curvature(dataset, j, curvature)
 
-        device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
-        template_data, _, _ = self.prepare_geodesic(dataset, device)
+        template_data, _, _ = self.prepare_geodesic(dataset)
         
         deformed_points = self.geodesic.get_template_points(dataset.times[0][j])
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
@@ -420,35 +410,28 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
     ### Private utility methods:
     ####################################################################################################################
 
-    def _fixed_effects_to_torch_tensors(self, with_grad, device='cpu'):
+    def _fixed_effects_to_torch_tensors(self, with_grad = False):
         """
         Convert the fixed_effects into torch tensors.
         """
         # Template data.
-        template_data = self.fixed_effects['template_data']
-        template_data = {key: utilities.move_data(value, 
-                                                  requires_grad=(not self.freeze_template and with_grad),
-                                                  device=device)
-                         for key, value in template_data.items()}
+        template_data = {key: move_data(value, device=self.device,
+                                        requires_grad=(not self.freeze_template and with_grad))
+                         for key, value in self.get_template_data().items()}
 
         # Template points.
-        template_points = self.template.get_points()
-        template_points = {key: utilities.move_data(value,
-                                                    requires_grad=(not self.freeze_template and with_grad),
-                                                    device=device)
-                           for key, value in template_points.items()}
+        template_points = {key: move_data(value, device=self.device,
+                                            requires_grad=(not self.freeze_template and with_grad)) 
+                            for key, value in self.template.get_points().items()}
 
         # Control points.
-        control_points = self.fixed_effects['control_points']
-        control_points = utilities.move_data(control_points, requires_grad=False, device=device)
+        control_points = move_data(self.get_control_points(), device=self.device)
 
         # Momenta.
-        momenta = self.get_momenta()
-        momenta = utilities.move_data(momenta, requires_grad=with_grad, device=device)
+        momenta = move_data(self.get_momenta(),requires_grad=with_grad, device=self.device)
         
         # Rupture time
-        rupture_time = self.fixed_effects['rupture_time']
-        rupture_time = utilities.move_data(rupture_time, requires_grad=with_grad, device=device)
+        rupture_time = move_data(self.get_rupture_time(), requires_grad=with_grad, device=self.device)
 
         return template_data, template_points, control_points, momenta, rupture_time
         
@@ -456,9 +439,9 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
     ####################################################################################################################
     ### Writing methods:
     ####################################################################################################################            
-    def prepare_geodesic(self, dataset, device = "cpu", tmax = None):
+    def prepare_geodesic(self, dataset, tmax = None):
         template_data, template_points, control_points, momenta, rupture_time = \
-            self._fixed_effects_to_torch_tensors(False)
+                                                self._fixed_effects_to_torch_tensors()
         target_times = dataset.times[0]
         target_objects = dataset.deformable_objects[0]
 
@@ -538,8 +521,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.momenta_path = op.join(output_dir, self.name + "__EstimatedParameters__Momenta.txt")
 
         if self.geodesic.exponential[0].number_of_time_points is None:
-            device, _ = utilities.get_best_device(gpu_mode=self.gpu_mode)
-            self.prepare_geodesic(dataset, device)
+            self.prepare_geodesic(dataset)
 
         self.geodesic.output_path(self.name, self.objects_name, self.objects_name_extension, output_dir)
         

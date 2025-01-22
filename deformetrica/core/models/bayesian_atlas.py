@@ -2,7 +2,6 @@ import math
 
 import torch
 
-
 from ...support import kernels as kernel_factory
 from ...core import default
 from ...core.model_tools.deformations.exponential import Exponential
@@ -12,7 +11,7 @@ from ...core.models.model_functions import initialize_momenta, initialize_covari
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata, compute_noise_dimension
-from ...support import utilities
+from ...support.utilities import get_best_device, move_data
 from ...support.probability_distributions.inverse_wishart_distribution import InverseWishartDistribution
 from ...support.probability_distributions.multi_scalar_inverse_wishart_distribution import \
     MultiScalarInverseWishartDistribution
@@ -34,19 +33,16 @@ class BayesianAtlas(AbstractStatisticalModel):
     def __init__(self, template_specifications,
 
                  dimension=default.dimension,
-                 number_of_processes=default.number_of_processes,
 
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  number_of_time_points=default.number_of_time_points,
-                 use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow,
 
                  freeze_template=default.freeze_template,
                  use_sobolev_gradient=default.use_sobolev_gradient,
                  smoothing_kernel_width=default.smoothing_kernel_width,
 
                  initial_control_points=default.initial_control_points,
-                 initial_cp_spacing=default.initial_cp_spacing,
 
                  gpu_mode=default.gpu_mode,
 
@@ -56,7 +52,6 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Global-like attributes.
         self.dimension = dimension
-        self.number_of_processes = number_of_processes
         self.deformation_kernel_width = deformation_kernel_width
 
         # Declare model structure.
@@ -76,8 +71,9 @@ class BayesianAtlas(AbstractStatisticalModel):
         # Deformation.
         self.exponential = Exponential(
             kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
-            number_of_time_points=number_of_time_points,
-            use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
+            number_of_time_points=number_of_time_points)
+
+        self.device, _ = get_best_device(self.exponential.kernel.gpu_mode)
 
         # Template.
         (object_list, self.objects_name, self.objects_name_extension,
@@ -101,8 +97,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Control points.
         self.fixed_effects['control_points'] = initialize_control_points(
-            initial_control_points, self.template, initial_cp_spacing, deformation_kernel_width,
-            self.dimension)
+            initial_control_points, self.template, deformation_kernel_width, self.dimension)
         self.number_of_control_points = len(self.fixed_effects['control_points'])
 
         # Covariance momenta.
@@ -412,7 +407,6 @@ class BayesianAtlas(AbstractStatisticalModel):
         self.objects_noise_dimension = compute_noise_dimension(self.template, self.multi_object_attachment,
                                                                self.dimension)
     
-    
     def mini_batches(self, dataset, number_of_batches):
         """
         Split randomly the dataset into batches of size batch_size
@@ -436,7 +430,6 @@ class BayesianAtlas(AbstractStatisticalModel):
             else:
                 mini_batches[-1] += mini_batch
         
-        
         return mini_batches
 
     ####################################################################################################################
@@ -456,8 +449,8 @@ class BayesianAtlas(AbstractStatisticalModel):
         number_of_subjects = len(residuals)
         attachments = torch.zeros((number_of_subjects,)).type(default.tensor_scalar_type)
         for i in range(number_of_subjects):
-            attachments[i] = - 0.5 * torch.sum(residuals[i] / utilities.move_data(
-                self.fixed_effects['noise_variance'], device=residuals[i].device))
+            attachments[i] = - 0.5 * torch.sum(residuals[i] / move_data(
+                            self.fixed_effects['noise_variance'], device=self.device))
         return attachments
     
     def _compute_random_effects_regularity(self, momenta):
@@ -528,8 +521,6 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         Core part of the ComputeLogLikelihood methods. Fully torch.
         """
-        device, _ = utilities.get_best_device(self.exponential.kernel.gpu_mode)
-
         # Deform -------------------------------------------------------------------------------------------------------
         residuals = []
 
@@ -538,7 +529,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         for i, target in targets:
             self.exponential.set_initial_momenta(momenta[i])
-            self.exponential.move_data_to_(device=device)
+            self.exponential.move_data_to_(device=self.device)
             self.exponential.update()
             deformed_points = self.exponential.get_template_points()
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
@@ -611,7 +602,6 @@ class BayesianAtlas(AbstractStatisticalModel):
         self._write_model_parameters(individual_RER, output_dir)
 
     def _write_model_predictions(self, dataset, individual_RER, output_dir, compute_residuals=True, write = True):
-        device, _ = utilities.get_best_device(self.exponential.kernel.gpu_mode)
 
         # Initialize.
         template_data, template_points, control_points = self._fixed_effects_to_torch_tensors(False)
@@ -624,7 +614,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         residuals = []  # List of torch 1D tensors. Individuals, objects.
         for i, subject_id in enumerate(dataset.subject_ids):
             self.exponential.set_initial_momenta(momenta[i])
-            self.exponential.move_data_to_(device=device)
+            self.exponential.move_data_to_(device=self.device)
             self.exponential.update()
 
             deformed_points = self.exponential.get_template_points()
@@ -683,7 +673,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         #get object intensities
         objet = dataset.deformable_objects[subject][0]
         objet_intensities = objet.get_data()["image_intensities"]
-        target_intensities = utilities.move_data(objet_intensities, device=next(iter(template_data.values())).device, 
+        target_intensities = move_data(objet_intensities, device=self.device, 
                                     dtype = next(iter(template_data.values())).dtype) #tensor not dict 
         residuals = (target_intensities - deformed_template['image_intensities']) ** 2
         
@@ -700,8 +690,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         momenta = self._individual_RER_to_torch_tensors(individual_RER, False)
 
         residuals_by_point = torch.zeros((template_data['image_intensities'].shape), 
-                                    device=next(iter(template_data.values())).device, 
-                                    dtype=next(iter(template_data.values())).dtype)   #tensor not dict             
+                                        device=self.device, dtype=next(iter(template_data.values())).dtype)   #tensor not dict             
 
         for i, _ in enumerate(dataset.subject_ids):
             subject_residuals, _ = self.subject_residuals(i, dataset, template_data, momenta, control_points)

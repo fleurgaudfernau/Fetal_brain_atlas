@@ -14,25 +14,19 @@ def residuals_change(avg_residuals):
     return (avg_residuals[-2] - avg_residuals[-1])/avg_residuals[-2]
 
 
-def initialize_control_points(initial_control_points, template, spacing, deformation_kernel_width,
-                              dimension, dense_mode, new_bounding_box = None):
+def initialize_control_points(initial_control_points, template, deformation_kernel_width,
+                              dimension, new_bounding_box = None):
     if initial_control_points is not None:
         control_points = read_2D_array(initial_control_points)
         logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_control_points))
 
     else:
-        if not dense_mode:
-            bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
-            control_points = create_regular_grid_of_points(bounding_box, spacing, dimension)
-            # if len(template.object_list) == 1 and template.object_list[0].type.lower() == 'image':
-            #     control_points = remove_useless_control_points(control_points, template.object_list[0],
-            #                                                    deformation_kernel_width)
-            logger.info('>> Set of %d control points defined.' % len(control_points))
-        else:
-            assert (('landmark_points' in template.get_points().keys()) and
-                    ('image_points' not in template.get_points().keys())), \
-                'In dense mode, only landmark objects are allowed. One at least is needed.'
-            control_points = template.get_points()['landmark_points']
+        bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
+        control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, dimension)
+        # if len(template.object_list) == 1 and template.object_list[0].type.lower() == 'image':
+        #     control_points = remove_useless_control_points(control_points, template.object_list[0],
+        #                                                    deformation_kernel_width)
+        logger.info('>> Set of %d control points defined.' % len(control_points))
 
     return control_points
 

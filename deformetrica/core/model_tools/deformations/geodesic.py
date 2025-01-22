@@ -36,8 +36,7 @@ class Geodesic:
     ####################################################################################################################
 
     def __init__(self, kernel=default.deformation_kernel,
-                 t0=default.t0, concentration_of_time_points=default.concentration_of_time_points,
-                 use_rk2_for_shoot=default.use_rk2_for_shoot, use_rk2_for_flow=default.use_rk2_for_flow):
+                 t0=default.t0, concentration_of_time_points=default.concentration_of_time_points):
 
         self.concentration_of_time_points = concentration_of_time_points
         self.t0 = t0
@@ -48,14 +47,8 @@ class Geodesic:
         self.momenta_t0 = None
         self.template_points_t0 = None
 
-        print("use_rk2_for_shoot", use_rk2_for_shoot)
-        print("use_rk2_for_flow", use_rk2_for_flow)
-
-        self.backward_exponential = Exponential(
-            kernel=kernel, use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
-
-        self.forward_exponential = Exponential(
-            kernel=kernel, use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
+        self.backward_exponential = Exponential(kernel=kernel)
+        self.forward_exponential = Exponential(kernel=kernel)
 
         # Flags to save extra computations that have already been made in the update methods.
         self.shoot_is_modified = True
@@ -63,18 +56,9 @@ class Geodesic:
         self.backward_extension = 0
         self.forward_extension = 0
 
-
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
-
-    def set_use_rk2_for_shoot(self, flag):
-        self.backward_exponential.set_use_rk2_for_shoot(flag)
-        self.forward_exponential.set_use_rk2_for_shoot(flag)
-
-    def set_use_rk2_for_flow(self, flag):
-        self.backward_exponential.set_use_rk2_for_flow(flag)
-        self.forward_exponential.set_use_rk2_for_flow(flag)
 
     def set_kernel(self, kernel):
         self.backward_exponential.kernel = kernel
@@ -156,8 +140,6 @@ class Geodesic:
         else:
             return momenta_t[-1]
 
-
-
     def get_template_points(self, time):
         """
         Returns the position of the landmark points, at the given time.
@@ -181,13 +163,14 @@ class Geodesic:
             if time - times[j] < 0: break
 
         device, _ = utilities.get_best_device(self.backward_exponential.kernel.gpu_mode)
-
-        weight_left = utilities.move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, dtype=self.momenta_t0.dtype)
-        weight_right = utilities.move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, dtype=self.momenta_t0.dtype)
+        
+        weight_l = utilities.move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, 
+                                        dtype=self.momenta_t0.dtype)
+        weight_r = utilities.move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, 
+                                        dtype=self.momenta_t0.dtype)
         template_t = {key: [utilities.move_data(v, device=device) for v in value] for key, value in self.get_template_points_trajectory().items()}
 
-        deformed_points = {key: weight_left * value[j - 1] + weight_right * value[j]
-                           for key, value in template_t.items()}
+        deformed_points = {k: weight_l * v[j - 1] + weight_r * v[j] for k, v in template_t.items()}
 
         return deformed_points
 
@@ -365,8 +348,6 @@ class Geodesic:
         device, _ = utilities.get_best_device(self.forward_exponential.kernel.gpu_mode)
 
         new_expo = Exponential(kernel=self.backward_exponential.kernel, 
-                                use_rk2_for_shoot=self.backward_exponential.use_rk2_for_shoot, 
-                                use_rk2_for_flow=self.backward_exponential.use_rk2_for_flow,
                                 transport_cp = self.backward_exponential.transport_cp)
 
         if start_time > target_time:
@@ -436,26 +417,26 @@ class Geodesic:
     ### Extension methods:
     ####################################################################################################################
 
-    def extend_parallel_transport(self, parallel_transport_t, backward_extension, forward_extension,
-                                  is_orthogonal=False):
+    # def extend_parallel_transport(self, parallel_transport_t, backward_extension, forward_extension,
+    #                               is_orthogonal=False):
 
-        parallel_transport_t_backward_extension = [parallel_transport_t[0]]
-        if backward_extension > 0:
-            parallel_transport_t_backward_extension = self.backward_exponential.parallel_transport(
-                parallel_transport_t_backward_extension[0],
-                initial_time_point=self.backward_exponential.number_of_time_points - backward_extension - 1,
-                is_orthogonal=is_orthogonal)
+    #     parallel_transport_t_backward_extension = [parallel_transport_t[0]]
+    #     if backward_extension > 0:
+    #         parallel_transport_t_backward_extension = self.backward_exponential.parallel_transport(
+    #             parallel_transport_t_backward_extension[0],
+    #             initial_time_point=self.backward_exponential.number_of_time_points - backward_extension - 1,
+    #             is_orthogonal=is_orthogonal)
 
-        parallel_transport_t_forward_extension = [parallel_transport_t[-1]]
-        if forward_extension > 0:
-            parallel_transport_t_forward_extension = self.forward_exponential.parallel_transport(
-                parallel_transport_t_forward_extension[0],
-                initial_time_point=self.forward_exponential.number_of_time_points - forward_extension - 1,
-                is_orthogonal=is_orthogonal)
+    #     parallel_transport_t_forward_extension = [parallel_transport_t[-1]]
+    #     if forward_extension > 0:
+    #         parallel_transport_t_forward_extension = self.forward_exponential.parallel_transport(
+    #             parallel_transport_t_forward_extension[0],
+    #             initial_time_point=self.forward_exponential.number_of_time_points - forward_extension - 1,
+    #             is_orthogonal=is_orthogonal)
 
-        parallel_transport_t = parallel_transport_t_backward_extension[:0:-1] \
-                               + parallel_transport_t + parallel_transport_t_forward_extension[1:]
-        return parallel_transport_t
+    #     parallel_transport_t = parallel_transport_t_backward_extension[:0:-1] \
+    #                            + parallel_transport_t + parallel_transport_t_forward_extension[1:]
+    #     return parallel_transport_t
 
     def get_times(self):
         times_backward = [self.t0]

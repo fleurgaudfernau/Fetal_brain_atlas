@@ -62,17 +62,13 @@ def get_model_options(xml_parameters):
         'deformation_kernel_device': xml_parameters.deformation_kernel_device,
         'number_of_time_points': xml_parameters.number_of_time_points,
         'concentration_of_time_points': xml_parameters.concentration_of_time_points,
-        'use_rk2_for_shoot': xml_parameters.use_rk2_for_shoot,
-        'use_rk2_for_flow': xml_parameters.use_rk2_for_flow,
         'freeze_template': xml_parameters.freeze_template,
         'freeze_momenta': xml_parameters.freeze_momenta,
         'freeze_noise_variance': xml_parameters.freeze_noise_variance,
         'use_sobolev_gradient': xml_parameters.use_sobolev_gradient,
         'sobolev_kernel_width_ratio': xml_parameters.sobolev_kernel_width_ratio,
         'initial_control_points': xml_parameters.initial_control_points,
-        'initial_cp_spacing': xml_parameters.initial_cp_spacing,
         'initial_momenta': xml_parameters.initial_momenta,
-        'number_of_processes': xml_parameters.number_of_processes,
         'downsampling_factor': xml_parameters.downsampling_factor,
         'dimension': xml_parameters.dimension,
         'gpu_mode': xml_parameters.gpu_mode,
@@ -89,22 +85,8 @@ def get_model_options(xml_parameters):
         options['tmax'] = xml_parameters.tmax
         options['number_of_sources'] = xml_parameters.number_of_sources
         options['initial_modulation_matrix'] = xml_parameters.initial_modulation_matrix
-        options['initial_time_shift_variance'] = xml_parameters.initial_time_shift_variance
-        options['initial_acceleration_mean'] = xml_parameters.initial_acceleration_mean
-        options['initial_acceleration_variance'] = xml_parameters.initial_acceleration_variance
-        options['initial_onset_ages'] = xml_parameters.initial_onset_ages
-        options['initial_accelerations'] = xml_parameters.initial_accelerations
         options['initial_sources'] = xml_parameters.initial_sources
         options['freeze_modulation_matrix'] = xml_parameters.freeze_modulation_matrix
-        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
-        options['freeze_time_shift_variance'] = xml_parameters.freeze_time_shift_variance
-        options['freeze_acceleration_variance'] = xml_parameters.freeze_acceleration_variance
-
-    elif xml_parameters.model_type.lower() == 'PrincipalGeodesicAnalysis'.lower():
-        options['initial_latent_positions'] = xml_parameters.initial_sources
-        options['latent_space_dimension'] = xml_parameters.latent_space_dimension
-        options['initial_principal_directions'] = xml_parameters.initial_principal_directions
-        options['freeze_principal_directions'] = xml_parameters.freeze_principal_directions
 
     elif xml_parameters.model_type.lower() in ['Regression'.lower(), "KernelRegression".lower()]:
         options['t0'] = xml_parameters.t0
@@ -150,15 +132,12 @@ class XmlParameters:
         self.number_of_time_points = default.number_of_time_points
         self.concentration_of_time_points = default.concentration_of_time_points
         self.number_of_sources = default.number_of_sources
-        self.use_rk2_for_shoot = default.use_rk2_for_shoot
-        self.use_rk2_for_flow = default.use_rk2_for_flow
         self.t0 = None
         self.tR = [] # ajout fg
         self.t1 = None #ajout fg
         self.num_component = None # ajout fg
         self.tmin = default.tmin
         self.tmax = default.tmax
-        self.initial_cp_spacing = default.initial_cp_spacing
         self.dimension = default.dimension
         self.covariance_momenta_prior_normalized_dof = default.covariance_momenta_prior_normalized_dof
 
@@ -168,7 +147,6 @@ class XmlParameters:
 
         self.optimization_method_type = default.optimization_method_type
         self.optimized_log_likelihood = default.optimized_log_likelihood
-        self.number_of_processes = default.number_of_processes
         self.max_iterations = default.max_iterations
         self.max_line_search_iterations = default.max_line_search_iterations
         self.save_every_n_iters = default.save_every_n_iters
@@ -205,8 +183,6 @@ class XmlParameters:
         self.freeze_modulation_matrix = default.freeze_modulation_matrix
         self.freeze_reference_time = default.freeze_reference_time
         self.freeze_rupture_time = default.freeze_rupture_time
-        self.freeze_time_shift_variance = default.freeze_time_shift_variance
-        self.freeze_acceleration_variance = default.freeze_acceleration_variance
         self.freeze_noise_variance = default.freeze_noise_variance
 
         self.freeze_translation_vectors = False
@@ -217,11 +193,6 @@ class XmlParameters:
         self.initial_momenta = default.initial_momenta
         self.initial_principal_directions = default.initial_principal_directions
         self.initial_modulation_matrix = default.initial_modulation_matrix
-        self.initial_time_shift_variance = default.initial_time_shift_variance
-        self.initial_acceleration_mean = default.initial_acceleration_mean
-        self.initial_acceleration_variance = default.initial_acceleration_variance
-        self.initial_onset_ages = default.initial_onset_ages
-        self.initial_accelerations = default.initial_accelerations
         self.initial_sources = default.initial_sources
         self.initial_sources_mean = default.initial_sources_mean
         self.initial_sources_std = default.initial_sources_std
@@ -229,11 +200,7 @@ class XmlParameters:
         self.initial_control_points_to_transport = default.initial_control_points_to_transport
 
         self.momenta_proposal_std = default.momenta_proposal_std
-        self.onset_age_proposal_std = default.onset_age_proposal_std
-        self.acceleration_proposal_std = default.acceleration_proposal_std
         self.sources_proposal_std = default.sources_proposal_std
-
-        self.nb_classes = 1
 
     ####################################################################################################################
     ### Public methods:
@@ -258,24 +225,11 @@ class XmlParameters:
             if model_xml_level1.tag.lower() == 'model-type':
                 self.model_type = model_xml_level1.text.lower()
             
-            elif model_xml_level1.tag.lower() == 'nb-classes':
-                self.nb_classes = int(model_xml_level1.text)
-
             elif model_xml_level1.tag.lower() == 'num-component':
-                if self.nb_classes > 1:
-                    self.num_component = model_xml_level1.text.split(' ')
-                    for i in range(self.num_component.__len__()):
-                        self.num_component[i] = self.num_component[i].split(',')
-                        for j in range(self.num_component[i].__len__()):
-                            self.num_component[i][j] = int(self.num_component[i][j])
-                else:
-                    self.num_component = int(model_xml_level1.text)
+                self.num_component = int(model_xml_level1.text)
 
             elif model_xml_level1.tag.lower() == 'dimension':
                 self.dimension = int(model_xml_level1.text)
-
-            elif model_xml_level1.tag.lower() == 'initial-cp-spacing':
-                self.initial_cp_spacing = float(model_xml_level1.text)
 
             elif model_xml_level1.tag.lower() == 'initial-control-points':
                 self.initial_control_points = os.path.normpath(
@@ -291,23 +245,6 @@ class XmlParameters:
 
             elif model_xml_level1.tag.lower() == 'initial-modulation-matrix':
                 self.initial_modulation_matrix = os.path.normpath(
-                    os.path.join(os.path.dirname(model_xml_path), model_xml_level1.text))
-
-            elif model_xml_level1.tag.lower() == 'initial-time-shift-std':
-                self.initial_time_shift_variance = float(model_xml_level1.text) ** 2
-
-            elif model_xml_level1.tag.lower() == 'initial-acceleration-std':
-                self.initial_acceleration_variance = float(model_xml_level1.text) ** 2
-
-            elif model_xml_level1.tag.lower() == 'initial-acceleration-mean':
-                self.initial_acceleration_mean = float(model_xml_level1.text)
-
-            elif model_xml_level1.tag.lower() == 'initial-onset-ages':
-                self.initial_onset_ages = os.path.normpath(
-                    os.path.join(os.path.dirname(model_xml_path), model_xml_level1.text))
-
-            elif model_xml_level1.tag.lower() == 'initial-accelerations':
-                self.initial_accelerations = os.path.normpath(
                     os.path.join(os.path.dirname(model_xml_path), model_xml_level1.text))
 
             elif model_xml_level1.tag.lower() == 'initial-sources':
@@ -379,8 +316,6 @@ class XmlParameters:
                         self.deformation_kernel_device = model_xml_level2.text
                     elif model_xml_level2.tag.lower() == 'number-of-timepoints':
                         self.number_of_time_points = int(model_xml_level2.text)
-                    elif model_xml_level2.tag.lower() == 'number-of-interpolation-points':
-                        self.number_of_interpolation_points = int(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 'concentration-of-timepoints':
                         self.concentration_of_time_points = int(model_xml_level2.text)
                     elif model_xml_level2.tag.lower() == 'number-of-sources':
@@ -458,8 +393,6 @@ class XmlParameters:
                     self.optimization_method_type = optimization_parameters_xml_level1.text.lower()
                 elif optimization_parameters_xml_level1.tag.lower() == 'optimized-log-likelihood':
                     self.optimized_log_likelihood = optimization_parameters_xml_level1.text.lower()
-                elif optimization_parameters_xml_level1.tag.lower() == 'number-of-processes':
-                    self.number_of_processes = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'max-iterations':
                     self.max_iterations = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'convergence-tolerance':
@@ -503,17 +436,8 @@ class XmlParameters:
                 elif optimization_parameters_xml_level1.tag.lower() == 'state-file':
                     self.state_file = os.path.join(os.path.dirname(optimization_parameters_xml_path),
                                                    optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'use-rk2-for-shoot':
-                    self.use_rk2_for_shoot = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'use-rk2':
-                    self.use_rk2_for_shoot = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                    self.use_rk2_for_flow = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'momenta-proposal-std':
                     self.momenta_proposal_std = float(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'onset-age-proposal-std':
-                    self.onset_age_proposal_std = float(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'acceleration-proposal-std':
-                    self.acceleration_proposal_std = float(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'sources-proposal-std':
                     self.sources_proposal_std = float(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'scale-initial-step-size':
@@ -530,22 +454,8 @@ class XmlParameters:
                     self.freeze_reference_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-rupture-time':
                     self.freeze_rupture_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-time-shift-variance':
-                    self.freeze_time_shift_variance = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-acceleration-variance':
-                    self.freeze_acceleration_variance = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-reference-time':
-                    self.freeze_reference_time = self._on_off_to_bool(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-noise-variance':
                     self.freeze_noise_variance = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-translation-vectors':
-                    self.freeze_translation_vectors = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-rotation-angles':
-                    self.freeze_rotation_angles = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'freeze-scaling-ratios':
-                    self.freeze_scaling_ratios = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'gradient-based-estimator':
-                    self.gradient_based_estimator = optimization_parameters_xml_level1.text
 
                 else:
                     msg = 'Unknown entry while parsing the optimization_parameters xml: ' \

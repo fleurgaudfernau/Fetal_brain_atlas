@@ -27,7 +27,6 @@ class MultiscaleMomentaPiecewise():
 
         # Model options
         self.freeze_template = model.freeze_template
-        self.initial_cp_spacing = model.initial_cp_spacing
         self.dimension = model.dimension
 
         self.initial_convergence_threshold = 0.001

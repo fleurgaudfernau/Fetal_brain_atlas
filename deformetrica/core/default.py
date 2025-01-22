@@ -17,8 +17,6 @@ preprocessing_dir = os.path.join(os.getcwd(), 'preprocessing')
 state_file = None
 load_state_file = False
 
-# number_of_processes = os.cpu_count()
-number_of_processes = 1
 process_per_gpu = 1
 
 model_type = 'undefined'
@@ -34,7 +32,6 @@ use_rk2_for_flow = False
 t0 = None
 tmin = float('inf')
 tmax = - float('inf')
-initial_cp_spacing = None
 dimension = None
 covariance_momenta_prior_normalized_dof = 0.001
 
@@ -75,16 +72,9 @@ multiscale_strategy = "stairs"
 freeze_momenta = False
 freeze_modulation_matrix = False
 freeze_reference_time = False
-freeze_time_shift_variance = False
-freeze_acceleration_variance = False
 freeze_noise_variance = False
 freeze_principal_directions = False
 freeze_rupture_time = True
-
-# affine atlas
-freeze_translation_vectors = False
-freeze_rotation_angles = False
-freeze_scaling_ratios = False
 
 # For metric learning atlas
 freeze_metric_parameters = False
@@ -97,11 +87,6 @@ initial_control_points_to_transport = None
 initial_momenta_to_transport = None
 initial_latent_positions = None
 initial_modulation_matrix = None
-initial_time_shift_variance = None
-initial_acceleration_mean = None
-initial_acceleration_variance = None
-initial_onset_ages = None
-initial_accelerations = None
 initial_sources = None
 initial_sources_mean = None
 initial_sources_std = None
@@ -109,14 +94,10 @@ initial_sources_std = None
 individual_proposal_distributions = {}
 
 # momenta_proposal_std = 0.01
-# onset_age_proposal_std = 0.1
-# acceleration_proposal_std = 0.01
 # sources_proposal_std = 0.01
 
 #modify fleur
 momenta_proposal_std = 1
-onset_age_proposal_std = 1
-acceleration_proposal_std = 1
 sources_proposal_std = 1
 
 kernel_regression = False

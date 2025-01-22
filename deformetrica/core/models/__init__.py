@@ -5,5 +5,3 @@ from .deterministic_atlas import DeterministicAtlas
 from .geodesic_regression import GeodesicRegression
 from .geodesic_regression_piecewise import PiecewiseGeodesicRegression
 from .geodesic_regression_piecewise_space_shift import BayesianPiecewiseGeodesicRegression
-from .longitudinal_atlas import LongitudinalAtlas, compute_exponential_and_attachment
-from .longitudinal_atlas_simplified import LongitudinalAtlasSimplified

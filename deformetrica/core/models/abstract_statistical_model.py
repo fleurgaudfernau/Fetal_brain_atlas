@@ -43,7 +43,7 @@ class AbstractStatisticalModel:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, name='undefined', number_of_processes=default.number_of_processes, gpu_mode=default.gpu_mode):
+    def __init__(self, name='undefined', gpu_mode=default.gpu_mode):
         self.name = name
         self.fixed_effects = {}
         self.priors = {}
@@ -51,7 +51,6 @@ class AbstractStatisticalModel:
         self.individual_random_effects = {}
         self.has_maximization_procedure = None
 
-        self.number_of_processes = number_of_processes
         self.gpu_mode = gpu_mode
         self.pool = None
 
@@ -62,24 +61,6 @@ class AbstractStatisticalModel:
     @abstractmethod
     def setup_multiprocess_pool(self, dataset):
         raise NotImplementedError
-
-    def _setup_multiprocess_pool(self, initargs=()):
-        if self.number_of_processes > 1:
-            logger.info('Starting multiprocess using ' + str(self.number_of_processes) + ' processes')
-            assert len(mp.active_children()) == 0, 'This should not happen. Has the cleanup() method been called ?'
-            start = time.perf_counter()
-            process_id = mp.Value('i', 0, lock=True)    # shared between processes
-            initargs = (process_id, initargs)
-
-            self.pool = mp.Pool(processes=self.number_of_processes, maxtasksperchild=None,
-                                initializer=_initializer, initargs=initargs)
-            logger.info('Multiprocess pool started using start method "' + mp.get_sharing_strategy() + '"' +
-                        ' in: ' + str(time.perf_counter()-start) + ' seconds')
-
-            if torch.cuda.is_available() and self.number_of_processes > torch.cuda.device_count():
-                logger.warning("You are trying to run more processes than there are available GPUs, "
-                               "it is advised to run `nvidia-cuda-mps-control` to leverage concurrent cuda executions. "
-                               "If run in background mode, don't forget to stop the daemon when done.")
 
     def _cleanup_multiprocess_pool(self):
         if self.pool is not None:

@@ -71,8 +71,7 @@ def get_torch_dtype(t):
                  torch.int8, torch.int16, torch.int32, torch.int64], 'dtype=' + t + ' was not recognized'
     return t
 
-
-def move_data(data, device='cpu', requires_grad=None, interger = False):
+def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = None):
     """
     Move given data to target Torch Tensor to the given device
     :param requires_grad: None: do nothing, True: set requires_grad flag, False: unset requires_grad flag (detach)
@@ -82,18 +81,19 @@ def move_data(data, device='cpu', requires_grad=None, interger = False):
     """
     assert data is not None, 'given input data cannot be None !'
     assert device is not None, 'given input device cannot be None !'
-
-    if interger:
-        dtype = get_torch_scalar_type("float32")    
-    else:
-        dtype = get_torch_scalar_type("int32")
-
+    
+    if dtype is None:
+        if integer:
+            dtype = get_torch_integer_type("float32")
+        else:   
+            dtype = get_torch_scalar_type("float32")    
+    
     #dtype = get_torch_dtype(data.dtype)
 
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data).type(dtype)
     elif isinstance(data, list):
-        data = torch.tensor(data, dtype=dtype, device=device)
+        data = torch.tensor(data, dtype=dtype, device=device) #dtype: torch.tensorType
 
     assert isinstance(data, torch.Tensor), 'Expecting Torch.Tensor instance not ' + str(type(data))
 
@@ -255,8 +255,8 @@ def has_hyperthreading():
     import psutil
 
     try:
-        c1 = psutil.cpu_count(logical=False)
-        c2 = psutil.cpu_count(logical=True)
+        c1 = psutil.cpu_count(logical=False) #64
+        c2 = psutil.cpu_count(logical=True)#128
         if c1 is None or c2 is None:
             raise RuntimeError('ERROR')
         return c1 != c2

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class MultiscaleImages():
     def __init__(self, multiscale, multiscale_momenta, model, dataset, output_dir, 
-                ctf_interval, ctf_max_interval, points, points_per_axis, gamma = 1):
+                ctf_interval, ctf_max_interval, points, points_per_axis):
                 
         self.model = model
         self.model_name = model.name
@@ -20,7 +20,7 @@ class MultiscaleImages():
 
         # Model options
         self.freeze_template = model.freeze_template
-        self.initial_cp_spacing = model.initial_cp_spacing
+        self.deformation_kernel_width = model.deformation_kernel_width
 
         self.initial_convergence_threshold = 0.001
         self.convergence_threshold = 0.001
@@ -61,7 +61,7 @@ class MultiscaleImages():
         d = 1 #d = 3 # modif FITNG in self.order to start at a lower scale
         print("self.momenta_scale", self.momenta_scale)
         if self.momenta_scale > d:
-            wavelet_support = 2**(self.momenta_scale - d) * self.initial_cp_spacing
+            wavelet_support = 2**(self.momenta_scale - d) * self.deformation_kernel_width
 
             if self.ext == ".nii":
                 image_scale = round(wavelet_support/12, 2)  # for brains

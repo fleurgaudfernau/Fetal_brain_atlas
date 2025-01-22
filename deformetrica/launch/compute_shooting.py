@@ -92,8 +92,6 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
 
 def compute_shooting(template_specifications,
                      dimension=default.dimension,
-                     tensor_integer_type=default.tensor_integer_type,
-
                      deformation_kernel_width=default.deformation_kernel_width,
                      deformation_kernel_device=default.deformation_kernel_device,
 
@@ -102,8 +100,6 @@ def compute_shooting(template_specifications,
                      concentration_of_time_points=default.concentration_of_time_points,
                      t0=None, tmin=default.tmin, tmax=default.tmax,
                      number_of_time_points=default.number_of_time_points,
-                     use_rk2_for_shoot=default.use_rk2_for_shoot,
-                     use_rk2_for_flow=default.use_rk2_for_flow,
                      gpu_mode=default.gpu_mode,
                      output_dir=default.output_dir, 
                      write_adjoint_parameters = True, 
@@ -147,8 +143,7 @@ def compute_shooting(template_specifications,
     
     control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
     geodesic = Geodesic(concentration_of_time_points=concentration_of_time_points, t0=t0,
-                        kernel=deformation_kernel,
-                        use_rk2_for_shoot=use_rk2_for_shoot, use_rk2_for_flow=use_rk2_for_flow)
+                        kernel=deformation_kernel)
 
     print("Old Norm", geodesic.forward_exponential.scalar_product(control_points_torch, momenta_torch, momenta_torch))
     print("deformation_kernel_width", deformation_kernel_width)
@@ -188,8 +183,6 @@ def compute_shooting(template_specifications,
 
     geodesic.set_control_points_t0(control_points_torch)
     geodesic.set_kernel(deformation_kernel)
-    geodesic.set_use_rk2_for_shoot(use_rk2_for_shoot)
-    geodesic.set_use_rk2_for_flow(use_rk2_for_flow)
     geodesic.set_template_points_t0(template_points)
 
     # Single momenta: single shooting
