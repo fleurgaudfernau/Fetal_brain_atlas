@@ -23,8 +23,8 @@ class AbstractEstimator(ABC):
                  optimized_log_likelihood=default.optimized_log_likelihood,
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
-                 population_RER={}, individual_RER={},
-                 callback=None, state_file=None, output_dir=default.output_dir):
+                 individual_RER={},
+                 state_file=None, output_dir=default.output_dir):
 
         self.statistical_model = statistical_model
         self.dataset = dataset
@@ -38,10 +38,8 @@ class AbstractEstimator(ABC):
         self.save_every_n_iters = save_every_n_iters
 
         # RER = random effects realization.
-        self.population_RER = population_RER
         self.individual_RER = individual_RER
 
-        self.callback = callback
         self.callback_ret = True
         self.output_dir = output_dir
         self.state_file = state_file
@@ -58,14 +56,6 @@ class AbstractEstimator(ABC):
     def write(self):
         pass
 
-    def _call_user_callback(self, current_log_likelihood, current_attachment, current_regularity, gradient):
-        if self.callback is not None:
-            try:
-                self.callback_ret = self.callback(self.__format_callback_data(current_log_likelihood, current_attachment, current_regularity, gradient))
-            except Exception as e:
-                logger.error(e)
-        else:
-            logger.warning('Trying to call user callback that has not been specified')
 
     def __format_callback_data(self, current_log_likelihood, current_attachment, current_regularity, gradient):
         return {

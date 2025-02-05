@@ -82,11 +82,6 @@ class MultiObjectAttachment:
                     data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj1, obj2, self.kernels[i])
                 pos += obj1.get_number_of_points()
                 
-            elif self.attachment_types[i].lower() == 'pointcloud':
-                distances[i] = self.point_cloud_distance(
-                    data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj1, obj2, self.kernels[i])
-                pos += obj1.get_number_of_points()
-
             elif self.attachment_types[i].lower() == 'varifold':
                 distances[i] = self.varifold_distance(
                     data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj1, obj2, self.kernels[i], residuals)
@@ -289,24 +284,6 @@ class MultiObjectAttachment:
         return np.mean(d_kdtree)
     
     @staticmethod
-    def point_cloud_distance(points, source, target, kernel):
-        """
-        Compute the point cloud distance between source and target, assuming points are the new points of the source
-        We assume here that the target never moves.
-        """
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
-        c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, device=device)
-
-        def point_cloud_scalar_product(points_1, points_2, normals_1, normals_2):
-            return torch.dot(normals_1.view(-1),
-                             kernel.convolve(points_1, points_2, normals_2, mode='pointcloud').view(-1))
-
-        if target.norm is None:
-            target.norm = point_cloud_scalar_product(c2, c2, n2, n2)
-
-        return point_cloud_scalar_product(c1, c1, n1, n1) + target.norm - 2 * point_cloud_scalar_product(c1, c2, n1, n2)
-
-    @staticmethod
     def varifold_distance(points, source, target, kernel, residuals):
         """
         Returns the varifold distance between the 3D meshes
@@ -383,7 +360,6 @@ class MultiObjectAttachment:
 
         return product
         
-
     @staticmethod
     def landmark_distance(points, target):
         """
@@ -450,7 +426,6 @@ class MultiObjectAttachment:
             c2, n2 = target.get_centers_and_normals(points, tensor_scalar_type=utilities.get_torch_scalar_type(dtype=dtype),
                                                     tensor_integer_type=utilities.get_torch_integer_type(dtype=dtype),
                                                     device=device, residuals = residuals)
-
 
         assert c1.device == n1.device == c2.device == n2.device, 'all tensors must be on the same device, c1.device=' + str(c1.device) \
                                                                  + ', n1.device=' + str(n1.device)\

@@ -29,7 +29,7 @@ class MultiscaleMeshes():
         self.model = model
         self.model_name = model.name
         self.original_dataset = copy.deepcopy(dataset)
-        self.ext = self.model.objects_name_extension[0]
+        self.ext = self.model.objects_extension[0]
 
         self.output_dir = output_dir
 

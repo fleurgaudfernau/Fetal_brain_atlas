@@ -5,7 +5,6 @@ import argparse
 import logging
 import os
 import sys
-
 import deformetrica as dfca
 
 logger = logging.getLogger(__name__)
@@ -17,8 +16,7 @@ def main():
     common_parser.add_argument('--output', '-o', type=str, help='output folder')
     common_parser.add_argument('--age', "-a", type=int)
     common_parser.add_argument('--verbosity', '-v',
-                               type=str,
-                               default='WARNING',
+                               type=str, default='WARNING',
                                choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                                help='set output verbosity')
     
@@ -76,124 +74,98 @@ def main():
 
     deformetrica = dfca.Deformetrica(output_dir=output_dir, verbosity=logger.level)
 
-    xml_parameters = dfca.io.XmlParameters()
-    xml_parameters.read_all_xmls(args.model,
-                                args.dataset if args.command == 'estimate' else None,
-                                args.parameters)
+    xml = dfca.io.XmlParameters()
+    xml.read_all_xmls(args.model, args.dataset if args.command == 'estimate' else None,
+                    args.parameters)
+
+    dataset_spec = dfca.io.get_dataset_specifications(xml)
+    estimator_options = dfca.io.get_estimator_options(xml)
+    model_options = dfca.io.get_model_options(xml)
+
+    print("estimator_options in main\n", estimator_options)
     
-    if xml_parameters.model_type == 'Registration'.lower():
+    if xml.model_type == 'Registration'.lower():
         assert args.command == 'estimate', \
             'The estimation of a registration model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_registration(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.estimate_registration(xml.template_specifications, dataset_spec,
+                                            model_options, estimator_options)
         
-    elif xml_parameters.model_type == 'Barycenter'.lower():
+    elif xml.model_type == 'Barycenter'.lower():
         assert args.command == 'estimate', \
             'The estimation of a registration model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_barycenter(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.estimate_barycenter(xml.template_specifications, dataset_spec,
+                                        model_options, estimator_options)
 
-    elif xml_parameters.model_type == 'DeterministicAtlas'.lower():
+    elif xml.model_type == 'DeformableTemplate'.lower():
         assert args.command == 'estimate', \
-            'The estimation of a deterministic atlas model should be launched with the command: ' \
+            'The estimation of a deformable template should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_deterministic_atlas(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))        	
+        deformetrica.estimate_deformable_template(xml.template_specifications, dataset_spec,
+                                                    model_options, estimator_options)        	
 
-    elif xml_parameters.model_type == 'Regression'.lower():
+    elif xml.model_type == 'Regression'.lower():
         assert args.command == 'estimate', \
             'The estimation of a regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_geodesic_regression(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.estimate_geodesic_regression(xml.template_specifications, dataset_spec,
+                                                    model_options, estimator_options)
     
-    elif xml_parameters.model_type == 'KernelRegression'.lower(): # ajout fg
+    elif xml.model_type == 'KernelRegression'.lower(): # ajout fg
         assert args.command == 'estimate', \
             'The estimation of a kernel regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_kernel_regression(age, 
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.estimate_kernel_regression(age, xml.template_specifications, dataset_spec,
+                                                model_options, estimator_options)
     
-    elif xml_parameters.model_type == 'PiecewiseRegression'.lower(): #ajout fg
+    elif xml.model_type == 'PiecewiseRegression'.lower(): #ajout fg
         assert args.command == 'estimate', \
             'The estimation of a regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_piecewise_geodesic_regression(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.estimate_piecewise_geodesic_regression(xml.template_specifications, dataset_spec,
+                                                            model_options, estimator_options)
     
-    elif xml_parameters.model_type == 'BayesianPiecewiseRegression'.lower(): #ajout fg
+    elif xml.model_type == 'BayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
         if args.command == 'estimate':
             deformetrica.estimate_piecewise_bayesian_geodesic_regression(
-                xml_parameters.template_specifications,
-                dfca.io.get_dataset_specifications(xml_parameters),
-                estimator_options=dfca.io.get_estimator_options(xml_parameters),
-                model_options=dfca.io.get_model_options(xml_parameters))
+                xml.template_specifications, dataset_spec,  model_options, estimator_options)
         elif args.command == 'initialize':
             dfca.initialize_piecewise_geodesic_regression_with_space_shift(
                 args.model, args.dataset, args.parameters)#, #output_dir=output_dir, overwrite=True)
     
-    elif xml_parameters.model_type == 'InitializeBayesianPiecewiseRegression'.lower(): #ajout fg
+    elif xml.model_type == 'InitializeBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.initialize_piecewise_bayesian_geodesic_regression(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+                            xml.template_specifications, dataset_spec,  model_options, estimator_options)
     
-    elif xml_parameters.model_type == 'InitializedBayesianPiecewiseRegression'.lower(): #ajout fg
+    elif xml.model_type == 'InitializedBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate'],\
             'The estimation of a regression model should be launched with the command: ' \
             '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.initialized_piecewise_bayesian_geodesic_regression(
-            xml_parameters.template_specifications,
-            dfca.io.get_dataset_specifications(xml_parameters),
-            estimator_options=dfca.io.get_estimator_options(xml_parameters),
-            model_options=dfca.io.get_model_options(xml_parameters))
+                            xml.template_specifications, dataset_spec, model_options, estimator_options)
                         
-    elif xml_parameters.model_type == 'Shooting'.lower():
+    elif xml.model_type == 'Shooting'.lower():
         assert args.command == 'compute', \
             'The computation of a shooting task should be launched with the command: ' \
             '"deformetrica compute" (and not "%s").' % args.command
-        deformetrica.compute_shooting(
-            xml_parameters.template_specifications,
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.compute_shooting(xml.template_specifications, model_options)
 
-    elif xml_parameters.model_type == 'ParallelTransport'.lower():
+    elif xml.model_type == 'ParallelTransport'.lower():
         assert args.command == 'compute', \
             'The computation of a parallel transport task should be launched with the command: ' \
             '"deformetrica compute" (and not "%s").' % args.command
-        deformetrica.compute_parallel_transport(
-            xml_parameters.template_specifications,
-            model_options=dfca.io.get_model_options(xml_parameters))
+        deformetrica.compute_parallel_transport(xml.template_specifications, model_options)
 
     else:
         raise RuntimeError(
-            'Unrecognized model-type: "' + xml_parameters.model_type + '". Check the corresponding field in the model.xml input file.')
+            'Unrecognized model-type: "' + xml.model_type + '". Check the corresponding field in the model.xml input file.')
         
 
 if __name__ == "__main__":

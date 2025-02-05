@@ -7,7 +7,6 @@ from ...support.utilities.plot_tools import scatter_plot, plot_value_evolution, 
 from ...support.utilities.tools import ratio, change, norm, scalar_product, current_distance
 #from ...core.models.model_functions import gaussian_kernel
 from .curvature_functions import Curvature
-from .piecewise_functions import Piecewise
 import os.path as op
 from copy import deepcopy
 logger = logging.getLogger(__name__)
@@ -18,13 +17,13 @@ class Residuals():
         # Model parameters
         self.model = model
         self.name = model.name
-        self.ext = self.model.objects_name_extension[0]     
+        self.ext = self.model.objects_extension[0]     
         self.width = self.model.deformation_kernel_width   
         self.print_every_n_iters = print_every_n_iters
         self.convergence_threshold = 1e-2 #0.001
 
         self.n_sources = 0 
-        if self.name in ["BayesianGeodesicRegression", "BayesianPiecewiseRegression"]:
+        if self.name in ["BayesianGeodesicRegression", "BayesianGeodesicRegression"]:
             self.n_sources = self.model.number_of_sources
 
         # Dataset characteristics
@@ -52,14 +51,22 @@ class Residuals():
         self.id = dataset.subject_ids if "Regression" not in self.name else [n for n in range(self.n_obs)]
 
         # Residuals computation
-        if self.name in ["DeterministicAtlas"]:
+        if self.name == "DeformableTemplate":
             self.compute_model_residuals = self.compute_atlas_residuals
         elif self.name == "BayesianAtlas":
             self.compute_model_residuals = self.compute_bayesian_atlas_residuals
-        elif self.name in ["GeodesicRegression", "BayesianGeodesicRegression", "BayesianPiecewiseRegression"]: #also name of piecewise GR
+        elif "Regression" in self.name:
             self.compute_model_residuals = self.compute_regression_residuals
 
-        self.piecewise = Piecewise(self.model, self.ages, self.n_obs)
+        # Piecewise
+        self.n_components = 1
+        self.rupture_times = [0]
+
+        if "Regression" in self.name and len(model.get_momenta().shape) > 2:
+            self.n_components = model.get_momenta().shape[0]
+            self.rupture_times = model.get_rupture_time().tolist()   
+        
+        self.components = [str(c) for c in range(self.n_components)]  
 
         self.initialize_plots(dataset)
 
@@ -68,8 +75,9 @@ class Residuals():
         d = {"v": [], "condition": True, "ylab": [""], "plots" : [], "iter" : []}
 
         to_plot = ["Residuals_average", "Residuals_subjects", "Residuals_average_k", 
-                   "Residuals_components", "Template_changes", "Template_distance", 
-                   "Gradient_norm", "Momenta_norm", "Modulation_matrix_distance", "Modulation_matrix_changes", 
+                   "Template_changes", "Template_distance", 
+                   "Gradient_norm", "Momenta_norm", "Modulation_matrix_distance", 
+                   "Modulation_matrix_changes", 
                     "Modulation_matrix_norm", "Rupture_time"]
         self.plot = {k: deepcopy(d) for k in to_plot}
 
@@ -77,23 +85,21 @@ class Residuals():
         self.initialize_values("Gradient_norm")
         self.initialize_values("Residuals_average_k")
         self.initialize_values("Residuals_subjects", {i: [] for i in range(self.n_obs)})
-        self.initialize_values("Momenta_norm", {i: [] for i in range(self.piecewise.n_components)})
-        self.initialize_values("Residuals_components", {c : [] for c in range(self.piecewise.n_components)})
+        self.initialize_values("Momenta_norm", {i: [] for i in range(self.n_components)})
         self.initialize_values("Modulation_matrix_distance", {c : [] for c in range(self.n_sources)})
         self.initialize_values("Modulation_matrix_changes", {c : [] for c in range(self.n_sources)})
         self.initialize_values("Modulation_matrix_norm", {c : [] for c in range(self.n_sources)})
-        self.initialize_values("Rupture_time", {c : [] for c in range(self.piecewise.n_components)[:-1]})
+        self.initialize_values("Rupture_time", {c : [] for c in range(self.n_components)[:-1]})
 
         # Conditions
         self.set_condition("Residuals_average_k")
         self.set_condition("Residuals_subjects")
-        self.set_condition("Residuals_components", self.piecewise.n_components > 1)
-        self.set_condition("Rupture_time", self.piecewise.n_components > 1 and not self.model.freeze_rupture_time)
+        self.set_condition("Rupture_time", self.n_components > 1 and not self.model.freeze_rupture_time)
         self.set_condition("Template_changes")
         self.set_condition("Template_distance", ("Atlas" in self.name))
-        self.set_condition("Modulation_matrix_distance", (self.name == "BayesianPiecewiseRegression"))
-        self.set_condition("Modulation_matrix_changes",(self.name == "BayesianPiecewiseRegression"))
-        self.set_condition("Modulation_matrix_norm", (self.name == "BayesianPiecewiseRegression"))
+        self.set_condition("Modulation_matrix_distance", (self.name == "BayesianGeodesicRegression"))
+        self.set_condition("Modulation_matrix_changes",(self.name == "BayesianGeodesicRegression"))
+        self.set_condition("Modulation_matrix_norm", (self.name == "BayesianGeodesicRegression"))
 
         # Residuals computations
         self.templates = []
@@ -223,7 +229,7 @@ class Residuals():
     def momenta_change(self, iteration):
         if self.to_plot("Momenta_norm"):
                         
-            for i in range(self.piecewise.n_components):
+            for i in range(self.n_components):
                 n = norm(self.model.get_control_points(), self.model.get_momenta()[i], self.width)
                 self.add_value("Momenta_norm", n, i)
                 self.add_iter("Momenta_norm", iteration)
@@ -331,15 +337,7 @@ class Residuals():
         # subjects residuals
         for j in range(self.n_obs):
             self.add_value("Residuals_subjects", float(subjects_residuals[j]), j)
-        
-        # piecewise residuals
-        if self.to_plot("Residuals_components"):
-            for c in range(self.piecewise.n_components):            
-                component_residuals = self.piecewise.component_residuals(subjects_residuals, c)
-                self.add_value("Residuals_components", component_residuals, c)
-            
-            self.add_iter("Residuals_components", current_iteration)     
-        
+                
         self.add_iter("Residuals_average", current_iteration)
         self.add_iter("Residuals_subjects", current_iteration)        
                    
@@ -377,14 +375,13 @@ class Residuals():
         self.set_ylab("Residuals_average", 'Average residuals (attachement term)')
         self.set_ylab("Residuals_subjects", self.obs_names)
         self.set_ylab("Residuals_average_k", ["Attachement"]+["Kernel_varifold_{}".format(k) for k in self.plot["Residuals_average_k"]["v"].keys()])
-        self.set_ylab("Residuals_components", self.piecewise.components)
         self.set_ylab("Template_changes", 'Template differences')
         self.set_ylab("Template_distance", 'Distance to initial template')
-        self.set_ylab("Momenta_norm", self.piecewise.components)
+        self.set_ylab("Momenta_norm", self.components)
         self.set_ylab("Modulation_matrix_norm", ["Space_shift_{}".format(c) for c in range(self.n_sources)])
         self.set_ylab("Modulation_matrix_changes", ["Space_shift_{}".format(c) for c in range(self.n_sources)])
         self.set_ylab("Modulation_matrix_distance", ["Space_shift_{}".format(c) for c in range(self.n_sources)])
-        self.set_ylab("Rupture_time", ["tR_{}".format(c) for c in self.piecewise.components[:-1]])
+        self.set_ylab("Rupture_time", ["tR_{}".format(c) for c in self.components[:-1]])
 
     def set_to_plot(self):
         for k in self.plot.keys():
@@ -443,7 +440,7 @@ class Residuals():
                     ["Total initial residuals:", self.get_values("Residuals_average")[0]],
                     ["Percentage of residuals diminution:{}"\
                         .format(ratio(self.get_values("Residuals_average")[-1], 
-                                            self.get_values("Residuals_average")[0]))]]
+                                    self.get_values("Residuals_average")[0]))]]
         
         for k in self.plot["Residuals_average_k"]["v"].keys():
             to_write.append(["\nKernel: {}".format(k)])
@@ -453,14 +450,6 @@ class Residuals():
                             ratio(self.sum_current_residuals_k[k], 
                                                 self.sum_initial_residuals_k[k])])
         
-        if self.to_plot("Residuals_components"):
-            to_write.append(["\n******** Components ********"])
-            for c in range(self.piecewise.n_components):
-                to_write.append(["\n---Component: {} ---".format(c)])
-                to_write.append(["Percentage of residuals diminution:{}"\
-                                .format(ratio(self.get_values("Residuals_components")[c][-1], 
-                                            self.get_values("Residuals_components")[c][0]))])
-
         # save distances and curvatures
         to_write.append(["\n******** Template ********"])
         #to_write = self.curvature.write(to_write)

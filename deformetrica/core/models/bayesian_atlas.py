@@ -31,17 +31,11 @@ class BayesianAtlas(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications,
-
                  dimension=default.dimension,
-
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  number_of_time_points=default.number_of_time_points,
-
                  freeze_template=default.freeze_template,
-                 use_sobolev_gradient=default.use_sobolev_gradient,
-                 smoothing_kernel_width=default.smoothing_kernel_width,
-
                  initial_control_points=default.initial_control_points,
 
                  gpu_mode=default.gpu_mode,
@@ -76,21 +70,15 @@ class BayesianAtlas(AbstractStatisticalModel):
         self.device, _ = get_best_device(self.exponential.kernel.gpu_mode)
 
         # Template.
-        (object_list, self.objects_name, self.objects_name_extension,
+        (object_list, self.objects_name, self.objects_extension,
          objects_noise_variance, self.multi_object_attachment) = create_template_metadata(
             template_specifications, self.dimension, gpu_mode=gpu_mode)
 
         self.template = DeformableMultiObject(object_list)
-        # self.template.update()
 
         self.objects_noise_dimension = compute_noise_dimension(self.template, self.multi_object_attachment,
                                                                self.dimension, self.objects_name)
         self.number_of_objects = len(self.template.object_list)
-
-        self.use_sobolev_gradient = use_sobolev_gradient
-        self.smoothing_kernel_width = smoothing_kernel_width
-        if self.use_sobolev_gradient:
-            self.sobolev_kernel = kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=smoothing_kernel_width)
 
         # Template data.
         self.fixed_effects['template_data'] = self.template.get_data()
@@ -227,15 +215,14 @@ class BayesianAtlas(AbstractStatisticalModel):
     ### Public methods:
     ####################################################################################################################
 
-    def compute_log_likelihood(self, dataset, population_RER, individual_RER, mode='complete', with_grad=False,
+    def compute_log_likelihood(self, dataset, individual_RER, mode='complete', with_grad=False,
                                modified_individual_RER='all'):
         """
         Compute the log-likelihood of the dataset, given parameters fixed_effects and random effects realizations
-        population_RER and indRER.
+         and indRER.
         Start by updating the class 1 fixed effects.
 
         :param dataset: LongitudinalDataset instance
-        :param population_RER: Dictionary of population random effects realizations.
         :param individual_RER: Dictionary of individual random effects realizations.
         :param with_grad: Flag that indicates wether the gradient should be returned as well.
         :return:
@@ -250,8 +237,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Update the fixed effects only if the user asked for the complete log likelihood.
         if mode == 'complete':
-            sufficient_statistics = self.compute_sufficient_statistics(dataset, population_RER, individual_RER,
-                                                                       residuals=residuals)
+            sufficient_statistics = self.compute_sufficient_statistics(dataset, individual_RER, residuals)
             self.update_fixed_effects(dataset, sufficient_statistics)
 
         # Compute the attachment, with the updated noise variance parameter in the 'complete' mode.
@@ -269,7 +255,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         return self.compute_gradients(attachment, attachments, regularity, template_data, template_points,
                                         control_points, momenta, mode, with_grad)
                              
-    def compute_mini_batch_gradient(self, batch, dataset, population_RER, individual_RER, mode = 'complete', with_grad=True):
+    def compute_mini_batch_gradient(self, batch, dataset, individual_RER, mode = 'complete', with_grad=True):
         # Initialize: conversion from numpy to torch -------------------------------------------------------------------
         template_data, template_points, control_points = self._fixed_effects_to_torch_tensors(with_grad)
         momenta = self._individual_RER_to_torch_tensors(individual_RER, with_grad and mode == 'complete')
@@ -279,8 +265,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Update the fixed effects only if the user asked for the complete log likelihood.
         if mode == 'complete':
-            sufficient_statistics = self.compute_sufficient_statistics(dataset, population_RER, individual_RER,
-                                                                       residuals=residuals)
+            sufficient_statistics = self.compute_sufficient_statistics(dataset, individual_RER, residuals)
             self.update_fixed_effects(dataset, sufficient_statistics)
 
         # Compute the attachment, with the updated noise variance parameter in the 'complete' mode.
@@ -308,12 +293,7 @@ class BayesianAtlas(AbstractStatisticalModel):
             gradient = {}
             if not self.freeze_template:
                 if 'landmark_points' in template_data.keys():
-                    if self.use_sobolev_gradient:
-                        gradient['landmark_points'] = self.sobolev_kernel.convolve(
-                            template_data['landmark_points'].detach(), template_data['landmark_points'].detach(),
-                            template_points['landmark_points'].grad.detach()).cpu().numpy()
-                    else:
-                        gradient['landmark_points'] = template_points['landmark_points'].grad.detach().cpu().numpy()
+                    gradient['landmark_points'] = template_points['landmark_points'].grad.detach().cpu().numpy()
                 if 'image_intensities' in template_data.keys():
                     gradient['image_intensities'] = template_data['image_intensities'].grad.detach().cpu().numpy()
 
@@ -332,15 +312,15 @@ class BayesianAtlas(AbstractStatisticalModel):
             elif mode == 'model':
                 return attachments.detach().cpu().numpy()
 
-    def compute_sufficient_statistics(self, dataset, population_RER, individual_RER, residuals=None, model_terms=None):
+    def compute_sufficient_statistics(self, dataset, individual_RER, residuals=None, model_terms=None):
         """
         Compute the model sufficient statistics.
         """
         targets = [[i,target[0]] for i, target in enumerate(dataset.deformable_objects)]
 
-        return self.compute_sufficient_statistics_batch(targets, population_RER, individual_RER, residuals=None, model_terms=None)
+        return self.compute_sufficient_statistics_batch(targets, individual_RER, residuals=None, model_terms=None)
     
-    def compute_sufficient_statistics_batch(self, targets, population_RER, individual_RER, residuals=None, model_terms=None):
+    def compute_sufficient_statistics_batch(self, targets, individual_RER, residuals=None, model_terms=None):
         sufficient_statistics = {}
 
         # Empirical momenta covariance ---------------------------------------------------------------------------------
@@ -400,7 +380,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         self.template.object_list = t_list
         self.objects_name = t_name
-        self.objects_name_extension = t_name_extension
+        self.objects_extension = t_name_extension
         self.multi_object_attachment = t_multi_object_attachment
 
         self.template.update(self.dimension)
@@ -579,7 +559,7 @@ class BayesianAtlas(AbstractStatisticalModel):
     def print(self, individual_RER):
         pass
 
-    def write(self, dataset, population_RER, individual_RER, output_dir, update_fixed_effects=True,
+    def write(self, dataset, individual_RER, output_dir, update_fixed_effects=True,
               write_residuals=True):
 
         # Write the model predictions, and compute the residuals at the same time.
@@ -588,8 +568,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Optionally update the fixed effects.
         if update_fixed_effects:
-            sufficient_statistics = self.compute_sufficient_statistics(dataset, population_RER, individual_RER,
-                                                                       residuals=residuals)
+            sufficient_statistics = self.compute_sufficient_statistics(dataset, individual_RER, residuals)
             self.update_fixed_effects(dataset, sufficient_statistics)
 
         # Write residuals.
@@ -627,7 +606,7 @@ class BayesianAtlas(AbstractStatisticalModel):
             if write:
                 names = []
                 for k, (object_name, object_extension) \
-                        in enumerate(zip(self.objects_name, self.objects_name_extension)):
+                        in enumerate(zip(self.objects_name, self.objects_extension)):
                     name = self.name + '__Reconstruction__' + object_name + '__subject_' + subject_id + object_extension
                     names.append(name)
                 self.template.write(output_dir, names,
@@ -639,7 +618,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         # Template.
         template_names = []
         for i in range(len(self.objects_name)):
-            aux = self.name + "__EstimatedParameters__Template_" + self.objects_name[i] + self.objects_name_extension[i]
+            aux = self.name + "__EstimatedParameters__Template_" + self.objects_name[i] + self.objects_extension[i]
             template_names.append(aux)
         self.template.write(output_dir, template_names)
 

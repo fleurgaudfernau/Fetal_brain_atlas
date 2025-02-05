@@ -38,15 +38,13 @@ covariance_momenta_prior_normalized_dof = 0.001
 dataset_filenames = []
 visit_ages = []
 subject_ids = []
-optimization_method_type = 'GradientAscent'
+optimization_method = 'GradientAscent'
 optimized_log_likelihood = 'complete'
 max_iterations = 100
 max_line_search_iterations = 10
 save_every_n_iters = 100
 print_every_n_iters = 1
 sample_every_n_mcmc_iters = 10
-use_sobolev_gradient = True
-sobolev_kernel_width_ratio = 1
 smoothing_kernel_width = None
 initial_step_size = None
 line_search_shrink = 0.5
@@ -90,8 +88,6 @@ initial_modulation_matrix = None
 initial_sources = None
 initial_sources_mean = None
 initial_sources_std = None
-
-individual_proposal_distributions = {}
 
 # momenta_proposal_std = 0.01
 # sources_proposal_std = 0.01

@@ -207,7 +207,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
     def define_prefix(self):
         ba = "BayesianAtlas__EstimatedParameters__"
         if self.global_subjects_nb > 30:
-            ba = "DeterministicAtlas__EstimatedParameters__"
+            ba = "DeformableTemplate__EstimatedParameters__"
         return ba
 
     def define_atlas_outputs(self):
@@ -229,7 +229,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
     
         if self.global_subjects_nb > 30:
             xml_parameters.optimization_method_type = 'StochasticGradientAscent'.lower()
-            estimate_atlas = estimate_deterministic_atlas
+            estimate_atlas = estimate_deformable_template
             xml_parameters.dataset_filenames = []
             xml_parameters.subject_ids = []
             xml_parameters.visit_ages = []
@@ -390,7 +390,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
 
         accepted_difference = (1/self.concentration_of_tp)/2+0.01
         for i in range(len(self.global_subject_ids)):
-            self.registration_momenta.append(join(self.registration_subjects_paths[i],"DeterministicAtlas__EstimatedParameters__Momenta.txt")) 
+            self.registration_momenta.append(join(self.registration_subjects_paths[i],"DeformableTemplate__EstimatedParameters__Momenta.txt")) 
             age = round(self.global_visit_ages[i][0], 2)
             # Get the template closest to subject age
             for f in templates:

@@ -364,8 +364,8 @@ class MultiscaleMomenta():
     ### Figure tools
     ####################################################################################################################
     
-    # def save_heat_map(objects_name_extension, template, iteration, deformed_template, residuals_by_point, output_dir):
-    #     names = "Heat_map_" + str(iteration) + objects_name_extension[0]
+    # def save_heat_map(objects_extension, template, iteration, deformed_template, residuals_by_point, output_dir):
+    #     names = "Heat_map_" + str(iteration) + objects_extension[0]
     #     deformed_template['image_intensities'] = residuals_by_point
     #     template.write(output_dir, [names], 
     #     {key: value.data.cpu().numpy() for key, value in deformed_template.items()})
@@ -431,7 +431,7 @@ class MultiscaleMomenta():
         
     #     return template_data
 
-    # def save_heat_map_with_zones(momenta_scale, zones, template, objects_name_extension,
+    # def save_heat_map_with_zones(momenta_scale, zones, template, objects_extension,
     #                             iteration, output_dir, template_data, dataset, subject):
     #     zones = len(zones[momenta_scale].items())
 
@@ -439,7 +439,7 @@ class MultiscaleMomenta():
     #         if isinstance(subject, int):
     #             subject = dataset.subject_ids[subject]
     #         names = "Sujet_" + str(subject) + "_heat_map_scale_" + str(momenta_scale) + "_residuals_zones_" \
-    #                 + str(zones+1) + "iter_" + str(iteration) + objects_name_extension[0]
+    #                 + str(zones+1) + "iter_" + str(iteration) + objects_extension[0]
 
     #         template.write(output_dir, [names], {key: value.data.cpu().numpy() for key, value in template_data.items()})
 

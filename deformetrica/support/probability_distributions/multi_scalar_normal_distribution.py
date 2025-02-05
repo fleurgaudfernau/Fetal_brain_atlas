@@ -14,16 +14,11 @@ class MultiScalarNormalDistribution:
 
     def __init__(self, variance=None, std=None):
         self.mean = None
-        # self.variance_sqrt = None
-        # self.variance_inverse = None
 
         if variance is not None:
             self.set_variance(variance)
         elif std is not None:
             self.set_variance_sqrt(std)
-        # else:
-        #     raise RuntimeError('variance or std must be specified')
-
 
     ####################################################################################################################
     ### Encapsulation methods:

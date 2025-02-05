@@ -32,7 +32,6 @@ def _initializer(*args):
 
         process_id.value += 1
 
-
 class AbstractStatisticalModel:
     """
     AbstractStatisticalModel object class.
@@ -47,7 +46,6 @@ class AbstractStatisticalModel:
         self.name = name
         self.fixed_effects = {}
         self.priors = {}
-        self.population_random_effects = {}
         self.individual_random_effects = {}
         self.has_maximization_procedure = None
 

@@ -12,13 +12,13 @@ def gaussian_kernel(x, y, sigma = 1):
     return np.exp(-0.5 * ((x-y)/sigma)**2)/ sigma * np.sqrt(2 * np.pi)
 
 def residuals_change(liste):
-    return (liste[-2] - liste[-1])/liste[-2]
+    return round((liste[-2] - liste[-1])/liste[-2], 1)
 
 def ratio(current_value, initial_value):
-        if initial_value !=0:
-            return 100 * (1 - current_value/initial_value)
-        else:
-             return 0
+    if initial_value !=0:
+        return round(100 * (1 - current_value/initial_value), 1)
+    else:
+        return 0
 
 def change(list, n_subjects = 1):
     """

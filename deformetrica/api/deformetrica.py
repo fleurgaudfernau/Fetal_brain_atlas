@@ -15,7 +15,7 @@ import numpy as np
 from ..core import default, GpuMode
 from ..core.estimators.gradient_ascent import GradientAscent
 from ..core.estimators.scipy_optimize import ScipyOptimize
-from ..core.models import DeterministicAtlas, GeodesicRegression, PiecewiseGeodesicRegression, \
+from ..core.models import DeformableTemplate, GeodesicRegression, PiecewiseGeodesicRegression, \
                         BayesianPiecewiseGeodesicRegression
 from ..in_out.dataset_functions import create_dataset, filter_dataset, make_dataset_timeseries, create_template_metadata,\
                                         age, id, dataset_for_registration, maxi, mini, ages_histogram
@@ -155,7 +155,7 @@ class Deformetrica:
                                     **new_dataset_spec)
             assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
-            statistical_model = DeterministicAtlas(template_specifications_, dataset.number_of_subjects, **model_options)
+            statistical_model = DeformableTemplate(template_specifications_, dataset.number_of_subjects, **model_options)
             statistical_model.initialize_noise_variance(dataset)
 
             estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
@@ -184,7 +184,7 @@ class Deformetrica:
     def estimate_registration(self, template_specifications, dataset_specifications,
                               model_options={}, estimator_options={}, write_output=True):
         """ Estimates the best possible deformation between two sets of objects.
-        Note: A registration is a particular case of the deterministic atlas application, with a fixed template object.
+        Note: A registration is a particular case of the deformable template application, with a fixed template object.
 
         :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
@@ -206,7 +206,7 @@ class Deformetrica:
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
         # Instantiate model.
-        statistical_model = DeterministicAtlas(template_specifications, dataset.number_of_subjects, **model_options)
+        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
@@ -219,9 +219,9 @@ class Deformetrica:
 
         return statistical_model
 
-    def estimate_deterministic_atlas(self, template_specifications, dataset_specifications,
+    def estimate_deformable_template(self, template_specifications, dataset_specifications,
                                      model_options={}, estimator_options={}, write_output=True):
-        """ Estimate deterministic atlas.
+        """ Estimate deformable template model.
         Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
         as well as to compute a low number of coordinates for each object from this template shape.
 
@@ -232,23 +232,24 @@ class Deformetrica:
         :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
         :param bool write_output: Boolean that defines is output files will be written to disk.
         """
+        print("estimator_options in estimate_deformable_template \n", estimator_options)
 
         # Check and completes the input parameters.
         template_specifications, model_options, estimator_options = self.further_initialization(
-            'DeterministicAtlas', template_specifications, model_options, dataset_specifications, estimator_options)
+            'DeformableTemplate', template_specifications, model_options, dataset_specifications, estimator_options)
 
         # Instantiate dataset.
-        dataset = create_dataset(template_specifications,
-                                 dimension=model_options['dimension'], 
-                                 interpolation =model_options['interpolation'],
+        dataset = create_dataset(template_specifications, dimension=model_options['dimension'], 
+                                 interpolation = model_options['interpolation'],
                                  **dataset_specifications)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
         # Instantiate model.
-        statistical_model = DeterministicAtlas(template_specifications, dataset.number_of_subjects, **model_options)
+        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
+        print("estimator_options \n", estimator_options)
         estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
 
         try:
@@ -261,7 +262,7 @@ class Deformetrica:
     def estimate_bayesian_atlas(self, template_specifications, dataset_specifications,
                                 model_options={}, estimator_options={}, write_output=True):
         """ Estimate bayesian atlas.
-        Bayesian version of the deterministic atlas. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
+        Bayesian version of the deformable template. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
 
         :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
@@ -283,7 +284,7 @@ class Deformetrica:
         # Instantiate model.
         statistical_model = BayesianAtlas(template_specifications, **model_options)
         individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
-                                                                                 **model_options)
+                                                                                **model_options)
         statistical_model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
@@ -386,7 +387,7 @@ class Deformetrica:
         """
         # Check and completes the input parameters.
         template_specifications, model_options, estimator_options = self.further_initialization(
-            'BayesianPiecewiseRegression', template_specifications, model_options, dataset_specifications, estimator_options)
+            'BayesianGeodesicRegression', template_specifications, model_options, dataset_specifications, estimator_options)
 
         # Instantiate dataset.
         dataset = create_dataset(template_specifications,
@@ -451,7 +452,7 @@ class Deformetrica:
                                  **new_dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
-        statistical_model = DeterministicAtlas(template_specifications, dataset.number_of_subjects, **model_options)
+        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
         statistical_model.initialize_noise_variance(dataset)
 
         estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_, default=ScipyOptimize)
@@ -761,7 +762,6 @@ class Deformetrica:
             model_options_["perform_shooting"] = True
             model_options_["tmin"] = mini(dataset_specifications)
             model_options_["tmax"] = maxi(dataset_specifications)
-            
 
             path_to_sources, path_to_mm = perform_ICA(self.output_dir, initial_cp_path, 
                                                     model_options["deformation_kernel_width"], 
@@ -817,7 +817,7 @@ class Deformetrica:
 
         # Check and completes the input parameters.
         template_specifications, model_options, estimator_options = self.further_initialization(
-            'BayesianPiecewiseRegression', template_specifications, model_options, dataset_specifications, estimator_options)
+            'BayesianGeodesicRegression', template_specifications, model_options, dataset_specifications, estimator_options)
 
         # Instantiate dataset.
         dataset = create_dataset(template_specifications,
@@ -904,7 +904,7 @@ class Deformetrica:
         
         # Instantiate model.
         print("Number of subjects", len(new_dataset_spec['dataset_filenames']), "at age", time)
-        statistical_model = DeterministicAtlas(template_specifications, dataset.number_of_subjects, **model_options)
+        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
@@ -972,7 +972,7 @@ class Deformetrica:
             template_specifications['img']["filename"] = output_image
             
             # Instantiate model.
-            statistical_model = DeterministicAtlas(template_specifications, dataset.number_of_subjects, **model_options)
+            statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
             statistical_model.initialize_noise_variance(dataset)
 
             # Instantiate estimator.
@@ -1056,14 +1056,16 @@ class Deformetrica:
         
 
     def __instantiate_estimator(self, statistical_model, dataset, estimator_options, default=ScipyOptimize):
-        if estimator_options['optimization_method_type'].lower() == 'GradientAscent'.lower():
+        print("estimator_options\n", estimator_options)
+        if estimator_options['optimization_method'].lower() == 'GradientAscent'.lower():
             estimator = GradientAscent
-        elif estimator_options['optimization_method_type'].lower() == 'StochasticGradientAscent'.lower():
+
+        elif estimator_options['optimization_method'].lower() == 'StochasticGradientAscent'.lower():
             estimator = StochasticGradientAscent
             # set batch number
             if dataset.total_number_of_observations < 6 and dataset.number_of_subjects < 6:
                 print("\nDefaulting to GradientAscent optimizer")
-                estimator_options['optimization_method_type'] = 'GradientAscent'
+                estimator_options['optimization_method'] = 'GradientAscent'
                 estimator = GradientAscent
             else:
                 batch_size = 4
@@ -1074,7 +1076,7 @@ class Deformetrica:
 
                 print("\nSetting number of batches to", estimator_options["number_of_batches"])
 
-        elif estimator_options['optimization_method_type'].lower() == 'ScipyLBFGS'.lower():
+        elif estimator_options['optimization_method'].lower() == 'ScipyLBFGS'.lower():
             estimator = ScipyOptimize
         else:
             estimator = default
@@ -1085,6 +1087,7 @@ class Deformetrica:
     def further_initialization(self, model_type, template_specifications, model_options,
                                dataset_specifications=None, estimator_options=None, time = None):
 
+        print("estimator_options in further_initialization", estimator_options)
         if dataset_specifications is None or estimator_options is None:
             assert model_type.lower() in ['Shooting'.lower(), 'ParallelTransport'.lower()], \
                 'Only the "shooting" and "parallel transport" can run without a dataset and an estimator.'
@@ -1137,10 +1140,6 @@ class Deformetrica:
             model_options['downsampling_factor'] = default.downsampling_factor
         if 'interpolation' not in model_options: #ajout fg
             model_options['interpolation'] = default.interpolation
-        if 'use_sobolev_gradient' not in model_options:
-            model_options['use_sobolev_gradient'] = default.use_sobolev_gradient
-        if 'sobolev_kernel_width_ratio' not in model_options:
-            model_options['sobolev_kernel_width_ratio'] = default.sobolev_kernel_width_ratio
         if "kernel_regression" not in model_options:
             model_options['kernel_regression'] = default.kernel_regression
 
@@ -1151,11 +1150,6 @@ class Deformetrica:
         # If needed, infer the dimension from the template specifications.
         if model_options['dimension'] is None:
             model_options['dimension'] = self.__infer_dimension(template_specifications)
-
-        # Smoothing kernel width.
-        if model_options['use_sobolev_gradient']:
-            model_options['smoothing_kernel_width'] = \
-                model_options['deformation_kernel_width'] * model_options['sobolev_kernel_width_ratio']
 
         # try and automatically set best number of thread per spawned process if not overridden by uer
         if 'OMP_NUM_THREADS' not in os.environ:
@@ -1170,12 +1164,12 @@ class Deformetrica:
             os.environ['OMP_NUM_THREADS'] = str(omp_num_threads)
 
         # If longitudinal model and t0 is not initialized, initializes it.
-        if model_type.lower() in ['Regression'.lower(), 'PiecewiseRegression'.lower(), 'BayesianPiecewiseRegression'.lower()]:
-            ages = [a[0] for a in dataset_specifications['visit_ages']]   
-
+        if model_type.lower() in ['Regression'.lower(), 'PiecewiseRegression'.lower(), 'BayesianGeodesicRegression'.lower()]:
+            
             assert 'visit_ages' in dataset_specifications, 'Visit ages are needed to estimate a Regression'
 
             if model_options['t0'] is None:
+                ages = [a[0] for a in dataset_specifications['visit_ages']]   
                 logger.info('>> Initial t0 set to the minimal visit age: %.2f' % min(ages))
                 model_options['t0'] = min(ages)
             else:
@@ -1195,7 +1189,6 @@ class Deformetrica:
             logger.warning('Could not set max open file. Currently using: ' + str(rlimit))
 
         if estimator_options is not None:
-            # Initializes the state file.
             if estimator_options['state_file'] is None:
                 path_to_state_file = op.join(self.output_dir, "deformetrica-state.p")
                 logger.info('>> By default, Deformetrica state will by saved in file: %s.' % path_to_state_file)
@@ -1210,47 +1203,43 @@ class Deformetrica:
                         '>> Deformetrica will attempt to resume computation from the user-specified state file: %s.'
                         % estimator_options['state_file'])
 
-            # Warning if scipy-LBFGS with memory length > 1 and sobolev gradient.
-            if estimator_options['optimization_method_type'].lower() == 'ScipyLBFGS'.lower() \
-                    and not model_options['freeze_template'] and model_options['use_sobolev_gradient']:
-                logger.info('>> Using a Sobolev gradient for the template data with the ScipyLBFGS estimator memory length '
-                    'being larger than 1. Beware: that can be tricky.')
-
         # Freeze the fixed effects in case of a registration.
         if model_type.lower() == 'Registration'.lower():
             model_options['freeze_template'] = True
+
         elif model_type.lower() == 'KernelRegression'.lower():
             model_options['kernel_regression'] = True
             model_options['time'] = time
             model_options['visit_ages'] = []
 
         # Initialize the number of sources if needed.
-        if model_type.lower() in ['BayesianPiecewiseRegression'.lower()] \
-                and model_options['initial_modulation_matrix'] is None and model_options['number_of_sources'] is None:
-            model_options['number_of_sources'] = 4
-            logger.info('>> No initial modulation matrix given, neither a number of sources. '
-                        'The latter will be ARBITRARILY defaulted to %d.' % model_options['number_of_sources'])
+        if model_type.lower() in ['BayesianGeodesicRegression'.lower()]:
+
+            if model_options['initial_modulation_matrix'] is None and model_options['number_of_sources'] is None:
+                model_options['number_of_sources'] = 4
+                logger.info('>> No initial modulation matrix given, neither a number of sources. '
+                            'The latter will be ARBITRARILY defaulted to %d.' % model_options['number_of_sources'])
         
+            if 'sources_proposal_std' not in estimator_options:
+                estimator_options['sources_proposal_std'] = 1
+
+                estimator_options['individual_proposal_distributions'] = {
+                    'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
+
         # Checking the number of image objects, and moving as desired the downsampling_factor parameter.
         count = 0
         for elt in template_specifications.values():
-            if elt['deformable_object_type'].lower() == 'image':
+            if elt['object_type'].lower() == 'image':
                 count += 1
                 if not model_options['downsampling_factor'] == 1:
-                    if 'downsampling_factor' in elt.keys():
-                        logger.info('>> Warning: the downsampling_factor option is specified twice. ')
-                    else:
+                    if 'downsampling_factor' not in elt.keys():
                         elt['downsampling_factor'] = model_options['downsampling_factor']
                         logger.info('>> Setting the image grid downsampling factor to: %d.' % model_options['downsampling_factor'])
                 elt["interpolation"] = model_options["interpolation"]
                 
         if count > 1:
             raise RuntimeError('Only a single image object can be used.')
-        if count == 0 and not model_options['downsampling_factor'] == 1:
-            msg = 'The "downsampling_factor" parameter is useful only for image data, ' \
-                  'but none is considered here. Ignoring.'
-            logger.info('>> ' + msg)
-        
+
         return template_specifications, model_options, estimator_options
 
     @staticmethod
@@ -1259,7 +1248,7 @@ class Deformetrica:
         max_dimension = 0
         for elt in template_specifications.values():
             object_filename = elt['filename']
-            object_type = elt['deformable_object_type']
+            object_type = elt['object_type']
             o = reader.create_object(object_filename, object_type, dimension=None)
             d = o.dimension
             max_dimension = max(d, max_dimension)

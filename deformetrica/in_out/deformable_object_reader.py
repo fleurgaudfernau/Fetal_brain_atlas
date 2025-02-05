@@ -95,8 +95,6 @@ class DeformableObjectReader:
                 logger.warning(
                     'I am reading a {}d image but the dimension is set to {}'.format(dimension_image, dimension))
 
-            # out_object.update()
-
         else:
             raise RuntimeError('Unknown object type: ' + object_type)
 

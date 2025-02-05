@@ -20,14 +20,13 @@ class GradientAscent(AbstractEstimator):
     """
     GradientAscent object class.
     An estimator is an algorithm which updates the fixed effects of a statistical model.
-
     """
 
     ####################################################################################################################
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, statistical_model, dataset, optimization_method_type='undefined', individual_RER={},
+    def __init__(self, statistical_model, dataset, optimization_method='undefined', individual_RER={},
                  optimized_log_likelihood=default.optimized_log_likelihood,
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
@@ -35,7 +34,7 @@ class GradientAscent(AbstractEstimator):
                  max_line_search_iterations=default.max_line_search_iterations,
                  line_search_shrink=default.line_search_shrink,
                  line_search_expand=default.line_search_expand,
-                 output_dir=default.output_dir, callback=None,
+                 output_dir=default.output_dir, 
                  load_state_file=default.load_state_file, state_file=default.state_file,
 
                  multiscale_momenta = default.multiscale_momenta, #ajout fg
@@ -48,20 +47,16 @@ class GradientAscent(AbstractEstimator):
 
                  **kwargs):
         
-        self.overwrite = overwrite
-
-           
+        self.overwrite = overwrite 
         
         super().__init__(statistical_model=statistical_model, dataset=dataset, name='GradientAscent',
                          optimized_log_likelihood=optimized_log_likelihood,
                          max_iterations=max_iterations, convergence_tolerance=convergence_tolerance,
                          print_every_n_iters=print_every_n_iters, save_every_n_iters=save_every_n_iters,
                          individual_RER=individual_RER,
-                         callback=callback, state_file=state_file, output_dir=output_dir)
+                        state_file=state_file, output_dir=output_dir)
         
-        
-        
-        assert optimization_method_type.lower() == self.name.lower()
+        assert optimization_method.lower() == self.name.lower()
         
         self.current_attachment = None
         self.current_regularity = None
@@ -84,6 +79,7 @@ class GradientAscent(AbstractEstimator):
             self.current_parameters, self.current_iteration, \
             image_scale, momenta_scale, iter_images, iter_momenta, order \
             = self._load_state_file()
+            
             if multiscale_images:
                 self.multiscale.image_scale = image_scale
                 self.multiscale.iter_images = iter_images
@@ -126,8 +122,7 @@ class GradientAscent(AbstractEstimator):
         self.multiscale.initialize()
 
         # Initialize residuals (before filtering)
-        self.residuals = Residuals(self.statistical_model, self.dataset, self.print_every_n_iters, 
-                                   self.output_dir)
+        self.residuals = Residuals(self.statistical_model, self.dataset, self.print_every_n_iters, self.output_dir)
         self.residuals.compute_residuals(self.dataset, self.current_iteration, self.individual_RER, self.multiscale)
 
         # Initialize filter of subjects images/meshes and template (before getting parameters)
@@ -145,8 +140,6 @@ class GradientAscent(AbstractEstimator):
 
         initial_log_likelihood = self.current_log_likelihood
         last_log_likelihood = initial_log_likelihood
-
-        nb_params = len(gradient)
 
         # Initialize steps
         self.step = self._initialize_step_size(gradient)
@@ -182,7 +175,7 @@ class GradientAscent(AbstractEstimator):
                 # Step sizes reduction when the min is not found in order to go slower
                 self.step = {key: value * self.line_search_shrink for key, value in self.step.items()}                
 
-                if nb_params > 1:
+                if len(gradient) > 1:
                     new_parameters_prop = {}
                     new_attachment_prop = {}
                     new_regularity_prop = {}
@@ -241,11 +234,6 @@ class GradientAscent(AbstractEstimator):
             if not self.current_iteration % self.print_every_n_iters: self.print()
             if not self.current_iteration % self.save_every_n_iters: self.write()
 
-            # Call user callback function ------------------------------------------------------------------------------
-            if self.callback is not None:
-                self._call_user_callback(float(self.current_log_likelihood), float(self.current_attachment),
-                                         float(self.current_regularity), gradient)
-
             # Prepare next iteration -----------------------------------------------------------------------------------
             last_log_likelihood = self.current_log_likelihood
             if not self.current_iteration == self.max_iterations:
@@ -277,7 +265,7 @@ class GradientAscent(AbstractEstimator):
         """
         Save the current results.
         """
-        self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, 
+        self.statistical_model.write(self.dataset, self.individual_RER, 
                                     self.output_dir, self.current_iteration, write_all = True)
         self.residuals.write(self.output_dir, self.dataset, self.individual_RER, self.current_iteration)
         self.residuals.plot_residuals_evolution(self.output_dir, self.multiscale, self.individual_RER)
@@ -287,7 +275,7 @@ class GradientAscent(AbstractEstimator):
     def save_model_state_after_ctf(self):
         output_dir = self.multiscale.save_model_after_ctf(self.current_iteration)
         if output_dir:
-            self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, output_dir, 
+            self.statistical_model.write(self.dataset, self.individual_RER, output_dir, 
                                         self.current_iteration, write_all = False)
     
     ####################################################################################################################
@@ -357,9 +345,8 @@ class GradientAscent(AbstractEstimator):
         # Propagates the parameter value to all necessary attributes.
         self._set_parameters(parameters)
 
-        # Call the model method.
         try:
-            return self.statistical_model.compute_log_likelihood(self.dataset, self.population_RER, self.individual_RER,
+            return self.statistical_model.compute_log_likelihood(self.dataset, self.individual_RER,
                                                                  mode=self.optimized_log_likelihood,
                                                                  with_grad=with_grad)
 
@@ -374,16 +361,13 @@ class GradientAscent(AbstractEstimator):
 
     def _get_parameters(self):
         out = self.statistical_model.get_fixed_effects()
-        out.update(self.population_RER)
         out.update(self.individual_RER)
-        assert len(out) == len(self.statistical_model.get_fixed_effects()) \
-                           + len(self.population_RER) + len(self.individual_RER)
+        assert len(out) == len(self.statistical_model.get_fixed_effects()) + len(self.individual_RER)
         return out
 
     def _set_parameters(self, parameters):
         fixed_effects = {key: parameters[key] for key in self.statistical_model.get_fixed_effects().keys()}
         self.statistical_model.set_fixed_effects(fixed_effects)
-        self.population_RER = {key: parameters[key] for key in self.population_RER.keys()}
         self.individual_RER = {key: parameters[key] for key in self.individual_RER.keys()}
 
     def _load_state_file(self):

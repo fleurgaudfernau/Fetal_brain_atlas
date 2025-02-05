@@ -511,7 +511,7 @@ class Geodesic:
     ### Writing methods:
     ####################################################################################################################
 
-    def output_path(self, root_name, objects_name, objects_extension, output_dir, write_all = False):
+    def output_path(self, root_name, objects_extension, output_dir, write_all = False):
         self.flow_path = {}
         self.momenta_flow_path = {}
 
@@ -523,21 +523,20 @@ class Geodesic:
         
         for t, time in enumerate(times):
             names = []
-            for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                name = root_name + '__GeodesicFlow__' + object_name + '__tp_' + str(t) \
-                       + ('__age_%.2f' % time) + object_extension
+            for ext in objects_extension:
+                name = '{}__GeodesicFlow__tp_{}__age_{}{}'.format(root_name, t, time, ext)
                 names.append(name)
             
             if write_all and  t % step == 0:
                 self.flow_path[time] = op.join(output_dir, names[0])
             
-            self.momenta_flow_path[time] = op.join(output_dir, root_name + '__GeodesicFlow__Momenta__tp_' + str(t)
-                            + ('__age_%.2f' % time) + '.txt')
+            self.momenta_flow_path[time] = op.join(output_dir, 
+                                            '{}__GeodesicFlow__Momenta__tp_{}__age_{}.txt'.format(root_name, t, time))
         
         if not write_all:
             self.flow_path[time] = op.join(output_dir, names[0])
 
-    def write(self, root_name, objects_name, objects_extension, template, template_data, output_dir,
+    def write(self, root_name, objects_extension, template, template_data, output_dir,
               write_adjoint_parameters=False, write_all = True):
 
         # Core loop ----------------------------------------------------------------------------------------------------
@@ -549,9 +548,8 @@ class Geodesic:
         
         for t, time in enumerate(times):
             names = []
-            for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                name = root_name + '__GeodesicFlow__' + object_name + '__tp_' + str(t) \
-                       + ('__age_%.2f' % time) + object_extension
+            for ext in objects_extension:
+                name = '{}__GeodesicFlow__tp_{}__age_{}{}'.format(root_name, t, time, ext)
                 names.append(name)
             deformed_points = self.get_template_points(time)
             deformed_data = template.get_deformed_data(deformed_points, template_data)

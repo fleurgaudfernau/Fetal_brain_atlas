@@ -7,7 +7,6 @@ import numpy as np
 from ...core.estimator_tools.multiscale_meshes import MultiscaleMeshes
 from ...core.estimator_tools.multiscale_images import MultiscaleImages
 from ...core.estimator_tools.multiscale_momenta import MultiscaleMomenta
-from ...core.estimator_tools.multiscale_momenta_piecewise import MultiscaleMomentaPiecewise
 from ...support.utilities.tools import residuals_change
 
 logger = logging.getLogger(__name__)
@@ -38,15 +37,9 @@ class Multiscale():
         if 'landmark_points' in self.model.fixed_effects['template_data'].keys():
             self.points = 'landmark_points'
 
-        if multiscale_momenta and "Piecewise" in self.name:
-            multiscale_momenta_piecewise = True
-        multiscale_momenta_piecewise = False
-
         # Multiscale options
         self.momenta = MultiscaleMomenta(multiscale_momenta, multiscale_images, multiscale_meshes, model, ctf_interval, 
                                         ctf_max_interval, self.points_per_axis, start_scale)
-        self.momenta_piecewise = MultiscaleMomentaPiecewise(multiscale_momenta_piecewise, multiscale_images, multiscale_meshes, model, ctf_interval, 
-                                                            ctf_max_interval, self.points_per_axis)
         self.images = MultiscaleImages(multiscale_images, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
                                         ctf_max_interval, self.points, self.points_per_axis)
         self.meshes = MultiscaleMeshes(multiscale_meshes, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
@@ -76,7 +69,6 @@ class Multiscale():
 
     def initialize(self):
         self.momenta.initialize()
-        #self.momenta_piecewise.initialize()
         self.images.initialize(self.momenta.coarser_scale)
         self.meshes.initialize(self.momenta.coarser_scale)
         self.dual.initialize()
@@ -88,7 +80,6 @@ class Multiscale():
                        component_residuals = None, end = False): #TODO
         
         dataset, new_parameters = self.momenta.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
-        #dataset, new_parameters = self.momenta_piecewise.coarse_to_fine(new_parameters, dataset, iteration, component_residuals, end)
         dataset, new_parameters = self.images.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
         dataset, new_parameters = self.dual.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
         dataset, new_parameters = self.meshes.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
@@ -105,7 +96,7 @@ class Multiscale():
     ####################################################################################################################
     def no_convergence_after_ctf(self, iteration):
         if self.images.after_ctf(iteration - 1) or self.meshes.after_ctf(iteration - 1) \
-            or self.momenta.after_ctf(iteration - 1): #or self.momenta_piecewise.after_ctf(iteration - 1):
+            or self.momenta.after_ctf(iteration - 1): 
             print("Do not allow convergence after CTF")
             return True
                         
@@ -118,8 +109,8 @@ class Multiscale():
         return 
         if self.name == "GeodesicRegression" \
             and (self.images.after_ctf(iteration) or self.meshes.after_ctf(iteration) \
-            or self.momenta.after_ctf(iteration))\
-            and iteration > 1: 
+            or self.momenta.after_ctf(iteration)) and iteration > 1: 
+            
             name = "Iter_{}_".format(iteration)
             name = self.momenta.folder_name(name)
             name = self.images.folder_name(name)
@@ -178,7 +169,6 @@ class Multiscale():
         # Compute an additional gradient: the WT of the momenta gradient
         # And silence some coefficients (actual coarse to fine)
         gradient = self.momenta.compute_haar_gradient(gradient)
-        #gradient = self.momenta_piecewise.compute_haar_gradient(gradient)
         
         # Store gradient norms
         if not self.gradient_norms:
@@ -227,14 +217,6 @@ class Multiscale():
             
             return new_parameters
 
-        # elif self.momenta_piecewise.ctf_is_happening():
-        #     # Update other parameters
-        #     new_parameters = self.regular_gradient_ascent(new_parameters, gradient, step, \
-        #                                                 exclude = ["momenta", "haar_coef_momenta"])
-        #     new_parameters = self.momenta_piecewise.gradient_ascent(parameters, new_parameters, gradient, step) 
-            
-        #     return new_parameters
-        
         # Regular gradient ascent
         return self.regular_gradient_ascent(new_parameters, gradient, step)
     
@@ -392,9 +374,6 @@ class Multiscale():
             else:
                 optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
         
-        # elif self.momenta_piecewise.after_ctf(iteration):
-        #     optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
-
         ### Contain some steps during CTF
         optimizer.step = self.contain_step_size(steps, gradient)
 
@@ -439,7 +418,7 @@ class DualMultiscale():
                 ctf_max_interval):
         self.model = model
         self.name = model.name
-        self.ext = self.model.objects_name_extension[0]
+        self.ext = self.model.objects_extension[0]
 
         self.momenta = momenta
         self.images = images

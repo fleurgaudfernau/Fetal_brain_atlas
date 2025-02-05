@@ -8,7 +8,6 @@ from ..support import utilities
 
 logger = logging.getLogger(__name__)
 
-
 def get_dataset_specifications(xml_parameters):
     specifications = {}
     specifications['visit_ages'] = xml_parameters.visit_ages
@@ -17,11 +16,12 @@ def get_dataset_specifications(xml_parameters):
 
     return specifications
 
-
 def get_estimator_options(xml_parameters):
     options = {}
 
-    if xml_parameters.optimization_method_type.lower() in ['GradientAscent'.lower(), 'StochasticGradientAscent'.lower(), 'ProximalGradientAscent'.lower()]:
+    print("!!!", xml_parameters.optimization_method, "\n")
+
+    if xml_parameters.optimization_method.lower() in ['GradientAscent'.lower(), 'StochasticGradientAscent'.lower()]:
         options['initial_step_size'] = xml_parameters.initial_step_size
         options['scale_initial_step_size'] = xml_parameters.scale_initial_step_size
         options['line_search_shrink'] = xml_parameters.line_search_shrink
@@ -29,13 +29,13 @@ def get_estimator_options(xml_parameters):
         options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
         options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
 
-    elif xml_parameters.optimization_method_type.lower() == 'ScipyLBFGS'.lower():
+    elif xml_parameters.optimization_method.lower() == 'ScipyLBFGS'.lower():
         options['freeze_template'] = xml_parameters.freeze_template
         options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
         options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
 
     # common options
-    options['optimization_method_type'] = xml_parameters.optimization_method_type.lower()
+    options['optimization_method'] = xml_parameters.optimization_method.lower()
     options['max_iterations'] = xml_parameters.max_iterations
     options['convergence_tolerance'] = xml_parameters.convergence_tolerance
     options['print_every_n_iters'] = xml_parameters.print_every_n_iters
@@ -52,9 +52,7 @@ def get_estimator_options(xml_parameters):
     options['multiscale_strategy'] =  xml_parameters.multiscale_strategy #ajout fg
     options['gamma'] = xml_parameters.gamma #ajout fg
 
-    # logger.debug(options)
     return options
-
 
 def get_model_options(xml_parameters):
     options = {
@@ -65,8 +63,6 @@ def get_model_options(xml_parameters):
         'freeze_template': xml_parameters.freeze_template,
         'freeze_momenta': xml_parameters.freeze_momenta,
         'freeze_noise_variance': xml_parameters.freeze_noise_variance,
-        'use_sobolev_gradient': xml_parameters.use_sobolev_gradient,
-        'sobolev_kernel_width_ratio': xml_parameters.sobolev_kernel_width_ratio,
         'initial_control_points': xml_parameters.initial_control_points,
         'initial_momenta': xml_parameters.initial_momenta,
         'downsampling_factor': xml_parameters.downsampling_factor,
@@ -76,9 +72,7 @@ def get_model_options(xml_parameters):
         'interpolation':xml_parameters.interpolation #ajout fg
     }
 
-    if xml_parameters.model_type.lower() in ['LongitudinalAtlas'.lower(), 
-                                            'LongitudinalAtlasSimplified'.lower(), 
-                                            'LongitudinalRegistration'.lower()]:
+    if xml_parameters.model_type.lower() in ['BayesianGeodesicRegression'.lower()]:
         options['t0'] = xml_parameters.t0
         options['tR'] = xml_parameters.tR
         options['tmin'] = xml_parameters.tmin
@@ -87,6 +81,8 @@ def get_model_options(xml_parameters):
         options['initial_modulation_matrix'] = xml_parameters.initial_modulation_matrix
         options['initial_sources'] = xml_parameters.initial_sources
         options['freeze_modulation_matrix'] = xml_parameters.freeze_modulation_matrix
+        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
+        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
 
     elif xml_parameters.model_type.lower() in ['Regression'.lower(), "KernelRegression".lower()]:
         options['t0'] = xml_parameters.t0
@@ -145,14 +141,12 @@ class XmlParameters:
         self.visit_ages = default.visit_ages
         self.subject_ids = default.subject_ids
 
-        self.optimization_method_type = default.optimization_method_type
+        self.optimization_method = default.optimization_method
         self.optimized_log_likelihood = default.optimized_log_likelihood
         self.max_iterations = default.max_iterations
         self.max_line_search_iterations = default.max_line_search_iterations
         self.save_every_n_iters = default.save_every_n_iters
         self.print_every_n_iters = default.print_every_n_iters
-        self.use_sobolev_gradient = default.use_sobolev_gradient
-        self.sobolev_kernel_width_ratio = default.sobolev_kernel_width_ratio
         self.smoothing_kernel_width = default.smoothing_kernel_width
         self.initial_step_size = default.initial_step_size
         self.line_search_shrink = default.line_search_shrink
@@ -217,8 +211,6 @@ class XmlParameters:
 
     # Read the parameters from the model xml.
     def _read_model_xml(self, model_xml_path):
-        
-
         model_xml_level0 = et.parse(model_xml_path).getroot()
 
         for model_xml_level1 in model_xml_level0:
@@ -278,8 +270,8 @@ class XmlParameters:
 
                         template_object = self._initialize_template_object_xml_parameters()
                         for model_xml_level3 in model_xml_level2:
-                            if model_xml_level3.tag.lower() == 'deformable-object-type':
-                                template_object['deformable_object_type'] = model_xml_level3.text.lower()
+                            if model_xml_level3.tag.lower() in['deformable-object-type', 'object-type']:
+                                template_object['object_type'] = model_xml_level3.text.lower()
                             elif model_xml_level3.tag.lower() == 'attachment-type':
                                 template_object['attachment_type'] = model_xml_level3.text.lower()
                             elif model_xml_level3.tag.lower() == 'kernel-width':
@@ -390,7 +382,7 @@ class XmlParameters:
 
             for optimization_parameters_xml_level1 in optimization_parameters_xml_level0:
                 if optimization_parameters_xml_level1.tag.lower() == 'optimization-method-type':
-                    self.optimization_method_type = optimization_parameters_xml_level1.text.lower()
+                    self.optimization_method = optimization_parameters_xml_level1.text.lower()
                 elif optimization_parameters_xml_level1.tag.lower() == 'optimized-log-likelihood':
                     self.optimized_log_likelihood = optimization_parameters_xml_level1.text.lower()
                 elif optimization_parameters_xml_level1.tag.lower() == 'max-iterations':
@@ -405,10 +397,6 @@ class XmlParameters:
                     self.save_every_n_iters = int(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'print-every-n-iters':
                     self.print_every_n_iters = int(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'use-sobolev-gradient':
-                    self.use_sobolev_gradient = self._on_off_to_bool(optimization_parameters_xml_level1.text)
-                elif optimization_parameters_xml_level1.tag.lower() == 'sobolev-kernel-width-ratio':
-                    self.sobolev_kernel_width_ratio = float(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'initial-step-size':
                     self.initial_step_size = float(optimization_parameters_xml_level1.text)
                 elif optimization_parameters_xml_level1.tag.lower() == 'freeze-template':
@@ -466,7 +454,7 @@ class XmlParameters:
     @staticmethod
     def _initialize_template_object_xml_parameters():
         template_object = {}
-        template_object['deformable_object_type'] = 'undefined'
+        template_object['object_type'] = 'undefined'
         template_object['kernel_width'] = 0.0
         template_object['kernel_device'] = default.deformation_kernel_device
         template_object['noise_std'] = -1

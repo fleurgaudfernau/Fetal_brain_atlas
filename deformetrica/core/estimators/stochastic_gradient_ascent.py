@@ -26,7 +26,7 @@ class StochasticGradientAscent(AbstractEstimator):
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, statistical_model, dataset, optimization_method_type='undefined', individual_RER={},
+    def __init__(self, statistical_model, dataset, optimization_method='undefined', individual_RER={},
                  optimized_log_likelihood=default.optimized_log_likelihood,
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
@@ -55,7 +55,7 @@ class StochasticGradientAscent(AbstractEstimator):
                          individual_RER=individual_RER,
                          callback=callback, state_file=state_file, output_dir=output_dir)
 
-        assert optimization_method_type.lower() == self.name.lower()
+        assert optimization_method.lower() == self.name.lower()
         
         self.current_attachment = None
         self.current_regularity = None
@@ -147,7 +147,7 @@ class StochasticGradientAscent(AbstractEstimator):
         # Use gradient of 1 mii batch to initialize step sizes
         batch = self.statistical_model.mini_batches(self.dataset, self.number_of_batches)[0]
         _, _, batch_gradient = self.statistical_model.compute_mini_batch_gradient(batch, self.dataset, 
-                                                                                self.population_RER, self.individual_RER, with_grad=True)
+                                                                                self.individual_RER, with_grad=True)
         batch_gradient = self.multiscale.compute_gradients(batch_gradient)
 
         # Initialize steps
@@ -170,7 +170,7 @@ class StochasticGradientAscent(AbstractEstimator):
             for b, batch in enumerate(mini_batches):
                 logger.info("batch {}".format(b))
 
-                _, _, batch_gradient = self.statistical_model.compute_mini_batch_gradient(batch, self.dataset, self.population_RER, self.individual_RER, with_grad=True)
+                _, _, batch_gradient = self.statistical_model.compute_mini_batch_gradient(batch, self.dataset, self.individual_RER, with_grad=True)
 
                 # the gradient of momenta[i] == 0 if subject i not in batch
                 batch_gradient = self.multiscale.compute_gradients(batch_gradient)
@@ -282,7 +282,7 @@ class StochasticGradientAscent(AbstractEstimator):
         """
         Save the current results.
         """
-        self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, self.output_dir, self.current_iteration)
+        self.statistical_model.write(self.dataset, self.individual_RER, self.output_dir, self.current_iteration)
         self.residuals.write(self.output_dir, self.dataset)
         self.residuals.plot_residuals_evolution(self.output_dir, self.multiscale)
         self._dump_state_file()
@@ -290,7 +290,7 @@ class StochasticGradientAscent(AbstractEstimator):
     def save_model_state_after_ctf(self):
         output_dir = self.multiscale.save_model_after_ctf(self.current_iteration)
         if output_dir:
-            self.statistical_model.write(self.dataset, self.population_RER, self.individual_RER, output_dir, self.current_iteration)
+            self.statistical_model.write(self.dataset, self.individual_RER, output_dir, self.current_iteration)
 
     ####################################################################################################################
     ### Private methods:
@@ -361,7 +361,7 @@ class StochasticGradientAscent(AbstractEstimator):
 
         # Call the model method.
         try:
-            return self.statistical_model.compute_log_likelihood(self.dataset, self.population_RER, self.individual_RER,
+            return self.statistical_model.compute_log_likelihood(self.dataset, self.individual_RER,
                                                                  mode=self.optimized_log_likelihood,
                                                                  with_grad=with_grad)
 
@@ -379,7 +379,7 @@ class StochasticGradientAscent(AbstractEstimator):
         self._set_parameters(parameters)
 
         # Call the model method.
-        return self.statistical_model.compute_log_likelihood(self.dataset, self.population_RER, self.individual_RER,
+        return self.statistical_model.compute_log_likelihood(self.dataset, self.individual_RER,
                                                                  mode=self.optimized_log_likelihood,
                                                                  with_grad=False)
             
@@ -387,16 +387,13 @@ class StochasticGradientAscent(AbstractEstimator):
 
     def _get_parameters(self):
         out = self.statistical_model.get_fixed_effects()
-        out.update(self.population_RER)
         out.update(self.individual_RER)
-        assert len(out) == len(self.statistical_model.get_fixed_effects()) \
-                           + len(self.population_RER) + len(self.individual_RER)
+        assert len(out) == len(self.statistical_model.get_fixed_effects())  + len(self.individual_RER)
         return out
 
     def _set_parameters(self, parameters):
         fixed_effects = {key: parameters[key] for key in self.statistical_model.get_fixed_effects().keys()}
         self.statistical_model.set_fixed_effects(fixed_effects)
-        self.population_RER = {key: parameters[key] for key in self.population_RER.keys()}
         self.individual_RER = {key: parameters[key] for key in self.individual_RER.keys()}
 
     def _load_state_file(self):

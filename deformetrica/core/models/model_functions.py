@@ -23,9 +23,6 @@ def initialize_control_points(initial_control_points, template, deformation_kern
     else:
         bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
         control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, dimension)
-        # if len(template.object_list) == 1 and template.object_list[0].type.lower() == 'image':
-        #     control_points = remove_useless_control_points(control_points, template.object_list[0],
-        #                                                    deformation_kernel_width)
         logger.info('>> Set of %d control points defined.' % len(control_points))
 
     return control_points
@@ -54,6 +51,15 @@ def initialize_momenta(initial_momenta, number_of_control_points, dimension,
 def initialize_covariance_momenta_inverse(control_points, kernel, dimension):
     return np.kron(kernel.get_kernel_matrix(torch.from_numpy(control_points)).detach().numpy(), np.eye(dimension))
 
+def initialize_rupture_time(tR, t0, t1, nb_components):
+    if not tR: # set tR at regular intervals
+        tR = []
+        segment = int((math.ceil(t1) - math.trunc(t0))/nb_components)
+        for i in range(nb_components - 1):
+            tR.append(math.trunc(t0) + segment * (i+1), i)
+    
+    return tR 
+
 def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_points, number_of_sources, dimension):
     if initial_modulation_matrix is not None:
         modulation_matrix = read_3D_array(initial_modulation_matrix)
@@ -64,8 +70,7 @@ def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_po
 
     else:
         if number_of_sources is None:
-            raise RuntimeError(
-                'The number of sources must be set before calling the update method of the LongitudinalAtlas class.')
+            raise RuntimeError('The number of sources must be set')
         modulation_matrix = np.zeros((number_of_control_points * dimension, number_of_sources))
 
     return modulation_matrix
@@ -79,27 +84,6 @@ def initialize_sources(initial_sources, number_of_subjects, number_of_sources):
         sources = np.zeros((number_of_subjects, number_of_sources))
         logger.info('>> Initializing all sources to zero')
     return sources
-
-
-def initialize_onset_ages(initial_onset_ages, number_of_subjects, reference_time):
-    if initial_onset_ages is not None:
-        onset_ages = read_2D_array(initial_onset_ages)
-        logger.info('>> Reading initial onset ages from file: ' + initial_onset_ages)
-    else:
-        onset_ages = np.zeros((number_of_subjects,)) + reference_time
-        logger.info('>> Initializing all onset ages to the initial reference time: %.2f' % reference_time)
-    return onset_ages
-
-
-def initialize_accelerations(initial_accelerations, number_of_subjects):
-    if initial_accelerations is not None:
-        accelerations = read_2D_array(initial_accelerations)
-        logger.info('>> Reading initial accelerations from file: ' + initial_accelerations)
-    else:
-        accelerations = np.ones((number_of_subjects,))
-        logger.info('>> Initializing all accelerations to one.')
-    return accelerations
-
 
 def create_regular_grid_of_points(box, spacing, dimension):
     """

@@ -88,7 +88,7 @@ class SubjectFiles():
         return join(self.registration_output, 'Registration__subject_'+ self.id(i))
 
     def registration_momenta_path(self, i):
-        return join(self.registration_path(i), "DeterministicAtlas__EstimatedParameters__Momenta.txt")
+        return join(self.registration_path(i), "DeformableTemplate__EstimatedParameters__Momenta.txt")
 
     def shooting_path(self, i):
         return join(self.shooting_output, 'Shooting__subject_'+ self.id(i))

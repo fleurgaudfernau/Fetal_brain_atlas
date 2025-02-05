@@ -22,7 +22,7 @@ class ScipyOptimize(AbstractEstimator):
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, statistical_model, dataset, optimization_method_type='undefined', individual_RER={},
+    def __init__(self, statistical_model, dataset, optimization_method='undefined', individual_RER={},
                  optimized_log_likelihood=default.optimized_log_likelihood,
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
@@ -39,8 +39,7 @@ class ScipyOptimize(AbstractEstimator):
                          individual_RER=individual_RER,
                          callback=callback, state_file=state_file, output_dir=output_dir)
 
-        assert optimization_method_type.lower() in ['ScipyLBFGS'.lower(), 'ScipyPowell'.lower(),
-                                                    'GridSearch'.lower(), 'BasinHopping'.lower()]
+        assert optimization_method.lower() in ['ScipyLBFGS'.lower(), 'ScipyPowell'.lower()]
 
         # If the load_state_file flag is active, restore context.
         if load_state_file:
@@ -56,14 +55,10 @@ class ScipyOptimize(AbstractEstimator):
             self.x0 = self._vectorize_parameters(parameters)
             self._gradient_memory = None
 
-        if optimization_method_type.lower() == 'ScipyLBFGS'.lower():
+        if optimization_method.lower() == 'ScipyLBFGS'.lower():
             self.method = 'L-BFGS-B'
-        elif optimization_method_type.lower() == 'ScipyPowell'.lower():
+        elif optimization_method.lower() == 'ScipyPowell'.lower():
             self.method = 'Powell'
-        elif optimization_method_type.lower() == 'GridSearch'.lower():
-            self.method = 'GridSearch'
-        elif optimization_method_type.lower() == 'BasinHopping'.lower():
-            self.method = 'BasinHopping'
         else:
             raise RuntimeError('Unexpected error.')
 
@@ -121,25 +116,6 @@ class ScipyOptimize(AbstractEstimator):
                                       'maxfev': 10e4,
                                       'disp': True
                                   })
-
-            elif self.method == 'BasinHopping':
-                raise RuntimeError('The BasinHopping algorithm is not available yet.')
-                # result = basinhopping(self._cost_and_derivative, self.x0, niter=25, disp=True,
-                #                       minimizer_kwargs={
-                #                           'method': 'L-BFGS-B',
-                #                           'jac': True,
-                #                           'bounds': self._get_bounds(),
-                #                           'tol': self.convergence_tolerance,
-                #                           'options': {'maxiter': self.max_iterations},
-                #                           'args': (True,)
-                #                       })
-                # self._set_parameters(self._unvectorize_parameters(result.x))
-
-            elif self.method == 'GridSearch':
-                raise RuntimeError('The GridSearch algorithm is not available yet.')
-                # x = brute(self._cost, self._get_parameters_range(self.x0), Ns=3, disp=True)
-                # self._set_parameters(self._unvectorize_parameters(x))
-
             else:
                 raise RuntimeError('Unknown optimization method.')
 
