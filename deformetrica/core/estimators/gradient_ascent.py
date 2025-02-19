@@ -118,6 +118,9 @@ class GradientAscent(AbstractEstimator):
             self.stop = True
             return 
         
+        logger.info("Initial step size set to {}".format(self.initial_step_size))
+        logger.info("Convergence tolerance set to {}".format(self.convergence_tolerance))
+
         self.multiscale.initialize()
 
         # Initialize residuals (before filtering)
@@ -143,9 +146,6 @@ class GradientAscent(AbstractEstimator):
         # Initialize steps
         self.step = self._initialize_step_size(gradient)
         self.step = self.multiscale.initialize_momenta_step(self.step, gradient, self, self.current_iteration)
-
-        logger.info("Initial step size set to {}".format(self.initial_step_size))
-        logger.info("Convergence tolerance set to {}".format(self.convergence_tolerance))
 
         # Main loop ----------------------------------------------------------------------------------------------------
         while self.callback_ret and self.current_iteration < self.max_iterations:

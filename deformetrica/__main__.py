@@ -88,13 +88,6 @@ def main():
         deformetrica.estimate_registration(xml.template_specifications, dataset_spec,
                                             model_options, estimator_options)
         
-    elif xml.model_type == 'Barycenter'.lower():
-        assert args.command == 'estimate', \
-            'The estimation of a registration model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
-        deformetrica.estimate_barycenter(xml.template_specifications, dataset_spec,
-                                        model_options, estimator_options)
-
     elif xml.model_type == 'DeformableTemplate'.lower():
         assert args.command == 'estimate', \
             'The estimation of a deformable template should be launched with the command: ' \

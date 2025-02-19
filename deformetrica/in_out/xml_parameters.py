@@ -16,6 +16,7 @@ def get_dataset_specifications(xml_parameters):
     specifications['subject_ids'] = xml_parameters.subject_ids
     specifications['interpolation'] = xml_parameters.interpolation
     specifications['kernel_width'] = xml_parameters.template_specifications["Object_1"]["kernel_width"]
+    specifications['n_subjects'] = len(xml_parameters.subject_ids)
 
     return specifications
 
@@ -48,7 +49,6 @@ def get_estimator_options(xml_parameters):
     options['multiscale_meshes'] = xml_parameters.multiscale_meshes
     options["start_scale"] = xml_parameters.start_scale
     options['multiscale_strategy'] =  xml_parameters.multiscale_strategy #ajout fg
-    options['gamma'] = xml_parameters.gamma #ajout fg
 
     return options
 
@@ -157,7 +157,6 @@ class XmlParameters:
         self.multiscale_meshes = default.multiscale_meshes
         self.start_scale = None
         self.multiscale_strategy = default.multiscale_strategy #ajout fg
-        self.gamma = default.gamma
         self.perform_shooting = default.perform_shooting #ajout fg
         self.freeze_momenta = default.freeze_momenta
         self.freeze_modulation_matrix = default.freeze_modulation_matrix
@@ -242,7 +241,7 @@ class XmlParameters:
                             elif tag == 'filename':
                                 template_object['filename'] = op.join(directory, text)
                             elif tag == 'noise-std':
-                                template_object['noise_std'] = round(float(text) ** 2, 1)
+                                template_object['noise_std'] = round(float(text) ** 2, 5)
                             elif tag == 'noise-variance-prior-scale-std':
                                 template_object['noise_variance_prior_scale_std'] = float(text)
                             elif tag == 'noise-variance-prior-normalized-dof':
@@ -251,7 +250,6 @@ class XmlParameters:
                                 warnings.warn('Unknown entry while parsing model xml:{}'.format(tag))
 
                         self.template_specifications["Object_{}".format(n_objects + 1)] = template_object
-                        print("self.template_specifications", self.template_specifications)
                     else:
                         msg = 'Unknown entry while parsing the template section of the model xml: {}'.format(obj.tag)
                         warnings.warn(msg)
@@ -351,8 +349,6 @@ class XmlParameters:
                     self.multiscale_strategy = str(level1.text)
                 elif tag == 'start-scale': #ajout fg
                     self.start_scale = float(level1.text)  
-                elif tag == 'gamma': #ajout fg
-                    self.gamma = float(level1.text)  
                 elif tag == 'max-line-search-iterations':
                     self.max_line_search_iterations = int(level1.text)
                 elif tag == 'state-file':

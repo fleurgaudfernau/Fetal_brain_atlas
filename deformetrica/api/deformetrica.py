@@ -12,9 +12,8 @@ import torch
 import numpy as np
 import time 
 from time import strftime, gmtime
-from ..core import default, GpuMode
+from ..core import default
 from ..core.estimators.gradient_ascent import GradientAscent
-from ..core.estimators.scipy_optimize import ScipyOptimize
 from ..core.models import DeformableTemplate, GeodesicRegression, PiecewiseGeodesicRegression, \
                         BayesianPiecewiseGeodesicRegression
 from ..in_out.dataset_functions import create_dataset, filter_dataset, make_dataset_timeseries,\
@@ -37,8 +36,6 @@ from ..core.observations.deformable_objects.deformable_multi_object import Defor
 #ajout fg
 from ..core.estimators.stochastic_gradient_ascent import StochasticGradientAscent
 from .piecewise_rg_tools import make_dir, complete, PlotResiduals, options_for_registration
-
-######
 
 global logger
 logger = logging.getLogger()
@@ -128,68 +125,18 @@ class Deformetrica:
 
         return new_bounding_box
 
-    def estimate_barycenter(self, template_specifications, dataset_spec,
-                                     model_options={}, estimator_options={}, write_output=True):
-        estimator_options["overwrite"] = False
-        main_output_dir = self.output_dir  
-        momenta= []
-
-        for target in range(len(dataset_spec['subject_ids'])):
-
-            self.output_dir = op.join(main_output_dir, "Target_{}__{}_age_{}".format(target, 
-                                            dataset_spec['subject_ids'][target],
-                                            dataset_spec['visit_ages'][target][0]))
-            make_dir(self.output_dir)
-            new_dataset_spec = dict()
-            new_dataset_spec['subject_ids'] = [dataset_spec['subject_ids'][target]]
-            new_dataset_spec['dataset_filenames']= [[dataset_spec['dataset_filenames'][target][0]]]
-            new_dataset_spec['visit_ages'] = [[age(dataset_spec, target)]]
-
-            # Check and completes the input parameters.
-            model_options, estimator_options = self.further_initialization('Registration', 
-                                                model_options, new_dataset_spec, estimator_options)
-            
-            # Instantiate dataset.
-            dataset = create_dataset(interpolation = model_options['interpolation'], **new_dataset_spec)
-            assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
-
-            statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-            statistical_model.initialize_noise_variance(dataset)
-
-            estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
-
-            try:
-                self.__launch_estimator(estimator, write_output)
-            finally:
-                momenta.append(statistical_model.momenta_path)
-                cp = statistical_model.fixed_effects['control_points']
-                statistical_model.cleanup()
-        from ..in_out.array_readers_and_writers import read_3D_array
-        list = [read_3D_array(mom) for mom in momenta]
-        final_momenta = np.mean(np.array(list), axis = 0)
-
-        np.savetxt(op.join(main_output_dir, "Mean_momenta.txt"), final_momenta)
-        np.savetxt(op.join(main_output_dir, "CP.txt"), cp)
-        make_dir(op.join(main_output_dir, "shooting"))
-
-        compute_shooting(template_specifications,
-                     deformation_kernel_width=model_options["deformation_kernel_width"],
-                     initial_control_points=op.join(main_output_dir, "CP.txt"),
-                     initial_momenta=op.join(main_output_dir, "Mean_momenta.txt"),
-                     output_dir=op.join(main_output_dir, "shooting"))
-
     def estimate_registration(self, template_specifications, dataset_spec,
                               model_options={}, estimator_options={}, write_output=True):
         """ Estimates the best possible deformation between two sets of objects.
-        Note: A registration is a particular case of the deformable template application, with a fixed template object.
+        Note: A registration is a particular case of the deformable template application, 
+            with a fixed template object.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
-        :return:
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         
         # Check and completes the input parameters.
@@ -205,7 +152,7 @@ class Deformetrica:
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -220,12 +167,12 @@ class Deformetrica:
         Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
         as well as to compute a low number of coordinates for each object from this template shape.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
 
         # Check and completes the input parameters.
@@ -241,7 +188,7 @@ class Deformetrica:
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -255,12 +202,12 @@ class Deformetrica:
         """ Estimate bayesian atlas.
         Bayesian version of the deformable template. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
@@ -278,7 +225,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -291,12 +238,12 @@ class Deformetrica:
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
@@ -315,7 +262,7 @@ class Deformetrica:
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -328,12 +275,12 @@ class Deformetrica:
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
@@ -352,7 +299,7 @@ class Deformetrica:
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -365,12 +312,12 @@ class Deformetrica:
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
@@ -394,7 +341,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -412,7 +359,7 @@ class Deformetrica:
         new_dataset_spec = {k : [] for k in dataset_spec.keys()}
 
         # Select subjects around t0
-        for i in range(len(dataset_spec['subject_ids'])):
+        for i in range(dataset_spec['n_subjects']):
             if age(dataset_spec, i) > t0 - 3 and age(dataset_spec, i) < t0 + 3:
                 new_dataset_spec['subject_ids'].append(dataset_spec['subject_ids'][i])
                 new_dataset_spec['dataset_filenames'].append([dataset_spec['dataset_filenames'][i][0]])
@@ -438,7 +385,7 @@ class Deformetrica:
         statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
         statistical_model.initialize_noise_variance(dataset)
 
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -471,7 +418,7 @@ class Deformetrica:
         statistical_model = PiecewiseGeodesicRegression(template_specifications, **model_options, new_bounding_box = new_bounding_box)
         statistical_model.initialize_noise_variance(dataset)
 
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -483,71 +430,11 @@ class Deformetrica:
         
         return initial_cp_path, initial_momenta_path, flow_path
     
-    def piecewise_regression_for_initialisation_(self, template_specifications, dataset_spec,
-                                     model_options, estimator_options, write_output):
-        # Résout la piecewise régression par morceaux... 
-        estimator_options_ = copy.deepcopy(estimator_options)
-
-        model_options, estimator_options_ = self.further_initialization(
-                                    'PiecewiseRegression', model_options, dataset_spec, estimator_options_)
-        
-        new_dataset_spec = make_dataset_timeseries(dataset_spec)
-        model_options["freeze_template"] = True # important
-        estimator_options_["multiscale_momenta"] = False
-
-        dataset = create_dataset(**new_dataset_spec)
-
-        new_bounding_box = self.set_bounding_box(dataset)
-
-        main_output_dir = self.output_dir
-
-        for t, age_limit in enumerate(model_options['tR'][1:]):
-
-            logger.info("\n >>>> 1_piecewise_regression {}>>>> \n".format(t+1))
-
-            model_options_ = deepcopy(model_options)
-            model_options_["tR"] = model_options['tR'][:t+1]
-            model_options_["t1"] = age_limit
-            model_options_["num_component"] = len(model_options_["tR"]) + 1
-
-            self.output_dir = main_output_dir + '/regression_' + str(t+1)
-            if not op.exists(self.output_dir):
-                os.makedirs(self.output_dir)
-            
-            if not op.exists(op.join(self.output_dir, "GeodesicRegression__EstimatedParameters__Momenta.txt")):
-                if t > 0:
-                    momenta = read_3D_array(initial_momenta_path)
-                    if momenta.shape[0] != model_options_["num_component"]:
-                        new_momenta = np.zeros((momenta.shape[0] + 1, momenta.shape[1], momenta.shape[2]))
-                        new_momenta[:momenta.shape[0]] = momenta
-                        name = initial_momenta_path.split("/")[-1]
-                        write_3D_array(new_momenta, self.output_dir, name)
-                    model_options_["initial_momenta"] = initial_momenta_path
-                
-                new_dataset_spec_ = filter_dataset(new_dataset_spec, float(age_limit))
-
-                dataset = create_dataset(**new_dataset_spec_)
-                
-                assert (dataset.is_time_series()), "Cannot estimate a geodesic regression from a non-time-series dataset."
-
-                statistical_model = PiecewiseGeodesicRegression(template_specifications, **model_options_, new_bounding_box = new_bounding_box)
-                statistical_model.initialize_noise_variance(dataset)
-
-                estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_, default=ScipyOptimize)
-
-                try:
-                    self.__launch_estimator(estimator, write_output)
-                finally:
-                    initial_momenta_path = statistical_model.momenta_path
-                
-                statistical_model.cleanup()
-            
-            initial_momenta_path = op.join(self.output_dir, "GeodesicRegression__EstimatedParameters__Momenta.txt")
-
     def parallel_transport_subject(self, i, template_specifications, dataset_spec,
                                     model_options, estimator_options, main_output_dir3, 
                                     flow_path, object_name, initial_cp_path, initial_momenta_path, 
                                     registration_model, start_time, target_time):
+        
         # Parallel transport from t_i to t0 -we keep original tmin, tmax, t0 and tR
         logger.info("\n >>>> Parallel transport for subject {} - id {} to {}".format(i, id(dataset_spec, i), target_time))
 
@@ -643,12 +530,12 @@ class Deformetrica:
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
-        :param dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
-        :param bool write_output: Boolean that defines is output files will be written to disk.
+        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
+        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :bool write_output: Boolean that defines is output files will be written to disk.
         """
         main_output_dir = self.output_dir  
         self.output_dir = op.join(main_output_dir, "0_template_estimation")
@@ -769,7 +656,7 @@ class Deformetrica:
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -836,7 +723,7 @@ class Deformetrica:
         statistical_model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
@@ -903,7 +790,7 @@ class Deformetrica:
             statistical_model.initialize_noise_variance(dataset)
 
             # Instantiate estimator.
-            estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options, default=ScipyOptimize)
+            estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
 
             try:
                 self.__launch_estimator(estimator, write_output)
@@ -916,9 +803,9 @@ class Deformetrica:
     def compute_parallel_transport(self, template_specifications, model_options={}):
         """ Given a known progression of shapes, to transport this progression onto a new shape.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
+        :dict model_options: Dictionary containing details about the model that is to be run.
         """
 
         # Check and completes the input parameters.
@@ -932,9 +819,9 @@ class Deformetrica:
         """ If control points and momenta corresponding to a deformation have been obtained, 
         it is possible to shoot the corresponding deformation of obtain the flow of a shape under this deformation.
 
-        :param dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
+        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
                 as well as some hyper-parameters for the objects and the deformations used.
-        :param dict model_options: Dictionary containing details about the model that is to be run.
+        :dict model_options: Dictionary containing details about the model that is to be run.
         """
 
         # Check and completes the input parameters.
@@ -948,12 +835,12 @@ class Deformetrica:
     ####################################################################################################################
 
     @staticmethod
-    def __launch_estimator(estimator, write_output=True):
+    def __launch_estimator(estimator = GradientAscent, write_output=True):
         """
         Launch the estimator. This will iterate until a stop condition is reached.
 
         :param estimator:   Estimator that is to be used.
-                            eg: :class:`GradientAscent <core.estimators.gradient_ascent.GradientAscent>`, :class:`ScipyOptimize <core.estimators.scipy_optimize.ScipyOptimize>`
+                            eg: :class:`GradientAscent <core.estimators.gradient_ascent.GradientAscent>`
         """        
         if estimator.stop:
             return 
@@ -979,11 +866,13 @@ class Deformetrica:
         else:
             logger.info('>> Estimation took: %s' % strftime("%S seconds", gmtime(duration)))
         
-    def __instantiate_estimator(self, statistical_model, dataset, estimator_options, default=ScipyOptimize):
-        if estimator_options['optimization_method'].lower() == 'GradientAscent'.lower():
+    def __instantiate_estimator(self, statistical_model, dataset, estimator_options):
+        optimization_method = estimator_options['optimization_method'].lower()
+        
+        if optimization_method == 'GradientAscent'.lower():
             estimator = GradientAscent
 
-        elif estimator_options['optimization_method'].lower() == 'StochasticGradientAscent'.lower():
+        elif optimization_method == 'StochasticGradientAscent'.lower():
             estimator = StochasticGradientAscent
             # set batch number
             if dataset.total_number_of_observations < 6 and dataset.number_of_subjects < 6:
@@ -999,8 +888,6 @@ class Deformetrica:
 
                 print("\nSetting number of batches to", estimator_options["number_of_batches"])
 
-        elif estimator_options['optimization_method'].lower() == 'ScipyLBFGS'.lower():
-            estimator = ScipyOptimize
         else:
             estimator = default
 
@@ -1009,18 +896,13 @@ class Deformetrica:
 
     def further_initialization(self, model_type, model_options, dataset_spec=None, 
                                 estimator_options=None, time = None):
+        model_type = model_type.lower()
 
         if dataset_spec is None or estimator_options is None:
-            assert model_type.lower() in ['Shooting'.lower(), 'ParallelTransport'.lower()], \
+            assert model_type in ['Shooting'.lower(), 'ParallelTransport'.lower()], \
                 'Only the "shooting" and "parallel transport" can run without a dataset and an estimator.'
 
         if estimator_options is not None:
-            if 'gpu_mode' not in estimator_options:
-                estimator_options['gpu_mode'] = default.gpu_mode
-            if estimator_options['gpu_mode'] is GpuMode.FULL and not torch.cuda.is_available():
-                logger.warning("GPU computation is not available, falling-back to CPU.")
-                estimator_options['gpu_mode'] = GpuMode.NONE
-
             if 'state_file' not in estimator_options:
                 estimator_options['state_file'] = default.state_file
             if 'load_state_file' not in estimator_options:
@@ -1079,7 +961,7 @@ class Deformetrica:
             os.environ['OMP_NUM_THREADS'] = str(omp_num_threads)
 
         # If longitudinal model and t0 is not initialized, initializes it.
-        if model_type.lower() in ['Regression'.lower(), 'PiecewiseRegression'.lower(), 'BayesianGeodesicRegression'.lower()]:
+        if model_type in ['Regression'.lower(), 'PiecewiseRegression'.lower(), 'BayesianGeodesicRegression'.lower()]:
             
             assert 'visit_ages' in dataset_spec, 'Visit ages are needed to estimate a Regression'
 
@@ -1117,16 +999,16 @@ class Deformetrica:
                         '>> Deformetrica will resume computation from state file %s.' % estimator_options['state_file'])
 
         # Freeze the fixed effects in case of a registration.
-        if model_type.lower() == 'Registration'.lower():
+        if model_type == 'Registration'.lower():
             model_options['freeze_template'] = True
 
-        elif model_type.lower() == 'KernelRegression'.lower():
+        elif model_type == 'KernelRegression'.lower():
             model_options['kernel_regression'] = True
             model_options['time'] = time
             model_options['visit_ages'] = []
 
         # Initialize the number of sources if needed.
-        if model_type.lower() in ['BayesianGeodesicRegression'.lower()]:
+        if model_type in ['BayesianGeodesicRegression'.lower()]:
 
             if model_options['initial_modulation_matrix'] is None and model_options['number_of_sources'] is None:
                 model_options['number_of_sources'] = 4

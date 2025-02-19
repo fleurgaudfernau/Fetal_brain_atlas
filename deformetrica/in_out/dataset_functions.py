@@ -125,7 +125,6 @@ def extension(filename: str):
 
     raise RuntimeError('Unknown extension for file %s' % (filename,))
 
-
 def create_template_metadata(template_spec):
     """
     Creates a longitudinal dataset object from xml parameters.
