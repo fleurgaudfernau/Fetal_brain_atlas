@@ -77,7 +77,6 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
 
 
 def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_specifications,
-            dimension=default.dimension,
             deformation_kernel_width=default.deformation_kernel_width,
             initial_control_points=default.initial_control_points,
             initial_momenta_tR=default.initial_momenta, tmin=default.tmin, tmax=default.tmax,
@@ -112,8 +111,8 @@ def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_speci
 
         print(">>> Parallel transport along main geodesic of space shift {}".format(s))
         
-        pt = PiecewiseParallelTransport(template_specifications, dimension, 
-                                        tmin, tmax, concentration_of_time_points, t0, 
+        pt = PiecewiseParallelTransport(template_specifications, tmin, tmax, 
+                                        concentration_of_time_points, t0, 
                                         start_time = target_time, target_time = None, tR = tR, 
                                         gpu_mode = gpu_mode, output_dir = space_shift_folder, 
                                         flow_path = flow_path, initial_control_points = initial_control_points)

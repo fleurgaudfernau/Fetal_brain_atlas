@@ -10,7 +10,6 @@ class DeformableMultiObject:
     The DeformableMultiObject class is used to deal with collections of deformable objects embedded in
     the current 2D or 3D space. It extends for such collections the methods of the deformable object class
     that are designed for a single object at a time.
-
     """
 
     ####################################################################################################################
@@ -23,7 +22,6 @@ class DeformableMultiObject:
         self.dimension = max([elt.dimension for elt in self.object_list])
         self.number_of_objects = len(self.object_list)  # TODO remove
 
-        self.number_of_objects = len(self.object_list)
         assert (self.number_of_objects > 0)
         self.update_bounding_box(self.dimension)
 
@@ -55,14 +53,13 @@ class DeformableMultiObject:
     def set_data(self, data):
         if 'landmark_points' in data.keys():
             landmark_object_list = [elt for elt in self.object_list
-                                    if elt.type.lower() in ['surfacemesh', 'polyline', 'landmark']]
-            assert len(data['landmark_points']) == np.sum([elt.get_number_of_points()
-                                                           for elt in landmark_object_list]), \
-                "Number of points differ in template and data given to template"
+                                    if elt.type.lower() in ['surfacemesh','landmark']]
+            assert len(data['landmark_points']) == np.sum([elt.n_points() for elt in landmark_object_list]), \
+                                                    "Number of points differ in template and data given to template"
             pos = 0
             for i, elt in enumerate(landmark_object_list):
-                elt.set_points(data['landmark_points'][pos:pos + elt.get_number_of_points()])
-                pos += elt.get_number_of_points()
+                elt.set_points(data['landmark_points'][pos:pos + elt.n_points()])
+                pos += elt.n_points()
 
         if 'image_intensities' in data.keys():
             image_object_list = [elt for elt in self.object_list if elt.type.lower() == 'image']
@@ -77,7 +74,7 @@ class DeformableMultiObject:
         landmark_points = []
         image_points = None
         for elt in self.object_list:
-            if elt.type.lower() in ['surfacemesh', 'polyline', 'landmark']:
+            if elt.type.lower() in ['surfacemesh', 'landmark']:
                 landmark_points.append(elt.get_points())
             elif elt.type.lower() == 'image':
                 assert image_points is None, 'A deformable_multi_object cannot contain more than one image object.'
@@ -116,12 +113,12 @@ class DeformableMultiObject:
     #     if 'landmark_points' in data.keys():
     #         landmark_object_list = [elt for elt in self.object_list
     #                                 if elt.type.lower() in ['surfacemesh', 'polyline', 'landmark']]
-    #         assert len(data) == np.sum([elt.get_number_of_points() for elt in landmark_object_list]), \
+    #         assert len(data) == np.sum([elt.n_points() for elt in landmark_object_list]), \
     #             "Number of points differ in template and data given to template"
     #         pos = 0
     #         for i, elt in enumerate(landmark_object_list):
-    #             elt.set_points(data[pos:pos + elt.get_number_of_points()])
-    #             pos += elt.get_number_of_points()
+    #             elt.set_points(data[pos:pos + elt.n_points()])
+    #             pos += elt.n_points()
     #
     #     if 'image_intensities' in data.keys():
     #         image_object = [elt for elt in self.object_list if elt.type.lower() == 'image'][0]
@@ -157,6 +154,9 @@ class DeformableMultiObject:
         """
         Save the list of objects with the given names
         """
+        if names is None:
+            return
+            
         assert len(names) == len(self.object_list), "Give as many names as objects to save multi-object"
         pos = 0
         for elt, name in zip(self.object_list, names):
@@ -164,11 +164,10 @@ class DeformableMultiObject:
                 elt.write(output_dir, name)
 
             else:
-                if elt.type.lower() in ['surfacemesh', 'polyline', 'landmark']:
-                    elt.write(output_dir, name, 
-                              data['landmark_points'][pos:pos + elt.get_number_of_points()], 
-                              momenta, cp, kernel)
-                    pos += elt.get_number_of_points()
+                if elt.type.lower() in ['surfacemesh', 'landmark']:
+                    elt.write(output_dir, name, data['landmark_points'][pos:pos + elt.n_points()], 
+                                momenta, cp, kernel)
+                    pos += elt.n_points()
 
                 elif elt.type.lower() == 'image':
                     elt.write(output_dir, name, data['image_intensities'])

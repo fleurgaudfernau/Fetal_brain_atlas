@@ -32,7 +32,7 @@ class McmcSaem(AbstractEstimator):
                  sample_every_n_mcmc_iters=default.sample_every_n_mcmc_iters,
                  convergence_tolerance=default.convergence_tolerance,
                  output_dir=default.output_dir,
-                 scale_initial_step_size=default.scale_initial_step_size, initial_step_size=default.initial_step_size,
+                 initial_step_size=default.initial_step_size,
                  max_line_search_iterations=default.max_line_search_iterations,
                  line_search_shrink=default.line_search_shrink, line_search_expand=default.line_search_expand,
                  load_state_file=default.load_state_file, state_file=default.state_file,
@@ -70,7 +70,7 @@ class McmcSaem(AbstractEstimator):
         self.gradient_based_estimator = GradientAscent(
             statistical_model, dataset, optimized_log_likelihood='class2', max_iterations=5, 
             convergence_tolerance=convergence_tolerance, print_every_n_iters=1, save_every_n_iters=100000, 
-            scale_initial_step_size=scale_initial_step_size, initial_step_size=initial_step_size,
+            initial_step_size=initial_step_size,
             max_line_search_iterations=max_line_search_iterations, line_search_shrink=line_search_shrink, 
             line_search_expand=line_search_expand, output_dir=output_dir, 
             individual_RER=individual_RER, optimization_method='GradientAscent',

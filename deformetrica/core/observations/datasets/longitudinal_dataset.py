@@ -1,5 +1,5 @@
 import numpy as np
-
+import math
 import logging
 logger = logging.getLogger(__name__)
 
@@ -19,21 +19,19 @@ class LongitudinalDataset:
 
         self.subject_ids = subject_ids
         self.times = times
+        self.tmin = math.trunc(min(min(t) for t in times)) # arrondi à entier inf
+        self.tmax = math.ceil(max(max(t) for t in times)) # entier sup
         self.deformable_objects = deformable_objects
+        self.dimension = deformable_objects[0][0].dimension
 
         self.number_of_subjects = len(subject_ids)
 
-        # assert self.number_of_subjects == len(self.times)
-
         # Total number of observations.
         if times is not None:
-            self.total_number_of_observations = 0
-            for i in range(self.number_of_subjects):
-                self.total_number_of_observations += len(self.times[i])
+            self.total_number_of_observations = sum(len(times) for times in self.times)
+
         elif deformable_objects is not None:
-            self.total_number_of_observations = 0
-            for i in range(self.number_of_subjects):
-                self.total_number_of_observations += len(self.deformable_objects[i])
+            self.total_number_of_observations = sum(len(objets) for objets in self.deformable_objects)
 
         # Order the observations.
         if times is not None and len(times) > 0 and len(times[0]) > 0 and deformable_objects is not None:
@@ -62,22 +60,15 @@ class LongitudinalDataset:
         """
         In the case of non deformable objects, checks the dimension of the images are the same.
         """
-        shape = None
+        shape = self.deformable_objects[0][0].get_points().shape
         for subj in self.deformable_objects:
             for img in subj:
-                if shape is None:
-                    shape = img.get_points().shape
-                else:
-                    assert img.get_points().shape == shape, \
-                        "Different images dimensions were detected."
+                assert img.get_points().shape == shape, "Different images dimensions detected."
 
     def order_observations(self):
         """ sort the visits for each individual, by time"""
         for i in range(len(self.times)):
-            arg_sorted_times = np.argsort(self.times[i])
-            sorted_times = np.sort(self.times[i])
-            sorted_deformable_objects = []
-            for j in arg_sorted_times:
-                sorted_deformable_objects.append(self.deformable_objects[i][j])
-            self.times[i] = sorted_times
-            self.deformable_objects[i] = sorted_deformable_objects
+            
+            self.times[i] = np.sort(self.times[i])
+            self.deformable_objects[i] = [self.deformable_objects[i][j] \
+                                            for j in np.argsort(self.times[i])]

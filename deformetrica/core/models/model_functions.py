@@ -15,14 +15,14 @@ def residuals_change(avg_residuals):
 
 
 def initialize_control_points(initial_control_points, template, deformation_kernel_width,
-                              dimension, new_bounding_box = None):
+                              new_bounding_box = None):
     if initial_control_points is not None:
         control_points = read_2D_array(initial_control_points)
         logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_control_points))
 
     else:
         bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
-        control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, dimension)
+        control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, template.dimension)
         logger.info('>> Set of %d control points defined.' % len(control_points))
 
     return control_points

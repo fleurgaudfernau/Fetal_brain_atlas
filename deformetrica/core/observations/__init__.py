@@ -3,9 +3,8 @@
 from .datasets.longitudinal_dataset import LongitudinalDataset
 
 # landmarks
-from .deformable_objects.landmarks.landmark import Landmark
-from .deformable_objects.landmarks.poly_line import PolyLine
-from .deformable_objects.landmarks.surface_mesh import SurfaceMesh
+from .deformable_objects.landmark import Landmark
+from .deformable_objects.surface_mesh import SurfaceMesh
 
 # deformable objects
 from .deformable_objects.deformable_multi_object import DeformableMultiObject

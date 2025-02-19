@@ -10,7 +10,7 @@ from ..core.model_tools.deformations.piecewise_geodesic import PiecewiseGeodesic
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ..in_out.array_readers_and_writers import *
 from ..in_out.dataset_functions import create_template_metadata, create_dataset
-from ..support import utilities
+from ..support.utilities import move_data, get_best_device
 from ..support import kernels as kernel_factory
 from ..core.model_tools.attachments.multi_object_attachment import MultiObjectAttachment
 from ..support.utilities.vtk_tools import screenshot_vtk
@@ -21,13 +21,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class ParallelTransport():
-    def __init__(self, template_specifications, dimension, 
-                  tmin, tmax, concentration_of_time_points, 
+    def __init__(self, template_specifications, tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path,
                 initial_control_points = None):
         
         self.data = {}
-        self.dimension = dimension
         self.gpu_mode = gpu_mode
         
         self.tmin = tmin
@@ -62,8 +60,8 @@ class ParallelTransport():
         self.times = np.linspace(min(target_time, start_time), max(target_time, start_time), 
                             num=nb_of_tp).tolist()
         
-        self.objects_list, self.objects_name, self.objects_name_extension, _, self.multi_object_attachment = \
-        create_template_metadata(template_specifications, dimension, gpu_mode=gpu_mode)
+        self.objects_list, self.objects_name_extension, _, self.multi_object_attachment = \
+                            create_template_metadata(template_specifications, gpu_mode=gpu_mode)
         
     def initialize(self, deformation_kernel_width, 
                  initial_control_points, initial_momenta,
@@ -77,17 +75,16 @@ class ParallelTransport():
         initial_momenta = read_3D_array(initial_momenta) # n_comp x n_cp x d
         initial_momenta_to_transport = read_3D_array(initial_momenta_to_transport)
 
-        device, _ = utilities.get_best_device(self.gpu_mode)
-        self.device = device
-        self.control_points = utilities.move_data(control_points, device=device)
-        self.initial_momenta = utilities.move_data(initial_momenta, device=device)
-        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, device=device)
+        self.device, _ = get_best_device(self.gpu_mode)
+        self.control_points = move_data(control_points, device=self.device)
+        self.initial_momenta = move_data(initial_momenta, device=self.device)
+        self.initial_momenta_to_transport = move_data(initial_momenta_to_transport, device=self.device)
 
         template_points = self.template.get_points()
-        self.template_points = {key: utilities.move_data(value, device=device) for key, value in template_points.items()}
+        self.template_points = {key: move_data(value, device=self.device) for key, value in template_points.items()}
 
         template_data = self.template.get_data()
-        self.template_data = {key: utilities.move_data(value, device=device) for key, value in template_data.items()}
+        self.template_data = {key: move_data(value, device=self.device) for key, value in template_data.items()}
 
         self.deformation_kernel = kernel_factory.factory(gpu_mode=self.gpu_mode, 
                                                          kernel_width=deformation_kernel_width)
@@ -103,7 +100,7 @@ class ParallelTransport():
 
     def set_momenta_to_transport(self, initial_momenta_to_transport):
         initial_momenta_to_transport = read_3D_array(initial_momenta_to_transport)
-        self.initial_momenta_to_transport = utilities.move_data(initial_momenta_to_transport, device=self.device)  
+        self.initial_momenta_to_transport = move_data(initial_momenta_to_transport, device=self.device)  
 
     def get_output(self):
         self.transported_mom_path = {}
@@ -279,7 +276,7 @@ class ParallelTransport():
             if time.is_integer():
                 if not op.exists(self.transported_object_path[time]):
                     transported_mom = read_3D_array(self.transported_mom_path[time])
-                    transported_mom = utilities.move_data(transported_mom, device=self.device)  
+                    transported_mom = move_data(transported_mom, device=self.device)  
                     transported_mom = transported_mom * sigma
                     
                     parallel_data = self.shoot_exponential(time, cp, transported_mom)
@@ -306,10 +303,10 @@ class ParallelTransport():
                 spec = deepcopy(self.template_specifications)
                 spec[self.objects_name[0]]["filename"] = self.transported_object_path[time]
 
-                objects_list, _, _, _, _ = create_template_metadata(spec, self.dimension, gpu_mode=self.gpu_mode)
+                objects_list, _, _, _ = create_template_metadata(spec, gpu_mode=self.gpu_mode)
                 deformed_template = DeformableMultiObject(objects_list)
                 parallel_data = deformed_template.get_data()
-                parallel_data = {key: utilities.move_data(value, device=self.device) for key, value in parallel_data.items()}
+                parallel_data = {key: move_data(value, device=self.device) for key, value in parallel_data.items()}
 
                 # Create the geodesic flow object 
                 spec = {"dataset_filenames" : [[{self.objects_name[0] : self.flow_path[time]}]], 
@@ -326,12 +323,12 @@ class ParallelTransport():
         self.data["scalar_product_with_original_registration_momenta"] = {}
         self.data["current_distance_with_original_registration_momenta"] = {}
         original_momenta = read_3D_array(self.transported_mom_path[self.start_time])
-        original_momenta = utilities.move_data(original_momenta, device=self.device)
+        original_momenta = move_data(original_momenta, device=self.device)
 
         for (time) in self.times:
             if time.is_integer():
                 momenta = read_3D_array(self.transported_mom_path[time])
-                momenta = utilities.move_data(momenta, device=self.device)
+                momenta = move_data(momenta, device=self.device)
                 self.data["squared_norm"][time] = self.exponential.scalar_product(self.control_points, momenta, momenta)
                 self.data["norm"][time] = torch.sqrt(self.data["squared_norm"][time])
                 self.data["scalar_product_with_original_registration_momenta"][time] = self.exponential.scalar_product(self.control_points, original_momenta,
@@ -345,18 +342,18 @@ class ParallelTransport():
                 self.data["current_distance_with_original_registration_momenta"][time] = self.data["current_distance_with_original_registration_momenta"][time].cpu().numpy()
 
 class SimpleParallelTransport(ParallelTransport):
-    def __init__(self, template_specifications, dimension, 
-                  tmin, tmax, concentration_of_time_points, 
-                t0, start_time, target_time, gpu_mode, output_dir, flow_path):
+    def __init__(self, template_specifications,
+                    tmin, tmax, concentration_of_time_points, 
+                    t0, start_time, target_time, gpu_mode, output_dir, flow_path):
         
-        super().__init__(template_specifications, dimension, 
-                  tmin, tmax, concentration_of_time_points, 
-                t0, start_time, target_time, gpu_mode, output_dir, flow_path) 
+        super().__init__(template_specifications,
+                        tmin, tmax, concentration_of_time_points, 
+                        t0, start_time, target_time, gpu_mode, output_dir, flow_path) 
         
     
     def initialize_(self, deformation_kernel_width, 
-                 initial_control_points, initial_momenta,
-                initial_momenta_to_transport, number_of_time_points):
+                    initial_control_points, initial_momenta,
+                    initial_momenta_to_transport, number_of_time_points):
         
         self.initialize(deformation_kernel_width, 
                   initial_control_points, initial_momenta,
@@ -388,12 +385,12 @@ class SimpleParallelTransport(ParallelTransport):
         
 
 class PiecewiseParallelTransport(ParallelTransport):
-    def __init__(self, template_specifications, dimension, 
+    def __init__(self, template_specifications, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, tR, gpu_mode, output_dir, flow_path, 
                 initial_control_points = None):
         
-        super().__init__(template_specifications, dimension, 
+        super().__init__(template_specifications, 
                   tmin, tmax, concentration_of_time_points, 
                 t0, start_time, target_time, gpu_mode, output_dir, flow_path,
                 initial_control_points) 
@@ -437,7 +434,7 @@ class PiecewiseParallelTransport(ParallelTransport):
         self.control_points_traj = self.geodesic.get_control_points_trajectory()
     
 
-def compute_parallel_transport(template_specifications, dimension=default.dimension,
+def compute_parallel_transport(template_specifications,
                                deformation_kernel_width=default.deformation_kernel_width,
                                initial_control_points=default.initial_control_points,
                                initial_momenta=default.initial_momenta,
@@ -452,7 +449,7 @@ def compute_parallel_transport(template_specifications, dimension=default.dimens
                                overwrite = True, flow_path = None, **kwargs):
     
     pt = SimpleParallelTransport(template_specifications,
-                                    dimension, tmin, tmax,
+                                    tmin, tmax,
                                     concentration_of_time_points, t0, start_time, target_time,
                                     gpu_mode, output_dir, flow_path)
     
@@ -475,7 +472,7 @@ def compute_parallel_transport(template_specifications, dimension=default.dimens
     
     return pt.transported_mom_path
 
-def compute_piecewise_parallel_transport(template_specifications, dimension=default.dimension,
+def compute_piecewise_parallel_transport(template_specifications,
                                deformation_kernel_width=default.deformation_kernel_width,
                                initial_control_points=default.initial_control_points,
                                initial_momenta_tR=default.initial_momenta,
@@ -498,7 +495,7 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
     3- self.geodesic.parallel_transport(space_shift) along all trajectory
     """
     print("initial_momenta_tR", initial_momenta_tR)
-    pt = PiecewiseParallelTransport(template_specifications, dimension, 
+    pt = PiecewiseParallelTransport(template_specifications, 
                                     tmin, tmax, concentration_of_time_points, t0, start_time, 
                                     target_time, tR, gpu_mode, output_dir, flow_path)
     
@@ -523,7 +520,6 @@ def compute_piecewise_parallel_transport(template_specifications, dimension=defa
 
 
 def compute_distance_to_flow(template_specifications,
-                        dimension=default.dimension,
                         deformation_kernel_width=default.deformation_kernel_width,
                         initial_control_points=default.initial_control_points,
                         initial_momenta_tR=default.initial_momenta,
@@ -540,15 +536,14 @@ def compute_distance_to_flow(template_specifications,
                         flow_path = None,
                         **kwargs):
     
-    pt = PiecewiseParallelTransport(template_specifications, dimension, 
-                                    tmin, tmax, concentration_of_time_points, t0, start_time, 
+    pt = PiecewiseParallelTransport(template_specifications, tmin, tmax, 
+                                    concentration_of_time_points, t0, start_time, 
                                     target_time, tR, gpu_mode, output_dir, flow_path)
     
     pt.get_output()
-    pt.initialize_(deformation_kernel_width, 
-                  initial_control_points, initial_momenta_tR,
-                initial_momenta_to_transport, number_of_time_points,
-                num_component)
+    pt.initialize_(deformation_kernel_width, initial_control_points, 
+                initial_momenta_tR, initial_momenta_to_transport, 
+                number_of_time_points, num_component)
     pt.get_flow()
 
     pt.compute_distance_to_flow()

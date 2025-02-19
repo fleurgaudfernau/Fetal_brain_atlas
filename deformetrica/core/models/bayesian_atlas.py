@@ -2,12 +2,12 @@ import math
 
 import torch
 
-from ...support import kernels as kernel_factory
+from ...support.kernels import factory
 from ...core import default
 from ...core.model_tools.deformations.exponential import Exponential
 from ...core.models.abstract_statistical_model import AbstractStatisticalModel
 from ...core.models.model_functions import initialize_momenta, initialize_covariance_momenta_inverse, \
-    initialize_control_points
+                                            initialize_control_points
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata, compute_noise_dimension
@@ -31,21 +31,17 @@ class BayesianAtlas(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications,
-                 dimension=default.dimension,
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  number_of_time_points=default.number_of_time_points,
                  freeze_template=default.freeze_template,
                  initial_control_points=default.initial_control_points,
 
-                 gpu_mode=default.gpu_mode,
-
                  **kwargs):
 
-        AbstractStatisticalModel.__init__(self, name='BayesianAtlas', gpu_mode=gpu_mode)
+        AbstractStatisticalModel.__init__(self, name='BayesianAtlas')
 
         # Global-like attributes.
-        self.dimension = dimension
         self.deformation_kernel_width = deformation_kernel_width
 
         # Declare model structure.
@@ -64,20 +60,19 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Deformation.
         self.exponential = Exponential(
-            kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
+            kernel=factory(kernel_width=deformation_kernel_width),
             number_of_time_points=number_of_time_points)
 
-        self.device, _ = get_best_device(self.exponential.kernel.gpu_mode)
+        self.device, _ = get_best_device()
 
         # Template.
-        (object_list, self.objects_name, self.objects_extension,
-         objects_noise_variance, self.multi_object_attachment) = create_template_metadata(
-            template_specifications, self.dimension, gpu_mode=gpu_mode)
+        (object_list, self.objects_extension, objects_noise_variance, self.multi_object_attachment) = \
+                                                    create_template_metadata(template_specifications)
 
         self.template = DeformableMultiObject(object_list)
-
+        self.dimension = self.template.dimension
         self.objects_noise_dimension = compute_noise_dimension(self.template, self.multi_object_attachment,
-                                                               self.dimension, self.objects_name)
+                                                                self.objects_name)
         self.number_of_objects = len(self.template.object_list)
 
         # Template data.
@@ -85,7 +80,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Control points.
         self.fixed_effects['control_points'] = initialize_control_points(
-            initial_control_points, self.template, deformation_kernel_width, self.dimension)
+            initial_control_points, self.template, deformation_kernel_width)
         self.number_of_control_points = len(self.fixed_effects['control_points'])
 
         # Covariance momenta.
@@ -376,7 +371,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
 
         t_list, t_name, t_name_extension, t_noise_variance, t_multi_object_attachment = \
-            create_template_metadata(template_specifications, gpu_mode=self.gpu_mode)
+            create_template_metadata(template_specifications)
 
         self.template.object_list = t_list
         self.objects_name = t_name

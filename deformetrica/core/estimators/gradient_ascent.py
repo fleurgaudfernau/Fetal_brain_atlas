@@ -28,21 +28,22 @@ class GradientAscent(AbstractEstimator):
 
     def __init__(self, statistical_model, dataset, optimization_method='undefined', individual_RER={},
                  optimized_log_likelihood=default.optimized_log_likelihood,
-                 max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
-                 print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
-                 scale_initial_step_size=default.scale_initial_step_size, initial_step_size=default.initial_step_size,
+                 max_iterations=default.max_iterations, 
+                 convergence_tolerance=default.convergence_tolerance,
+                 print_every_n_iters=default.print_every_n_iters, 
+                 save_every_n_iters=default.save_every_n_iters,
+                 initial_step_size=default.initial_step_size,
                  max_line_search_iterations=default.max_line_search_iterations,
                  line_search_shrink=default.line_search_shrink,
                  line_search_expand=default.line_search_expand,
                  output_dir=default.output_dir, 
-                 load_state_file=default.load_state_file, state_file=default.state_file,
+                 load_state_file=default.load_state_file, 
+                 state_file=default.state_file,
 
                  multiscale_momenta = default.multiscale_momenta, #ajout fg
-                 naive = default.naive, #ajout fg
                  multiscale_images = default.multiscale_images, #ajout fg
                  multiscale_meshes = default.multiscale_meshes,
                  multiscale_strategy = default.multiscale_strategy,
-                 start_scale = None,
                  overwrite = True,
 
                  **kwargs):
@@ -66,19 +67,17 @@ class GradientAscent(AbstractEstimator):
         self.line_search_shrink = line_search_shrink
         self.line_search_expand = line_search_expand
 
-        self.scale_initial_step_size = scale_initial_step_size
         self.initial_step_size = initial_step_size
         self.max_line_search_iterations = max_line_search_iterations
         self.current_iteration = 0
 
         self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, 
-                                    multiscale_strategy, naive, self.statistical_model, self.initial_step_size, 
-                                    self.scale_initial_step_size, self.output_dir, self.dataset, start_scale)
+                                    multiscale_strategy, self.statistical_model, self.initial_step_size, 
+                                    self.output_dir, self.dataset)
         
         if load_state_file:
-            self.current_parameters, self.current_iteration, \
-            image_scale, momenta_scale, iter_images, iter_momenta, order \
-            = self._load_state_file()
+            self.current_parameters, self.current_iteration, image_scale, momenta_scale, \
+            iter_images, iter_momenta, order = self._load_state_file()
             
             if multiscale_images:
                 self.multiscale.image_scale = image_scale
@@ -145,10 +144,13 @@ class GradientAscent(AbstractEstimator):
         self.step = self._initialize_step_size(gradient)
         self.step = self.multiscale.initialize_momenta_step(self.step, gradient, self, self.current_iteration)
 
+        logger.info("Initial step size set to {}".format(self.initial_step_size))
+        logger.info("Convergence tolerance set to {}".format(self.convergence_tolerance))
+
         # Main loop ----------------------------------------------------------------------------------------------------
         while self.callback_ret and self.current_iteration < self.max_iterations:
             self.current_iteration += 1
-            t1 = round(perf_counter(), 1)
+            t1 = perf_counter()
 
             # Line search ----------------------------------------------------------------------------------------------
             found_min = False
@@ -220,17 +222,17 @@ class GradientAscent(AbstractEstimator):
             new_parameters = self.coarse_to_fine(new_parameters, end)
 
             # Test the stopping criterion ------------------------------------------------------------------------------
-            delta_f_current = last_log_likelihood - self.current_log_likelihood
-            delta_f_initial = initial_log_likelihood - self.current_log_likelihood
+            delta_current = last_log_likelihood - self.current_log_likelihood
+            delta_initial = initial_log_likelihood - self.current_log_likelihood
 
-            if math.fabs(delta_f_current) < self.convergence_tolerance * math.fabs(delta_f_initial):
+            if math.fabs(delta_current) < self.convergence_tolerance * math.fabs(delta_initial):
                 if self.multiscale.check_convergence_condition(self.current_iteration): 
                     logger.info('Tolerance threshold met. Stopping the optimization process.')
                     break
             
             # Printing and writing -------------------------------------------------------------------------------------
-            t2 = round(perf_counter(), 1)
-            logger.info("Time taken for iteration: {}".format(t2-t1))
+            t2 = perf_counter()
+            logger.info("Time taken for iteration: {}".format(round(t2-t1, 1)))
             if not self.current_iteration % self.print_every_n_iters: self.print()
             if not self.current_iteration % self.save_every_n_iters: self.write()
 
@@ -269,15 +271,13 @@ class GradientAscent(AbstractEstimator):
                                     self.output_dir, self.current_iteration, write_all = True)
         self.residuals.write(self.output_dir, self.dataset, self.individual_RER, self.current_iteration)
         self.residuals.plot_residuals_evolution(self.output_dir, self.multiscale, self.individual_RER)
+
+        logger.info("\nTotal residuals diminution: {} %".format(
+                    self.residuals.percentage_residuals_diminution()))
+        
         self._dump_state_file()
             
-    
-    def save_model_state_after_ctf(self):
-        output_dir = self.multiscale.save_model_after_ctf(self.current_iteration)
-        if output_dir:
-            self.statistical_model.write(self.dataset, self.individual_RER, output_dir, 
-                                        self.current_iteration, write_all = False)
-    
+        
     ####################################################################################################################
     ### Private methods:
     ####################################################################################################################
@@ -288,56 +288,46 @@ class GradientAscent(AbstractEstimator):
         """
         self.dataset, new_parameters = self.multiscale.coarse_to_fine(new_parameters, self.dataset, self.current_iteration, 
                                                                     self.residuals.get_values("Residuals_average"), 
-                                                                    self.residuals.get_values("Residuals_components"), 
                                                                     end)                                        
         self.current_parameters = new_parameters
         self._set_parameters(self.current_parameters)
-        self.save_model_state_after_ctf()
 
         return new_parameters
         
     def _initialize_step_size(self, gradient):
         """
         Initialization of the step sizes for the descent for the different variables.
-        If scale_initial_step_size is On, we rescale the initial sizes by the gradient squared norms.
+        We rescale the initial sizes by the gradient squared norms.
         """
         if self.step is None or max(list(self.step.values())) < 1e-12:
             step = {}
-            if self.scale_initial_step_size:
-                remaining_keys = []
-                
-                for key, value in gradient.items(): 
-                    if key != "haar_coef_momenta":
-                        gradient_norm = math.sqrt(np.sum(value ** 2))
-                        if gradient_norm < 1e-8:
-                            remaining_keys.append(key)
-                        elif math.isinf(gradient_norm):
-                            step[key] = 1e-10
-                        else:
-                            step[key] = 1.0 / gradient_norm
-                if len(remaining_keys) > 0:
-                    if len(list(step.values())) > 0:
-                        default_step = min(list(step.values()))
+            remaining_keys = []
+            
+            for key, value in gradient.items(): 
+                if key != "haar_coef_momenta":
+                    gradient_norm = math.sqrt(np.sum(value ** 2))
+                    if gradient_norm < 1e-8:
+                        remaining_keys.append(key)
+                    elif math.isinf(gradient_norm):
+                        step[key] = 1e-10
                     else:
-                        default_step = 1e-5
-                        msg = 'Warning: no initial non-zero gradient to guide to choice of the initial step size. ' \
-                              'Defaulting to the ARBITRARY initial value of %.2E.' % default_step
-                        warnings.warn(msg)
-                    for key in remaining_keys:
-                        step[key] = default_step
-
-                if self.initial_step_size is None:
-                    return step
+                        step[key] = 1.0 / gradient_norm
+            if len(remaining_keys) > 0:
+                if len(list(step.values())) > 0:
+                    default_step = min(list(step.values()))
                 else:
-                    return {key: value * self.initial_step_size for key, value in step.items()}
-
-            if not self.scale_initial_step_size:
-                if self.initial_step_size is None:
-                    msg = 'Initializing all initial step sizes to the ARBITRARY default value: 1e-5.'
+                    default_step = 1e-5
+                    msg = 'Warning: no initial non-zero gradient to guide to choice of the initial step size. ' \
+                            'Defaulting to the ARBITRARY initial value of %.2E.' % default_step
                     warnings.warn(msg)
-                    return {key: 1e-5 for key in gradient.keys()}
-                else:
-                    return {key: self.initial_step_size for key in gradient.keys() if key != "haar_coef_momenta"}
+                for key in remaining_keys:
+                    step[key] = default_step
+
+            if self.initial_step_size is None:
+                return step
+            else:
+                return {key: value * self.initial_step_size for key, value in step.items()}
+
         else:
             return self.step
 
@@ -345,19 +335,9 @@ class GradientAscent(AbstractEstimator):
         # Propagates the parameter value to all necessary attributes.
         self._set_parameters(parameters)
 
-        try:
-            return self.statistical_model.compute_log_likelihood(self.dataset, self.individual_RER,
+        return self.statistical_model.compute_log_likelihood(self.dataset, self.individual_RER,
                                                                  mode=self.optimized_log_likelihood,
                                                                  with_grad=with_grad)
-
-        except ValueError as error:
-            logger.info('>> ' + str(error) + ' [ in gradient_ascent ]')
-            self.statistical_model.clear_memory()
-            if with_grad:
-                raise RuntimeError('Failure of the gradient_ascent algorithm: the gradient of the model log-likelihood '
-                                   'fails to be computed.', str(error))
-            else:
-                return - float('inf'), - float('inf')
 
     def _get_parameters(self):
         out = self.statistical_model.get_fixed_effects()

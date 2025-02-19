@@ -12,7 +12,7 @@ import numpy as np
 import cv2 as cv
 import open3d as o3d
 from random import sample
-from ...support import kernels as kernel_factory
+from ...support.kernels import factory
 from ...core import default
 from ...core.model_tools.deformations.exponential import Exponential
 from ...core.models.abstract_statistical_model import AbstractStatisticalModel
@@ -36,8 +36,6 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def __init__(self, template_specifications, number_of_subjects,
 
-                 dimension=default.dimension,
-
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  number_of_time_points=default.number_of_time_points,
@@ -49,60 +47,55 @@ class DeformableTemplate(AbstractStatisticalModel):
                  initial_momenta=default.initial_momenta,
                  freeze_momenta=default.freeze_momenta,
 
-                 gpu_mode=default.gpu_mode,
-                 process_per_gpu=default.process_per_gpu,
-
                  kernel_regression = default.kernel_regression,
                  visit_ages = None,
                  time = None,
 
                  **kwargs):
 
-        AbstractStatisticalModel.__init__(self, name='DeformableTemplate', gpu_mode=gpu_mode)
+        AbstractStatisticalModel.__init__(self, name='DeformableTemplate')
         
         # Global-like attributes.
-        self.dimension = dimension
+        
 
         # Declare model structure.
         self.fixed_effects['template_data'] = None
-        self.fixed_effects['control_points'] = None
         self.fixed_effects['momenta'] = None
 
         self.freeze_template = freeze_template
         self.freeze_momenta = freeze_momenta
 
-        #ajout fg
-        self.gpu_mode = gpu_mode
-        self.device, _ = get_best_device(gpu_mode=self.gpu_mode)
+        self.device, _ = get_best_device()
         self.deformation_kernel_width = deformation_kernel_width
 
         # Template.
-        (object_list, self.objects_extension, self.objects_noise_variance, self.multi_object_attachment) = \
-                                                create_template_metadata(template_specifications, self.dimension)
+        (object_list, self.objects_extension, self.objects_noise_variance, self.objects_attachment) = \
+                                                create_template_metadata(template_specifications)
 
         self.template = DeformableMultiObject(object_list)
-        self.number_of_objects = len(self.template.object_list)
+        self.number_of_objects = len(object_list)
+
+        self.dimension = self.template.dimension 
         
         # Deformation.
-        self.exponential = Exponential(kernel=kernel_factory.factory(gpu_mode=gpu_mode,
-                                          kernel_width=deformation_kernel_width),
-                                        number_of_time_points=number_of_time_points,)
+        self.exponential = Exponential(kernel=factory(kernel_width=deformation_kernel_width),
+                                                    number_of_time_points=number_of_time_points,)
 
         # Template data.
         self.fixed_effects['template_data'] = self.template.get_data()
-        self.points = self.get_points()
+        self.points = self.get_points() # image_intensities or landmark_points
 
         # Control points.
-        self.fixed_effects['control_points'] = initialize_control_points(
-            initial_control_points, self.template, deformation_kernel_width, self.dimension)
-        self.number_of_control_points = len(self.fixed_effects['control_points'])
+        self.control_points = initialize_control_points(initial_control_points, 
+                                                    self.template, deformation_kernel_width)
+
+        control_points = move_data(self.control_points, device=self.device)                
+        self.exponential.set_initial_control_points(control_points)
 
         # Momenta.
         self.fixed_effects['momenta'] = initialize_momenta(
-            initial_momenta, self.number_of_control_points, self.dimension, number_of_subjects)
+                initial_momenta, len(self.control_points), self.dimension, number_of_subjects)
         self.number_of_subjects = number_of_subjects
-
-        self.process_per_gpu = process_per_gpu
             
         self.kernel_regression = kernel_regression
         self.time = time
@@ -117,19 +110,19 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def initialize_noise_variance(self, dataset):
         if np.min(self.objects_noise_variance) < 0:
-            template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors(device=self.device)
+            template_data, template_points, momenta = self._fixed_effects_to_torch_tensors(device=self.device)
             targets = dataset.deformable_objects
             targets = [target[0] for target in targets]
 
             residuals_torch = []
             self.exponential.set_initial_template_points(template_points)
-            self.exponential.set_initial_control_points(control_points)
+
             for i, target in enumerate(targets):
                 self.exponential.set_initial_momenta(momenta[i])
                 self.exponential.update()
                 deformed_points = self.exponential.get_template_points()
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-                residuals_torch.append(self.multi_object_attachment.compute_distances(
+                residuals_torch.append(self.objects_attachment.compute_distances(
                     deformed_data, self.template, target))
 
             residuals = np.zeros((self.number_of_objects,))
@@ -157,14 +150,6 @@ class DeformableTemplate(AbstractStatisticalModel):
     
     def get_points(self):
         return list(self.fixed_effects['template_data'].keys())[0]
-
-    # Control points ---------------------------------------------------------------------------------------------------
-    def get_control_points(self):
-        return self.fixed_effects['control_points']
-
-    def set_control_points(self, cp):
-        self.fixed_effects['control_points'] = cp
-        # self.number_of_control_points = len(cp)
 
     # Momenta ----------------------------------------------------------------------------------------------------------
     def get_momenta(self):
@@ -198,12 +183,11 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def setup_multiprocess_pool(self, dataset):
         self._setup_multiprocess_pool(initargs=([target[0] for target in dataset.deformable_objects],
-                                                self.multi_object_attachment,
+                                                self.objects_attachment,
                                                 self.objects_noise_variance,
                                                 self.freeze_template, 
                                                 self.freeze_momenta, 
-                                                self.exponential,
-                                                self.gpu_mode))
+                                                self.exponential))
 
     # Compute the functional. Numpy input/outputs.
     def compute_log_likelihood(self, dataset, individual_RER, mode='complete', with_grad=False):
@@ -215,25 +199,20 @@ class DeformableTemplate(AbstractStatisticalModel):
         :param with_grad: Flag that indicates wether the gradient should be returned as well.
         :return:
         """
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors(with_grad)
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors(with_grad)
         
-        return self._compute_attachment_and_regularity(dataset, template_data, template_points, control_points,
-                                                        momenta, with_grad) 
+        return self._compute_attachment_and_regularity(dataset, template_data, template_points, momenta, with_grad) 
 
     ####################################################################################################################
     ### Private methods:
     ####################################################################################################################
 
     @staticmethod
-    def _deform_and_compute_attachment_and_regularity(exponential, template_points, control_points, momenta,
-                                                      template, template_data,
-                                                      multi_object_attachment, deformable_objects,
-                                                      objects_noise_variance,
-                                                      device='cpu'):
+    def _deform_and_compute_attachment_and_regularity(exponential, template_points, momenta,
+                                                      template, template_data, objects_attachment, 
+                                                      deformable_objects, objects_noise_variance, device):
         # Deform.
-        exponential.set_initial_template_points(template_points)
-        
-        exponential.set_initial_control_points(control_points)
+        exponential.set_initial_template_points(template_points)        
         exponential.set_initial_momenta(momenta)
         exponential.move_data_to_(device=device)
         exponential.update() #flow the template points according to the momenta using kernel.convolve
@@ -243,22 +222,21 @@ class DeformableTemplate(AbstractStatisticalModel):
         deformed_data = template.get_deformed_data(deformed_points, template_data) #template intensities after deformation
         
         #(observation) deformable multi object -> image -> torch.interpolate
-        attachment = -multi_object_attachment.compute_weighted_distance(deformed_data, template, deformable_objects,
-                                                                        objects_noise_variance)
+        attachment = -objects_attachment.compute_weighted_distance(deformed_data, template, deformable_objects,
+                                                                    objects_noise_variance)
         regularity = -exponential.get_norm_squared()
 
-        assert torch.device(device) == attachment.device == regularity.device, 'attachment and regularity tensors must be on the same device. ' \
-                                                               'device=' + device + \
-                                                               ', attachment.device=' + str(attachment.device) + \
-                                                               ', regularity.device=' + str(regularity.device)
+        assert torch.device(device) == attachment.device == regularity.device,\
+                'Attachment and regularity tensors must be on same device '+ \
+                'device={}, attachment.device={}, regularity.device={}'\
+                .format(device, attachment.device, regularity.device)
         
         return attachment, regularity
          
     @staticmethod
-    def _compute_gradients(attachment, regularity, template_data,
-                           freeze_template, template_points,
-                           freeze_momenta, momenta, 
-                           with_grad=False):
+    def _compute_gradients(attachment, regularity, template_data, freeze_template, template_points,
+                           freeze_momenta, momenta, points, with_grad=False):
+
         if with_grad:
             total_for_subject = attachment + regularity #torch tensor
                         
@@ -266,11 +244,15 @@ class DeformableTemplate(AbstractStatisticalModel):
                
             gradient = {}
             if not freeze_template:
-                gradient[self.points] = template_points[self.points].grad.detach().cpu().numpy()
+                if points == 'landmark_points' :
+                    gradient[points] = template_points[points].grad
+                else:
+                    gradient[points] = template_data[points].grad
             
             if not freeze_momenta:
-                gradient['momenta'] = momenta.grad.detach().cpu().numpy()
-                                                                        
+                gradient['momenta'] = momenta.grad
+
+            gradient = {key: value.detach.cpu().numpy() for key, value in gradient.items()}                                                         
             res = attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
 
         else:
@@ -279,8 +261,7 @@ class DeformableTemplate(AbstractStatisticalModel):
         return res
     
     
-    def _compute_batch_gradient(self, targets, template_data, template_points, control_points, momenta,
-                                        with_grad=False):
+    def _compute_batch_gradient(self, targets, template_data, template_points, momenta, with_grad=False):
         """
         Core part of the ComputeLogLikelihood methods. Torch input, numpy output.
         Single-thread version.
@@ -290,45 +271,42 @@ class DeformableTemplate(AbstractStatisticalModel):
         
         for i, target in targets:
             new_attachment, new_regularity = DeformableTemplate._deform_and_compute_attachment_and_regularity(
-                                            self.exponential, template_points, control_points, momenta[i],
-                                            self.template, template_data, self.multi_object_attachment,
-                                            target, self.objects_noise_variance, device=self.device)
+                                            self.exponential, template_points, momenta[i],
+                                            self.template, template_data, self.objects_attachment,
+                                            target, self.objects_noise_variance, self.device)
             self.current_residuals = new_attachment.cpu()
 
             if self.kernel_regression:
                 weight = gaussian_kernel(self.time, self.visit_ages[i][0])
-                attachment += (weight/self.total_weights) * new_attachment 
-                regularity += (weight/self.total_weights) * new_regularity
+                attachment += (weight / self.total_weights) * new_attachment 
+                regularity += (weight / self.total_weights) * new_regularity
             else:
                 attachment += new_attachment
                 regularity += new_regularity            
             
-        gradients = self._compute_gradients(attachment, regularity, template_data,
-                                       self.freeze_template, template_points,
-                                       self.freeze_momenta, momenta, 
-                                       with_grad)
+        gradients = self._compute_gradients(attachment, regularity, template_data, self.freeze_template, 
+                                            template_points,  self.freeze_momenta, momenta, self.points,
+                                            with_grad)
 
         return gradients
     
-    def _compute_attachment_and_regularity(self, dataset, template_data, template_points, control_points, momenta,
+    def _compute_attachment_and_regularity(self, dataset, template_data, template_points, momenta,
                                             with_grad=False):
         # Initialize.
         targets = [[i, target[0]] for i, target in enumerate(dataset.deformable_objects)]
 
-        return self._compute_batch_gradient(targets, template_data, template_points, control_points, momenta,
-                                            with_grad=with_grad)
+        return self._compute_batch_gradient(targets, template_data, template_points, momenta, with_grad)
     
     def compute_mini_batch_gradient(self, batch, dataset, individual_RER, with_grad=True):
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors(with_grad)                                    
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors(with_grad)                                    
         
-        return self._compute_batch_gradient(batch, template_data, template_points, control_points, momenta,
-                                            with_grad=with_grad)
+        return self._compute_batch_gradient(batch, template_data, template_points, momenta, with_grad)
     
     def mini_batches(self, dataset, number_of_batches):
         """
         Split randomly the dataset into batches of size batch_size
         """
-        batch_size = len(dataset.deformable_objects)//number_of_batches
+        batch_size = len(dataset.deformable_objects) // number_of_batches
         targets = [[i,target[0]] for i, target in enumerate(dataset.deformable_objects)]
         targets_copy = targets.copy()
         np.random.shuffle(targets_copy)
@@ -337,21 +315,20 @@ class DeformableTemplate(AbstractStatisticalModel):
         n_minibatches = len(targets_copy) // batch_size    
 
         for i in range(n_minibatches):
-            mini_batch = targets_copy[i * batch_size:(i + 1)*batch_size]
+            mini_batch = targets_copy[i * batch_size:(i + 1) * batch_size]
             mini_batches.append(mini_batch)
         if len(targets_copy) % batch_size != 0:
             mini_batch = targets_copy[i * batch_size:len(targets_copy)]
-            if len(mini_batches) > batch_size/2: #if last batch big enough
+            if len(mini_batches) > batch_size / 2: #if last batch big enough
                 mini_batches.append(mini_batch)
             else:
                 mini_batches[-1] += mini_batch
         
         return mini_batches
     
-    def prepare_exponential(self, i, template_points, control_points, momenta):
+    def prepare_exponential(self, i, template_points, momenta):
                 
         self.exponential.set_initial_template_points(template_points)
-        self.exponential.set_initial_control_points(control_points)
 
         self.exponential.set_initial_momenta(momenta[i])
         self.exponential.move_data_to_(device=self.device)
@@ -363,7 +340,7 @@ class DeformableTemplate(AbstractStatisticalModel):
         """
             Compute object curvature (at iter 0) or deformed template to object curvature
         """
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors()
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
 
         # template curvature
         if j is None:
@@ -376,9 +353,8 @@ class DeformableTemplate(AbstractStatisticalModel):
                 return obj
 
         self.exponential.set_initial_template_points(template_points)
-        self.exponential.set_initial_control_points(control_points)
         self.exponential.set_initial_momenta(momenta[j])
-        self.exponential.move_data_to_(device=device)
+        self.exponential.move_data_to_(device=self.device)
         self.exponential.update() 
         deformed_points = self.exponential.get_template_points()
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
@@ -395,17 +371,17 @@ class DeformableTemplate(AbstractStatisticalModel):
         return obj
 
     def compute_residuals(self, dataset, individual_RER = None):
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors()
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
 
         residuals = []
         for i, target in enumerate(dataset.deformable_objects):
-            self.prepare_exponential(i, template_points, control_points, momenta)
+            self.prepare_exponential(i, template_points, momenta)
 
             # Compute attachment
             deformed_points = self.exponential.get_template_points() #template points
             deformed_data = self.template.get_deformed_data(deformed_points, template_data) #template intensities after deformation
 
-            att = self.multi_object_attachment.compute_weighted_distance(deformed_data, self.template, target[0],
+            att = self.objects_attachment.compute_weighted_distance(deformed_data, self.template, target[0],
                                                                         self.objects_noise_variance)
             
             residuals.append(att)
@@ -413,12 +389,12 @@ class DeformableTemplate(AbstractStatisticalModel):
         return residuals
 
     def compute_residuals_per_point(self, dataset, individual_RER = None):
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors()
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
         
         residuals_by_point = torch.zeros((template_data[self.points].shape), device=self.device) 
         
         for i, target in enumerate(dataset.deformable_objects):
-            self.prepare_exponential(i, template_points, control_points, momenta)
+            self.prepare_exponential(i, template_points, momenta)
         
             # Compute attachment
             deformed_points = self.exponential.get_template_points() #template points
@@ -433,7 +409,6 @@ class DeformableTemplate(AbstractStatisticalModel):
         
         return residuals_by_point.cpu().numpy().flatten()
     
-
     ####################################################################################################################
     ### Private utility methods:
     ####################################################################################################################
@@ -442,27 +417,21 @@ class DeformableTemplate(AbstractStatisticalModel):
         """
         Convert the fixed_effects into torch tensors.
         """
-        if device is None:
-            device, _ = get_best_device(gpu_mode=self.gpu_mode)
-
         # Template data.
-        template_data = {key: move_data(value, device=device,
+        template_data = {key: move_data(value, device=self.device,
                                         requires_grad=(not self.freeze_template and with_grad))
                          for key, value in self.fixed_effects['template_data'].items()}
 
         # Template points.
-        template_points = {key: move_data(value, device=device, 
+        template_points = {key: move_data(value, device=self.device, 
                                                     requires_grad= (not self.freeze_template and with_grad))
                            for key, value in self.template.get_points().items()}
 
-        # Control points.
-        control_points = move_data(self.fixed_effects['control_points'], device=device, requires_grad=False)
-
         # Momenta.
-        momenta = move_data(self.fixed_effects['momenta'], device=device, 
+        momenta = move_data(self.fixed_effects['momenta'], device=self.device, 
                             requires_grad=(not self.freeze_momenta and with_grad))
 
-        return template_data, template_points, control_points, momenta #ajout fg
+        return template_data, template_points, momenta #ajout fg
 
     ####################################################################################################################
     ### Writing methods:
@@ -472,7 +441,7 @@ class DeformableTemplate(AbstractStatisticalModel):
 
         # Write the model predictions, and compute the residuals at the same time.
         self._write_model_predictions(dataset, individual_RER, output_dir, current_iteration,
-                                                  compute_residuals=write_residuals)
+                                    compute_residuals=write_residuals)
 
         # Write the model parameters.
         self._write_model_parameters(output_dir, str(current_iteration))
@@ -480,11 +449,10 @@ class DeformableTemplate(AbstractStatisticalModel):
     def _write_model_predictions(self, dataset, individual_RER, output_dir, current_iteration, 
                                  compute_residuals=True):
         # Initialize.
-        template_data, template_points, control_points, momenta = self._fixed_effects_to_torch_tensors()
+        template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
 
         # Deform, write reconstructions and compute residuals.
         self.exponential.set_initial_template_points(template_points)
-        self.exponential.set_initial_control_points(control_points)
 
         residuals = []  # List of torch 1D tensors. Individuals, objects.
         for i, subject_id in enumerate(dataset.subject_ids):
@@ -515,8 +483,8 @@ class DeformableTemplate(AbstractStatisticalModel):
         return residuals
 
     def output_path(self, output_dir, dataset):
-        self.cp_path = op.join(output_dir, self.name + "__EstimatedParameters__ControlPoints.txt")
-        self.momenta_path = op.join(output_dir, self.name + "__EstimatedParameters__Momenta.txt")
+        self.cp_path = op.join(output_dir, "{}__EstimatedParameters__ControlPoints.txt".format(self.name))
+        self.momenta_path = op.join(output_dir, "{}__EstimatedParameters__Momenta.txt".format(self.name))
 
         if not self.freeze_template:
             for ext in self.objects_extension:
@@ -524,31 +492,26 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def _write_model_parameters(self, output_dir, current_iteration):
 
-        template_names = []
-        for ext in self.objects_extension:
-            if self.kernel_regression:
-                aux = self.name + "__EstimatedParameters__Template_time" + str(self.time) + "_" + ext
-                aux = "{}__EstimatedParameters__Template_{}{}".format(self.name, current_iteration, ext)
-                template_names.append(aux)
-            else:
-                if not self.freeze_template:
-                    aux = "{}__EstimatedParameters__Template_{}{}".format(self.name, current_iteration, ext)
-                    template_names.append(aux)
-        if template_names:
-            self.template.write(output_dir, template_names)
+        template_names = None
+        if self.kernel_regression:
+            template_names = ["{}__EstimatedParameters__Template_time_{}{}".format(self.name, self.time, ext)\
+                                for ext in self.objects_extension]
 
-        template_names = []
-        for ext in self.objects_extension:
-            aux = "{}__EstimatedParameters__Template_{}".format(self.name, ext)
-            template_names.append(aux)
+        elif not self.freeze_template:
+            template_names = ["{}__EstimatedParameters__Template_{}{}".format(self.name, current_iteration, ext)\
+                                for ext in self.objects_extension]
         self.template.write(output_dir, template_names)
+
+        # template_names = ["{}__EstimatedParameters__Template{}".format(self.name, ext)\
+        #                 for ext in self.objects_extension]
+        # self.template.write(output_dir, template_names)
         
-        write_2D_array(self.get_control_points(), output_dir, self.name + "__EstimatedParameters__ControlPoints.txt")
+        write_2D_array(self.control_points, output_dir, op.join(output_dir, "{}__EstimatedParameters__ControlPoints.txt".format(self.name)))
         
         # Momenta.
         write_3D_array(self.get_momenta(), output_dir, self.name + "__EstimatedParameters__Momenta.txt")#.format(current_iteration))
         
-        concatenate_for_paraview(self.get_momenta(), self.get_control_points(), output_dir, 
+        concatenate_for_paraview(self.get_momenta(), self.control_points, output_dir, 
                              "{}__EstimatedParameters__Fusion_CP_Momenta_{}.vtk".format(self.name, current_iteration))
 
         # #ajout fg: write zones

@@ -42,23 +42,14 @@ class AbstractStatisticalModel:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, name='undefined', gpu_mode=default.gpu_mode):
+    def __init__(self, name='undefined'):
         self.name = name
         self.fixed_effects = {}
         self.priors = {}
         self.individual_random_effects = {}
-        self.has_maximization_procedure = None
+        self.n_sources = 0
 
-        self.gpu_mode = gpu_mode
         self.pool = None
-
-    @abstractmethod
-    def get_fixed_effects(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def setup_multiprocess_pool(self, dataset):
-        raise NotImplementedError
 
     def _cleanup_multiprocess_pool(self):
         if self.pool is not None:

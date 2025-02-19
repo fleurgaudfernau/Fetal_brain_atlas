@@ -21,8 +21,6 @@ from .core import estimators as estimators
 # io
 from . import in_out as io
 
-print("")
-
 # kernels
 from .support import kernels as kernels
 

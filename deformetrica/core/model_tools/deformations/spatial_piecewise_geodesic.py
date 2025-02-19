@@ -14,7 +14,6 @@ class SpatialPiecewiseGeodesic:
     of diffeomorphisms", Bône et al. (2018), in review.
 
     """
-
     ####################################################################################################################
     ### Constructor:
     ####################################################################################################################
@@ -25,7 +24,7 @@ class SpatialPiecewiseGeodesic:
                  template_tR=None, nb_components=2, num_components=None, transport_cp = True):
 
         self.exponential = Exponential(
-            kernel=kernel, number_of_time_points=number_of_time_points, transport_cp = transport_cp)
+            kernel=kernel, n_time_points=n_time_points, transport_cp = transport_cp)
 
         self.geodesic = PiecewiseGeodesic(kernel=kernel, 
             concentration_of_time_points=concentration_of_time_points, template_tR=template_tR,
@@ -61,10 +60,10 @@ class SpatialPiecewiseGeodesic:
         self.geodesic.concentration_of_time_points = ctp
 
     def set_number_of_time_points(self, ntp):
-        self.exponential.number_of_time_points = ntp
+        self.exponential.n_time_points = ntp
     
     def nb_of_tp(self):
-        return self.exponential.number_of_time_points
+        return self.exponential.n_time_points
 
     def set_template_points_tR(self, td):
         self.geodesic.set_template_points_tR(td)
@@ -229,8 +228,10 @@ class SpatialPiecewiseGeodesic:
                 # Set the result correctly in the projected_modulation_matrix_t attribute.
                 for t, space_shift in enumerate(space_shift_t):
                     try:
+                        print("space_shift.view(-1) working ?")
                         ss = space_shift.view(-1)
                     except:
+                        print("no: space_shift.contiguous().view(-1) working")
                         ss = space_shift.contiguous().view(-1)
                     self.projected_modulation_matrix_t[t][:, s] = ss
 

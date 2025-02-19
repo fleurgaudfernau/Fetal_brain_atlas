@@ -169,21 +169,6 @@ class MultiscaleMeshes():
 
         return name + "Mesh_scale_{}".format(self.scale)
     
-
-    ####################################################################################################################
-    ### Coarse to fine v2 - grid projection
-    ####################################################################################################################        
-    # def initialize(self):
-    #     """
-    #     Coarse to fines on data attachment term (on kernel width)
-    #     """
-    #     # Kernel width in data attachment function
-    #     self.mesh_kernel_width = self.model.multi_object_attachment.kernels[0].kernel_width
-    #     # Index of the coarsest kernel width
-    #     self.model.k = len(self.model.multi_object_attachments_k) - 1
-    #     # Interval between two kernel width
-    #     self.step_k = self.model.multi_object_attachments_k[-1].kernels[0].kernel_width \
-    #                 - self.model.multi_object_attachments_k[-2].kernels[0].kernel_width
     def initialize_(self):
         """
             Compute coarser scale of each mesh

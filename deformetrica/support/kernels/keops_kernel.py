@@ -171,19 +171,12 @@ class KeopsKernel(AbstractKernel):
             y, ny = y
             d = x.size(1)
             gamma = self.gamma.to(x.device, dtype=x.dtype)
-            # print(d)
-            # print(gamma.size())
-            # print(x.size())
-            # print(y.size())
-            # print(nx.size())
-            # print(ny.size())
-            # print(p.size())
 
             # contiguous makes a copy of the tensors
             device_id = x.device.index if x.device.index is not None else -1
             res = self.varifold_convolve[d - 2](gamma, x.contiguous(), y.contiguous(), 
                                               nx.contiguous(), ny.contiguous(), p.contiguous(), device_id=device_id)            
-            #print("res", res)
+
             return res.cpu() if self.gpu_mode is GpuMode.KERNEL else res
 
         else:

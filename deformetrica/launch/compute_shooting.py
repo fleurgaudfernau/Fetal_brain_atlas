@@ -36,8 +36,6 @@ def vector_field_to_new_support(control_points, momenta_torch, new_template):
         # print("old_spacing", old_spacing)
         # print("new_spacing", new_spacing)
         # print(new_template.bounding_box)
-        # print(new_template.dimension)
-
 
         # Create the control points for the new image
         control_points = create_regular_grid_of_points(new_template.bounding_box, new_spacing, new_template.dimension)
@@ -91,10 +89,7 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
 
 
 def compute_shooting(template_specifications,
-                     dimension=default.dimension,
                      deformation_kernel_width=default.deformation_kernel_width,
-                     deformation_kernel_device=default.deformation_kernel_device,
-
                      initial_control_points=default.initial_control_points,
                      initial_momenta=default.initial_momenta,
                      concentration_of_time_points=default.concentration_of_time_points,
@@ -108,9 +103,8 @@ def compute_shooting(template_specifications,
     """
     Create the template object
     """
-    (object_list, t_name, t_name_extension,
-     t_noise_variance, multi_object_attachment) = create_template_metadata(
-        template_specifications, dimension, gpu_mode=gpu_mode)
+    (object_list, t_name_extension, t_noise_variance, multi_object_attachment) = \
+                            create_template_metadata(template_specifications, gpu_mode=gpu_mode)
 
     template = DeformableMultiObject(object_list)
 
@@ -128,9 +122,9 @@ def compute_shooting(template_specifications,
     else:
         raise RuntimeError('Please specify a path to momenta to perform a shooting')
     
-    if dimension == 2 and len(momenta.shape) == 3:
+    if template.dimension == 2 and len(momenta.shape) == 3:
         momenta = momenta[:,:,0]
-    if dimension == 2 and len(control_points.shape) == 3:
+    if template.dimension == 2 and len(control_points.shape) == 3:
         control_points = control_points[:,:,0]
 
     deformation_kernel = kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width)

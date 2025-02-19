@@ -13,8 +13,7 @@ logger = logging.getLogger(__name__)
 
 class Multiscale():
     def __init__(self, multiscale_momenta, multiscale_images, multiscale_meshes, 
-                multiscale_strategy, naive, model, initial_step_size, 
-                scale_initial_step_size, output_dir, dataset, start_scale):
+                multiscale_strategy, model, initial_step_size, output_dir, dataset):
         
         # Data information
         self.model = model
@@ -22,10 +21,9 @@ class Multiscale():
         self.n_subjects = len(dataset.subject_ids)
         
         self.initial_step_size = initial_step_size
-        self.scale_initial_step_size = scale_initial_step_size
         self.output_dir = output_dir
 
-        self.points_per_axis = [len(set(list(model.fixed_effects['control_points'][:, k]))) for k in range(model.dimension)]
+        self.points_per_axis = [len(set(list(model.control_points[:, k]))) for k in range(model.dimension)]
 
         ctf_interval = 15
         ctf_max_interval = 80 if "Regression" in self.name else 50
@@ -39,7 +37,7 @@ class Multiscale():
 
         # Multiscale options
         self.momenta = MultiscaleMomenta(multiscale_momenta, multiscale_images, multiscale_meshes, model, ctf_interval, 
-                                        ctf_max_interval, self.points_per_axis, start_scale)
+                                        ctf_max_interval, self.points_per_axis)
         self.images = MultiscaleImages(multiscale_images, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
                                         ctf_max_interval, self.points, self.points_per_axis)
         self.meshes = MultiscaleMeshes(multiscale_meshes, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
@@ -101,28 +99,7 @@ class Multiscale():
             return True
                         
         return False
-    
-    def save_model_after_ctf(self, iteration):
-        """
-        Create a folder to save the model state after each CTF step
-        """
-        return 
-        if self.name == "GeodesicRegression" \
-            and (self.images.after_ctf(iteration) or self.meshes.after_ctf(iteration) \
-            or self.momenta.after_ctf(iteration)) and iteration > 1: 
-            
-            name = "Iter_{}_".format(iteration)
-            name = self.momenta.folder_name(name)
-            name = self.images.folder_name(name)
-            name = self.meshes.folder_name(name)
-
-            output_dir = os.path.join(self.output_dir, name)
-            if not os.path.exists(output_dir): os.mkdir(output_dir)
-            
-            return output_dir
         
-        return
-    
     def check_convergence_condition(self, iteration):
         """
             Check if the optimization is allowed to end
@@ -132,8 +109,7 @@ class Multiscale():
         cond = self.images.convergence(iteration, cond)
         cond = self.meshes.convergence(iteration, cond)
 
-        print("check_convergence_condition", cond)
-        print(self.momenta.convergence(iteration, cond))
+        print("Check_convergence_condition:", cond)
             
         return cond
     
@@ -229,17 +205,16 @@ class Multiscale():
         """
         logger.info("(Re)-initialize_step_size of {}".format(key))
 
-        if self.scale_initial_step_size:
-            value = gradient[key]
-            gradient_norm = math.sqrt(np.sum(value ** 2))
+        value = gradient[key]
+        gradient_norm = math.sqrt(np.sum(value ** 2))
 
-            if math.isinf(gradient_norm):
-                return 1e-10
+        if math.isinf(gradient_norm):
+            return 1e-10
 
-            if scale:
-                return self.initial_step_size / gradient_norm
-            
-            return 1 / gradient_norm
+        if scale:
+            return self.initial_step_size / gradient_norm
+        
+        return 1 / gradient_norm
 
     def initialize_momenta_step(self, steps, gradient, optimizer, iteration):
         if self.momenta.ctf_is_happening(): #gradient[haar_coef_momenta] = [[haar_d1, haar_d2, haar_d3] for each subj]
@@ -440,8 +415,8 @@ class DualMultiscale():
             The multiscale strategy is set (i.e. self.order in which to perform the coarse-to-fine steps)
         """
         if self.multiscale_momenta_images or self.multiscale_momenta_meshes:
-            self.first = "Image"
             self.first = "Momenta"
+
             logger.info("\nDual Multiscale, {} first".format(self.first))
             self.second = ["Image" if self.first != "Image" else "Momenta"][0]
             

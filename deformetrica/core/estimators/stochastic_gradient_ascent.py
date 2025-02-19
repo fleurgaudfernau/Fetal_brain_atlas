@@ -30,7 +30,7 @@ class StochasticGradientAscent(AbstractEstimator):
                  optimized_log_likelihood=default.optimized_log_likelihood,
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
-                 scale_initial_step_size=default.scale_initial_step_size, initial_step_size=default.initial_step_size,
+                 initial_step_size=default.initial_step_size,
                  max_line_search_iterations=default.max_line_search_iterations,
                  line_search_shrink=default.line_search_shrink,
                  line_search_expand=default.line_search_expand,
@@ -39,7 +39,6 @@ class StochasticGradientAscent(AbstractEstimator):
                  last_residuals = None, initial_residuals = None, #ajouts fg
 
                  multiscale_momenta = default.multiscale_momenta, #ajout fg
-                 naive = default.naive, #ajout fg
                  multiscale_images = default.multiscale_images, #ajout fg
                  multiscale_meshes = default.multiscale_meshes,
                  multiscale_strategy = default.multiscale_strategy,
@@ -65,7 +64,6 @@ class StochasticGradientAscent(AbstractEstimator):
         self.line_search_shrink = line_search_shrink
         self.line_search_expand = line_search_expand
 
-        self.scale_initial_step_size = scale_initial_step_size
         self.initial_step_size = initial_step_size
         self.max_line_search_iterations = max_line_search_iterations
         self.current_iteration = 0
@@ -78,8 +76,7 @@ class StochasticGradientAscent(AbstractEstimator):
         
         # Multiscale
         self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, multiscale_strategy,
-                                    naive, self.statistical_model, self.initial_step_size, 
-                                    self.scale_initial_step_size, self.output_dir, self.dataset)
+                                    self.statistical_model, self.initial_step_size, self.output_dir, self.dataset)
         self.multiscale.initialize()
 
         # Initialize residuals (before filtering)
@@ -308,50 +305,42 @@ class StochasticGradientAscent(AbstractEstimator):
     def _initialize_step_size(self, gradient):
         """
         Initialization of the step sizes for the descent for the different variables.
-        If scale_initial_step_size is On, we rescale the initial sizes by the gradient squared norms.
+        We rescale the initial sizes by the gradient squared norms.
         """
 
         if self.step is None or max(list(self.step.values())) < 1e-12:
             step = {}
-            if self.scale_initial_step_size:
-                remaining_keys = []
-                
-                for key, value in gradient.items(): 
-                    if key != "haar_coef_momenta":
-                        gradient_norm = math.sqrt(np.sum(value ** 2))
-                        
-                        if gradient_norm < 1e-8:
-                            remaining_keys.append(key)
-                        else:
-                            step[key] = 1.0 / gradient_norm
-                            
-                            # template step << momenta step
-                            # if key in ['template_data', "image_intensities"]:
-                            #     step[key] = step[key] * 1e-1
+            remaining_keys = []
+            
+            for key, value in gradient.items(): 
+                if key != "haar_coef_momenta":
+                    gradient_norm = math.sqrt(np.sum(value ** 2))
                     
-                if len(remaining_keys) > 0:
-                    if len(list(step.values())) > 0:
-                        default_step = min(list(step.values()))
+                    if gradient_norm < 1e-8:
+                        remaining_keys.append(key)
                     else:
-                        default_step = 1e-5
-                        msg = 'Warning: no initial non-zero gradient to guide to choice of the initial step size. ' \
-                              'Defaulting to the ARBITRARY initial value of %.2E.' % default_step
-                        warnings.warn(msg)
-                    for key in remaining_keys:
-                        step[key] = default_step
+                        step[key] = 1.0 / gradient_norm
+                        
+                        # template step << momenta step
+                        # if key in ['template_data', "image_intensities"]:
+                        #     step[key] = step[key] * 1e-1
                 
-                if self.initial_step_size is None:
-                    return step
+            if len(remaining_keys) > 0:
+                if len(list(step.values())) > 0:
+                    default_step = min(list(step.values()))
                 else:
-                    return {key: value * self.initial_step_size for key, value in step.items()}
-
-            if not self.scale_initial_step_size:
-                if self.initial_step_size is None:
-                    msg = 'Initializing all initial step sizes to the ARBITRARY default value: 1e-5.'
+                    default_step = 1e-5
+                    msg = 'Warning: no initial non-zero gradient to guide to choice of the initial step size. ' \
+                            'Defaulting to the ARBITRARY initial value of %.2E.' % default_step
                     warnings.warn(msg)
-                    return {key: 1e-5 for key in gradient.keys()}
-                else:
-                    return {key: self.initial_step_size for key in gradient.keys() if key != "haar_coef_momenta"}
+                for key in remaining_keys:
+                    step[key] = default_step
+            
+            if self.initial_step_size is None:
+                return step
+            else:
+                return {key: value * self.initial_step_size for key, value in step.items()}
+
         else:
             return self.step
 

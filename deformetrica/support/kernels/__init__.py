@@ -17,8 +17,10 @@ def factory(kernel_type = "KEOPS", cuda_type=None, gpu_mode=None, *args, **kwarg
     
     if cuda_type is None:
         cuda_type = "float32"
+        
     if gpu_mode is None:
         gpu_mode = default.gpu_mode
+        print("\n Setting GPU mode by default to {}".format(gpu_mode))
 
     # turn enum string to enum object
     if isinstance(kernel_type, str):

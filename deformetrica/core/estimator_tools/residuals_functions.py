@@ -22,9 +22,7 @@ class Residuals():
         self.print_every_n_iters = print_every_n_iters
         self.convergence_threshold = 1e-2 #0.001
 
-        self.n_sources = 0 
-        if self.name in ["BayesianGeodesicRegression", "BayesianGeodesicRegression"]:
-            self.n_sources = self.model.number_of_sources
+        self.n_sources = self.model.n_sources
 
         # Dataset characteristics
         self.n_subjects = len(dataset.subject_ids)
@@ -74,7 +72,7 @@ class Residuals():
     def initialize_plots(self, dataset):
         d = {"v": [], "condition": True, "ylab": [""], "plots" : [], "iter" : []}
 
-        to_plot = ["Residuals_average", "Residuals_subjects", "Residuals_average_k", 
+        to_plot = ["Residuals_average", "Residuals_subjects",
                    "Template_changes", "Template_distance", 
                    "Gradient_norm", "Momenta_norm", "Modulation_matrix_distance", 
                    "Modulation_matrix_changes", 
@@ -83,7 +81,6 @@ class Residuals():
 
         # Plots that have several series to plot
         self.initialize_values("Gradient_norm")
-        self.initialize_values("Residuals_average_k")
         self.initialize_values("Residuals_subjects", {i: [] for i in range(self.n_obs)})
         self.initialize_values("Momenta_norm", {i: [] for i in range(self.n_components)})
         self.initialize_values("Modulation_matrix_distance", {c : [] for c in range(self.n_sources)})
@@ -92,7 +89,6 @@ class Residuals():
         self.initialize_values("Rupture_time", {c : [] for c in range(self.n_components)[:-1]})
 
         # Conditions
-        self.set_condition("Residuals_average_k")
         self.set_condition("Residuals_subjects")
         self.set_condition("Rupture_time", self.n_components > 1 and not self.model.freeze_rupture_time)
         self.set_condition("Template_changes")
@@ -108,7 +104,6 @@ class Residuals():
         # Curvatures
         self.curvature = Curvature(dataset, self.model, self.ext, self.name, self.ages, self.n_obs)
 
-        #self.mesh_kernels = list(self.model.multi_object_attachments_k.keys())
         #self.first_write = [True, True]
         
         #self.compute_mesh_distance(dataset, 0)
@@ -153,7 +148,11 @@ class Residuals():
             return deepcopy(list(self.plot[k]["v"].values()))
         
         return deepcopy(self.plot[k]["v"])
-        
+    
+    def percentage_residuals_diminution(self):
+        return ratio(self.get_values("Residuals_average")[-1], 
+                    self.get_values("Residuals_average")[0])
+            
     def to_plot(self, k):
         return self.plot[k]["condition"]
     
@@ -230,7 +229,7 @@ class Residuals():
         if self.to_plot("Momenta_norm"):
                         
             for i in range(self.n_components):
-                n = norm(self.model.get_control_points(), self.model.get_momenta()[i], self.width)
+                n = norm(self.model.control_points, self.model.get_momenta()[i], self.width)
                 self.add_value("Momenta_norm", n, i)
                 self.add_iter("Momenta_norm", iteration)
 
@@ -255,7 +254,7 @@ class Residuals():
         if self.to_plot("Modulation_matrix_norm"):
 
             # Compute MM norm and distance to original MM
-            cp = self.model.get_control_points()
+            cp = self.model.control_points
             modulation_matrix = self.model.get_modulation_matrix()
 
             for s in range(modulation_matrix.shape[1]):
@@ -307,27 +306,6 @@ class Residuals():
     ####################################################################################################################
     ### Common Residuals tools
     ####################################################################################################################
-    def compute_other_metrics_residuals(self, dataset, current_iteration, k = None):
-        """
-            If objects are meshes, compute residuals with several kernel widths
-            or alternatively only with width 1
-        """
-        return
-        
-        if self.plot["Residuals_average_k"]["condition"]:
-            kernels = list(k) if k else self.mesh_kernels
-            residuals_k = self.model.compute_residuals(dataset, kernels)
-            self.plot["Residuals_average_k"]["iter"].append(current_iteration)
-
-            for k in kernels:
-                self.sum_current_residuals_k[k]= np.sum(residuals_k[k])
-
-                if current_iteration == 0:
-                    self.sum_initial_residuals_k[k] = self.sum_current_residuals_k[k]
-                    self.plot["Residuals_average_k"]["v"][k] = []
-                
-                self.plot["Residuals_average_k"]["v"][k].append(self.sum_current_residuals_k[k])
-
     def compute_attachement_residuals(self, dataset, current_iteration, individual_RER):
         subjects_residuals = self.compute_model_residuals(dataset, individual_RER)
 
@@ -344,9 +322,9 @@ class Residuals():
 
     def compute_residuals(self, dataset, current_iteration, individual_RER = None, multiscale = None):
         """
-        Compute residuals at each pixel/voxel between objeZZZZZcts and deformed template.
-        Save a heatmap of the residuals
+        Compute residuals at each pixel/voxel between objects and deformed template.
         """
+
         # Template and momenta changes
         self.template_change(current_iteration)
         self.momenta_change(current_iteration)
@@ -356,13 +334,13 @@ class Residuals():
 
         # Residuals (return a list for each object)
         self.compute_attachement_residuals(dataset, current_iteration, individual_RER)
-        #self.compute_other_metrics_residuals(dataset, current_iteration)
         
         if self.print_every_n_iters and not (current_iteration % self.print_every_n_iters):
             try:
                 logger.info("Last average residuals {}".format(self.get_values("Residuals_average")[-5:]))
             except:
-                logger.info("avg_residuals {}".format(self.get_values("Residuals_average")))
+                logger.info("Avg_residuals {}".format(self.get_values("Residuals_average")))
+
             if len(self.get_values("Residuals_average")) > 1: 
                 logger.info("Residuals diminution: {}".format(ratio(self.get_values("Residuals_average")[-1], 
                                                                     self.get_values("Residuals_average")[-2])))
@@ -374,7 +352,6 @@ class Residuals():
         # Labels
         self.set_ylab("Residuals_average", 'Average residuals (attachement term)')
         self.set_ylab("Residuals_subjects", self.obs_names)
-        self.set_ylab("Residuals_average_k", ["Attachement"]+["Kernel_varifold_{}".format(k) for k in self.plot["Residuals_average_k"]["v"].keys()])
         self.set_ylab("Template_changes", 'Template differences')
         self.set_ylab("Template_distance", 'Distance to initial template')
         self.set_ylab("Momenta_norm", self.components)
@@ -417,7 +394,7 @@ class Residuals():
     def plot_residuals_by_age(self, output_dir):    
         if self.n_obs > 1 and self.time_series:    
             ratios = [ratio(self.get_values('Residuals_subjects')[i][-1], 
-                                 self.get_values('Residuals_subjects')[i][0]) \
+                            self.get_values('Residuals_subjects')[i][0]) \
                       for i in range(self.n_obs)]
             scatter_plot(output_dir, "Residuals_changes_by_age.png", self.ages, 
                          ratios, labels = self.id, xlab = "Age (GW)", ylab = "Residuals")
@@ -439,17 +416,8 @@ class Residuals():
         to_write = [["\nTotal residuals left: {}".format(self.get_values("Residuals_average")[-1])],
                     ["Total initial residuals:", self.get_values("Residuals_average")[0]],
                     ["Percentage of residuals diminution:{}"\
-                        .format(ratio(self.get_values("Residuals_average")[-1], 
-                                    self.get_values("Residuals_average")[0]))]]
-        
-        for k in self.plot["Residuals_average_k"]["v"].keys():
-            to_write.append(["\nKernel: {}".format(k)])
-            to_write.append(["Total residuals left:", self.sum_current_residuals_k[k]])
-            to_write.append(["Total initial residuals:", self.sum_initial_residuals_k[k]])
-            to_write.append(["Percentage of residuals diminution:", 
-                            ratio(self.sum_current_residuals_k[k], 
-                                                self.sum_initial_residuals_k[k])])
-        
+                        .format(self.percentage_residuals_diminution())]]
+                
         # save distances and curvatures
         to_write.append(["\n******** Template ********"])
         #to_write = self.curvature.write(to_write)
@@ -462,10 +430,8 @@ class Residuals():
                 to_write.append(["\n---Observation: {}".format(i)])
             to_write.append(["Percentage of residuals diminution:{}"\
                         .format(ratio(self.get_values('Residuals_subjects')[i][-1], 
-                                            self.get_values('Residuals_subjects')[i][0]))])
+                                self.get_values('Residuals_subjects')[i][0]))])
             
             #to_write = self.curvature.write(to_write, i)
 
-        write_2D_list(to_write, output_dir, self.name + "__EstimatedParameters__Residuals.txt")
-
-
+        write_2D_list(to_write, output_dir, "{}___Residuals.txt".format(self.name))

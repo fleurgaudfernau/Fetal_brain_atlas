@@ -6,7 +6,7 @@ import os.path as op
 from ....core import default
 from ....core.model_tools.deformations.exponential import Exponential
 from ....in_out.array_readers_and_writers import *
-from ....support import utilities
+from ....support.utilities import move_data, get_best_device
 
 import logging
 logger = logging.getLogger(__name__)
@@ -153,14 +153,14 @@ class PiecewiseGeodesic:
             if time - times[j] < 0: break
         
         # Mean of the two closest template points
-        device, _ = utilities.get_best_device(self.exponential[0].kernel.gpu_mode)
+        device, _ = get_best_device(self.exponential[0].kernel.gpu_mode)
 
-        weight_l = utilities.move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
-        weight_r = utilities.move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
-        template_t = {key: [utilities.move_data(v, device=device) for v in value] \
-                for key, value in self.get_template_points_trajectory().items()}
-        deformed_points = {key: weight_l * value[j - 1] + weight_r * value[j]
-                           for key, value in template_t.items()}
+        weight_l = move_data([(times[j] - time) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
+        weight_r = move_data([(time - times[j - 1]) / (times[j] - times[j - 1])], device=device, dtype=self.momenta[0].dtype)
+        template_t = {k: [move_data(v, device=device) for v in value] \
+                    for k, value in self.get_template_points_trajectory().items()}
+        deformed_points = {k: weight_l * value[j - 1] + weight_r * value[j]
+                           for k, value in template_t.items()}
 
         return deformed_points
 
@@ -169,7 +169,7 @@ class PiecewiseGeodesic:
     ####################################################################################################################
 
     def update_exponential(self, l, device):
-        if self.exponential[l].number_of_time_points > 1:
+        if self.exponential[l].n_time_points > 1:
             self.exponential[l].move_data_to_(device=device)
             self.exponential[l].update()
             self.shoot_is_modified[l] = False
@@ -210,7 +210,7 @@ class PiecewiseGeodesic:
         Compute the time bounds, accordingly sets the number of points and momenta of the attribute exponentials,
         then shoot and flow them.
         """
-        device, _ = utilities.get_best_device(self.exponential[0].kernel.gpu_mode)
+        device, _ = get_best_device(self.exponential[0].kernel.gpu_mode)
 
         self.get_template_index()
                     
@@ -221,7 +221,7 @@ class PiecewiseGeodesic:
             
             length = self.tR[l+1] - self.tR[l]
             
-            self.exponential[l].number_of_time_points = self.nb_of_tp(length)
+            self.exponential[l].n_time_points = self.nb_of_tp(length)
                 
             if self.shoot_is_modified[l]:
                 self.exponential[l].set_initial_momenta(self.momenta[l] * length)
@@ -236,7 +236,7 @@ class PiecewiseGeodesic:
         for l in range(0, self.template_index - 1):
             length = self.tR[l+1] - self.tR[l]
             
-            self.exponential[l].number_of_time_points = self.nb_of_tp(length)
+            self.exponential[l].n_time_points = self.nb_of_tp(length)
                 
             if self.shoot_is_modified[l]:
                 self.exponential[l].set_initial_momenta(self.momenta[l] * length)
@@ -250,10 +250,9 @@ class PiecewiseGeodesic:
             self.update_exponential(l, device)
 
         # Forward shoot
-        
         for l in range(self.template_index + 1, self.nb_components):
             length = self.tR[l+1] - self.tR[l]
-            self.exponential[l].number_of_time_points = self.nb_of_tp(length)
+            self.exponential[l].n_time_points = self.nb_of_tp(length)
 
             if self.shoot_is_modified[l]:
                 self.exponential[l].set_initial_momenta(self.momenta[l] * length)
@@ -290,14 +289,13 @@ class PiecewiseGeodesic:
         l = self.tR[1:].index(tR)
         return l
 
-
     def transport_along_exponential(self, last_transported_mom, transport, is_orthogonal,
                                     l = None, exponential = None, initial_time_point = 0,
                                     backward = False):
 
         if l is not None: exponential = self.exponential[l]
 
-        if exponential.number_of_time_points > 1:
+        if exponential.n_time_points > 1:
             transported = exponential.parallel_transport(last_transported_mom,
                                                         is_orthogonal=is_orthogonal,
                                                         initial_time_point = initial_time_point)
@@ -374,7 +372,7 @@ class PiecewiseGeodesic:
         at t0: need to get regression momenta at start time, define a new geodesic,
         transport towards the next rupture time
         """
-        device, _ = utilities.get_best_device(self.exponential[0].kernel.gpu_mode)
+        device, _ = get_best_device(self.exponential[0].kernel.gpu_mode)
 
         if start_time == self.t0:
             return self.parallel_transport(momenta_to_transport_tR, is_orthogonal, target_time)
@@ -400,7 +398,7 @@ class PiecewiseGeodesic:
 
                 # Backward Transport
                 length = start_time - self.tR[l]
-                new_expo.number_of_time_points = self.nb_of_tp(length)
+                new_expo.n_time_points = self.nb_of_tp(length)
                 print("\nBackward transport from {} to {} (length {})".format(start_time, self.tR[l], length + 1))
                 
                 if start_time > self.t0: momenta_at_start_time = - momenta_at_start_time
@@ -453,10 +451,6 @@ class PiecewiseGeodesic:
             transport_concat = self.concatenate_transport(transport)
 
             return transport_concat
-    
-                            
-
-
 
     ####################################################################################################################
     ### Extension methods:
@@ -476,10 +470,10 @@ class PiecewiseGeodesic:
             tR_l = self.convert_to_array(self.tR[l])
             times.append([tR_l])
 
-            if self.exponential[l].number_of_time_points > 1:
+            if self.exponential[l].n_time_points > 1:
                 tR_l_ = self.convert_to_array(self.tR[l+1])
                 times[l] = np.linspace(tR_l, tR_l_, 
-                    num=self.exponential[l].number_of_time_points).tolist()
+                    num=self.exponential[l].n_time_points).tolist()
                 
         times_concat = times[0]
         
@@ -490,27 +484,18 @@ class PiecewiseGeodesic:
 
     def get_control_points_trajectory(self):
         if any(self.shoot_is_modified):
-            msg = "Trying to get cp trajectory in a non updated geodesic."
-            warnings.warn(msg)
-
-        #control_points_t = [self.exponential[0].get_initial_control_points()]
-        # if self.exponential[0].number_of_time_points > 1:
-        #     control_points_t = self.exponential[0].control_points_t[::-1]
-
-        # for l in range(1, self.nb_components):
-        #     if self.exponential[l].number_of_time_points > 1:
-        #         control_points_t += self.exponential[l].control_points_t[1:]
+            warnings.warn("Trying to get cp trajectory in a non updated geodesic.")
 
         # Modif fg
         control_points_t = []
-        if self.exponential[0].number_of_time_points > 1:
+        if self.exponential[0].n_time_points > 1:
             if self.tR[0] < self.t0:
                 control_points_t += self.exponential[0].control_points_t[::-1]
             else:
                 control_points_t += self.exponential[0].control_points_t
 
         for l in range(1, self.nb_components):
-            if self.exponential[l].number_of_time_points > 1:
+            if self.exponential[l].n_time_points > 1:
                 if self.tR[l] < self.t0:
                     control_points_t += self.exponential[l].control_points_t[::-1][1:]
                 else:
@@ -527,7 +512,7 @@ class PiecewiseGeodesic:
         momenta_t = []
         for l in range(self.nb_components):
             length = self.tR[l+1] - self.tR[l]
-            if self.exponential[l].number_of_time_points > 1:
+            if self.exponential[l].n_time_points > 1:
                 if self.tR[l] < self.t0 :
                     mom = self.exponential[l].momenta_t[::-1]
                 else:
@@ -549,24 +534,13 @@ class PiecewiseGeodesic:
         if any(self.shoot_is_modified) or self.flow_is_modified:
             warnings.warn("Trying to get template trajectory in non updated geodesic.")
 
-        # template_t = {}
-        # for key in self.template_points_tR.keys():
-        #     if self.exponential[0].number_of_time_points > 1:
-        #         template_t[key] = self.exponential[0].template_points_t[key][::-1]
-        #     else: 
-        #         template_t[key] = [self.exponential[0].get_initial_template_points()[key]]
-
-        #     for l in range(1,self.nb_components):
-        #         if self.exponential[l].number_of_time_points > 1:
-        #             template_t[key] += self.exponential[l].template_points_t[key][1:]
-        
         # Modif fg / flexible t0
         # to work it is necessary to have tmin < t0 = at least one subject younger that t0...
         template_t = {k:[] for k in self.exponential[0].template_points_t.keys()}
         
         for key in self.template_points_tR.keys():
             # Get all template points from 1st expo
-            if self.exponential[0].number_of_time_points > 1:
+            if self.exponential[0].n_time_points > 1:
                 if self.tR[0] < self.t0:
                     template_t[key] += self.exponential[0].template_points_t[key][::-1]
                 else:
@@ -574,12 +548,11 @@ class PiecewiseGeodesic:
             
             # Get all template points but 1st one (already in previous exp)
             for l in range(1, self.nb_components):
-                if self.exponential[l].number_of_time_points > 1:
+                if self.exponential[l].n_time_points > 1:
                     if self.tR[l] < self.t0:
                         template_t[key] += self.exponential[l].template_points_t[key][::-1][1:]
                     else:
                         template_t[key] += self.exponential[l].template_points_t[key][1:]
-
 
         return template_t
 
@@ -587,7 +560,7 @@ class PiecewiseGeodesic:
     ### Writing methods:
     ####################################################################################################################
 
-    def output_path(self, root_name, objects_name, objects_extension, output_dir):
+    def output_path(self, root_name, objects_extension, output_dir):
         self.flow_path = {}
         self.momenta_flow_path = {}
 
@@ -595,44 +568,36 @@ class PiecewiseGeodesic:
         component = 0
         step = self.concentration_of_time_points if self.concentration_of_time_points > 1 else 0.5
         step = 1
+            
         for t, time in enumerate(times):
             rupture_time = self.tR[component + 1]
-            names = []
+
             if time > rupture_time: component += 1
 
-            for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                name = root_name + '__GeodesicFlow__' + object_name + '__component_{}'.format(component) \
-                        + '__tp_' + str(t) + ('__age_%.2f' % time) + object_extension
-                names.append(name)
+            names = ['{}__GeodesicFlow__component_{}_tp_{}__age_{}{}'.format(root_name, component,
+                        t, round(time,1), ext) for ext in objects_extension]
             
             if (t % step == 0) or time == rupture_time:
                 self.flow_path[time] = op.join(output_dir, names[0])
 
-            self.momenta_flow_path[time] = op.join(output_dir, root_name + '__GeodesicFlow__Momenta__tp_' + str(t)
-                                            + ('__age_%.2f' % time) + '.txt')
+            self.momenta_flow_path[time] = op.join(output_dir, 
+                                            '{}__GeodesicFlow__Momenta__tp_{}__age_{}.txt'.format(root_name, t, time))
 
-    def write(self, root_name, objects_name, objects_extension, template, template_data, output_dir,
+    def write(self, root_name, objects_extension, template, template_data, output_dir,
               write_adjoint_parameters = False, write_all = True):
         
-        momenta_t = [elt.detach().cpu().numpy() for elt in self.get_momenta_trajectory()]
-        control_points_t = [elt.detach().cpu().numpy() for elt in self.get_control_points_trajectory()]
-
         # Core loop ----------------------------------------------------------------------------------------------------
         if write_all:
             times = self.get_times()
             component = 0
             step = self.concentration_of_time_points if self.concentration_of_time_points > 1 else 0.5
-            step = 10
-            #step = 1
             for t, time in enumerate(times):
                 rupture_time = self.tR[component + 1]
-                names = []
+                
                 if time > rupture_time: component += 1
-
-                for k, (object_name, object_extension) in enumerate(zip(objects_name, objects_extension)):
-                    name = root_name + '__GeodesicFlow__' + object_name + '__component_{}'.format(component) \
-                            + '__tp_' + str(t) + ('__age_%.2f' % time) + object_extension
-                    names.append(name)
+                
+                names = ['{}__GeodesicFlow__component_{}_tp_{}__age_{}{}'.format(root_name, component,
+                        t, round(time,1), ext) for ext in objects_extension]
                 deformed_points = self.get_template_points(time)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)
                 
@@ -644,6 +609,8 @@ class PiecewiseGeodesic:
         # Optional writing of the control points and momenta -----------------------------------------------------------
         #if write_adjoint_parameters:
         if True:
+            momenta_t = [elt.detach().cpu().numpy() for elt in self.get_momenta_trajectory()]
+            control_points_t = [elt.detach().cpu().numpy() for elt in self.get_control_points_trajectory()]
             times = self.get_times()
             
             for t, (time, control_points, momenta) in enumerate(zip(times, control_points_t, momenta_t)):

@@ -38,7 +38,7 @@ class Landmark:
     ### Encapsulation methods:
     ####################################################################################################################
 
-    def get_number_of_points(self):
+    def n_points(self):
         return len(self.points)
 
     def set_points(self, points):

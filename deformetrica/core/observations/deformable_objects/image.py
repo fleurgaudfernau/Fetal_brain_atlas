@@ -37,7 +37,8 @@ class Image:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, intensities, intensities_dtype, affine, interpolation=default.interpolation, object_filename = None):
+    def __init__(self, intensities, intensities_dtype, affine, interpolation=default.interpolation, 
+                object_filename = None):
         self.object_filename = object_filename
         
         self.interpolation = interpolation

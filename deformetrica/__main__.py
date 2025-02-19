@@ -15,8 +15,7 @@ def main():
     common_parser.add_argument('--parameters', '-p', type=str, help='parameters xml file')
     common_parser.add_argument('--output', '-o', type=str, help='output folder')
     common_parser.add_argument('--age', "-a", type=int)
-    common_parser.add_argument('--verbosity', '-v',
-                               type=str, default='WARNING',
+    common_parser.add_argument('--verbosity', '-v', type=str, default='WARNING',
                                choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                                help='set output verbosity')
     
@@ -81,8 +80,6 @@ def main():
     dataset_spec = dfca.io.get_dataset_specifications(xml)
     estimator_options = dfca.io.get_estimator_options(xml)
     model_options = dfca.io.get_model_options(xml)
-
-    print("estimator_options in main\n", estimator_options)
     
     if xml.model_type == 'Registration'.lower():
         assert args.command == 'estimate', \

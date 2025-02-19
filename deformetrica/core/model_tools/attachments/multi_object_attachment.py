@@ -5,10 +5,9 @@ from copy import deepcopy
 from scipy.spatial import KDTree
 import numpy as np
 import vtk
-from ....support import utilities
+from ....support.utilities import move_data, get_best_device, get_torch_scalar_type
 from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import mean_squared_error
-
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,9 @@ class MultiObjectAttachment:
 
     def __init__(self, attachment_types, kernels):
         # List of strings, e.g. 'varifold' or 'current'.
-        self.attachment_types = attachment_types
+        self.types = attachment_types
+
+        #self.attachments = {"curvature" : self.curvature}
         # List of kernel objects.
         self.kernels = kernels
 
@@ -28,18 +29,6 @@ class MultiObjectAttachment:
     ### Public methods:
     ####################################################################################################################
 
-    def compute_weighted_distance(self, data, multi_obj1, multi_obj2, inverse_weights):
-        """
-        Takes two multiobjects and their new point positions to compute the distances
-        """
-        distances = self.compute_distances(data, multi_obj1, multi_obj2)
-        assert distances.size()[0] == len(inverse_weights)
-        device = next(iter(data.values())).device  # deduce device from template_data
-        dtype = next(iter(data.values())).dtype  # deduce dtype from template_data
-
-        inverse_weights_torch = utilities.move_data(inverse_weights, device=device, dtype=dtype)
-
-        return torch.sum(distances / inverse_weights_torch)
     
     def compute_weighted_curvature_distance(self, data, multi_obj1, multi_obj2, inverse_weights,
                                             save = False):
@@ -51,16 +40,14 @@ class MultiObjectAttachment:
         dtype = next(iter(data.values())).dtype  # deduce dtype from template_data
         distances = torch.zeros((len(multi_obj1.object_list),), device=device, dtype=dtype)
         pos = 0
-        for i, obj1 in enumerate(multi_obj1.object_list):
-            obj2 = multi_obj2.object_list[i]
-            distances[i] = self.mean_curvature_distance(data['landmark_points'][pos:pos + obj1.get_number_of_points()], 
+        for i, (obj1, obj2) in enumerate(zip(multi_obj1.object_list, multi_obj2.object_list)):
+            distances[i] = self.mean_curvature_distance(data['landmark_points'][pos:pos + obj1.n_points()], 
                                                         obj1, obj2)            
-        pos += obj1.get_number_of_points()
-        inverse_weights_torch = utilities.move_data(inverse_weights, device=device, dtype=dtype)
+        pos += obj1.n_points()
+        inverse_weights_torch = move_data(inverse_weights, device=device, dtype=dtype)
         res = torch.sum(distances / inverse_weights_torch) #shape [1]
         
         return res
-
 
     def compute_distances(self, data, multi_obj1, multi_obj2, residuals = False):
         """
@@ -68,64 +55,60 @@ class MultiObjectAttachment:
         If residuals is True, we ignore the smoothing of the normals in multiscale meshes
         """
         assert len(multi_obj1.object_list) == len(multi_obj2.object_list), \
-            "Cannot compute distance between multi-objects which have different number of objects"
+            "Cannot compute distance between multi-objects with different number of objects"
+
         device = next(iter(data.values())).device  # deduce device from template_data
         dtype  = next(iter(data.values())).dtype   # deduce dtype from template_data
         distances = torch.zeros((len(multi_obj1.object_list),), device=device, dtype=dtype)
         pos = 0
 
-        for i, obj1 in enumerate(multi_obj1.object_list):
-            obj2 = multi_obj2.object_list[i]
-
-            if self.attachment_types[i].lower() == 'current':
-                distances[i] = self.current_distance(
-                    data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj1, obj2, self.kernels[i])
-                pos += obj1.get_number_of_points()
-                
-            elif self.attachment_types[i].lower() == 'varifold':
-                distances[i] = self.varifold_distance(
-                    data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj1, obj2, self.kernels[i], residuals)
-                pos += obj1.get_number_of_points()
-
-            elif self.attachment_types[i].lower() == 'landmark':
-                distances[i] = self.landmark_distance(
-                    data['landmark_points'][pos:pos + obj1.get_number_of_points()], obj2)
-                pos += obj1.get_number_of_points()
-
-            elif self.attachment_types[i].lower() == 'l2':
+        for i, (obj1, obj2, attachment, kernel) in enumerate(zip(multi_obj1.object_list, 
+                                multi_obj2.object_list, self.types, self.kernels)):
+            if attachment == 'L2':
                 assert obj1.type.lower() == 'image' and obj2.type.lower() == 'image'
                 distances[i] = self.L2_distance(data['image_intensities'], obj2)
-
+            
             else:
-                assert False, "Please implement the distance {e} you are trying to use :)".format(
-                    e=self.attachment_types[i])
+                if attachment == 'Current':
+                    distances[i] = self.current_distance(
+                        data['landmark_points'][pos:pos + obj1.n_points()], obj1, obj2, kernel)
+                    
+                elif attachment == 'Varifold':
+                    distances[i] = self.varifold_distance(
+                        data['landmark_points'][pos:pos + obj1.n_points()], obj1, obj2, kernel)
+
+                elif attachment == 'Landmark':
+                    distances[i] = self.landmark_distance(
+                        data['landmark_points'][pos:pos + obj1.n_points()], obj2)
+                else:
+                    assert False, "The distance {} does exist".format(attachment)
+                pos += obj1.n_points()
 
         return distances
 
-    def compute_additional_distances(self, data, multi_obj1, multi_obj2, attachment):
-        # ajout fg
-        assert len(multi_obj1.object_list) == len(multi_obj2.object_list), \
-        "Cannot compute distance between multi-objects which have different number of objects"
-
+    def compute_weighted_distance(self, data, multi_obj1, multi_obj2, inverse_weights):
+        """
+        Takes two multiobjects and their new point positions to compute the distances
+        data: deformed data
+        multi_obj1: template
+        multi_obj2: target
+        """
+        distances = self.compute_distances(data, multi_obj1, multi_obj2)
+        
+        assert distances.size()[0] == len(inverse_weights)
         device = next(iter(data.values())).device  # deduce device from template_data
-        dtype  = next(iter(data.values())).dtype   # deduce dtype from template_data
-        distances = torch.zeros((len(multi_obj1.object_list),), device=device, dtype=dtype)
-        
-        for i, obj1 in enumerate(multi_obj1.object_list):
-            obj2 = multi_obj2.object_list[i]
+        dtype = next(iter(data.values())).dtype  # deduce dtype from template_data
 
-            if attachment == 'KDtree':
-                distances[i] = self.KDTreeDistance(obj1, obj2)
-        
-        return distances 
-    
+        inverse_weights_torch = move_data(inverse_weights, device=device, dtype=dtype)
+
+        return torch.sum(distances / inverse_weights_torch)    
 
     def compute_vtk_distance(self, data, multi_obj1, multi_obj2, type):
         pos = 0
-        for i, obj1 in enumerate(multi_obj1.object_list):
-            if self.attachment_types[i].lower() in ['current', "varifold"]:
-                obj2 = multi_obj2.object_list[i]
-                obj1.polydata.points = data['landmark_points'][0:obj1.get_number_of_points()].cpu().numpy()
+        for i, (obj1, obj2, attachment) in enumerate(zip(multi_obj1.object_list, 
+                                    multi_obj2.object_list, self.types)):
+            if attachment in ['Current', "Varifold"]:
+                obj1.polydata.points = data['landmark_points'][0:obj1.n_points()].cpu().numpy()
 
                 type2 = "hausdorff" if type == "average_min_dist" else type
 
@@ -139,7 +122,7 @@ class MultiObjectAttachment:
                     obj1.distance["hausdorff"] = obj1.polydata["HausdorffDistance"]
                     obj2.distance["hausdorff"] = obj2.polydata["HausdorffDistance"]
 
-                    pos += obj1.get_number_of_points()
+                    pos += obj1.n_points()
                     
     ####################################################################################################################
     ### Auxiliary methods:
@@ -169,9 +152,8 @@ class MultiObjectAttachment:
         We assume here that the target never moves.
         Dimension of the source
         """
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
+        device, _ = get_best_device(kernel.gpu_mode)
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, device=device)
-
         
         def current_scalar_product(points_1, points_2, normals_1, normals_2):
             #return a single value
@@ -196,7 +178,7 @@ class MultiObjectAttachment:
         A current representation is center-wise
         To be point wise the current distance 
         """
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
+        device, _ = get_best_device(kernel.gpu_mode)
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, device=device)
 
         def point_current_scalar_product(points_1, points_2, normals_1, normals_2):
@@ -284,12 +266,16 @@ class MultiObjectAttachment:
         return np.mean(d_kdtree)
     
     @staticmethod
-    def varifold_distance(points, source, target, kernel, residuals):
+    def varifold_distance(points, source, target, kernel):
         """
         Returns the varifold distance between the 3D meshes
         """
+        def varifold_scalar_product(x, y, n1_norm, n2_norm, nalpha, nbeta):
+            
+            return torch.dot(n1_norm.view(-1), kernel.convolve((x, nalpha), (y, nbeta), 
+                            n2_norm.view(-1, 1), mode='varifold').view(-1))
         
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
+        device, _ = get_best_device(kernel.gpu_mode)
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, residuals, device=device)
 
         # alpha = normales non unitaires
@@ -300,10 +286,6 @@ class MultiObjectAttachment:
         nbeta = n2 / n2_norm.unsqueeze(1)
         
         #view(-1): one single row, n col = [[ , ,]] / view(-1, 1): n rows, 1 col [[], []...]
-        def varifold_scalar_product(x, y, n1_norm, n2_norm, nalpha, nbeta):
-            
-            return torch.dot(n1_norm.view(-1), kernel.convolve((x, nalpha), (y, nbeta), 
-                            n2_norm.view(-1, 1), mode='varifold').view(-1))
 
         # We always recompute target norm (in case of multiscale meshes...)
         if target.norm is None or target.filtered:
@@ -319,7 +301,7 @@ class MultiObjectAttachment:
         This artificially gives more important to the source (since we convolve to source space)
 
         """
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
+        device, _ = get_best_device(kernel.gpu_mode)
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, device=device)
 
         nalpha = n1 / torch.norm(n1, 2, 1).unsqueeze(1) # each normal vector / its norm -> norm = 1
@@ -340,7 +322,7 @@ class MultiObjectAttachment:
         Point-wise varifold distance between the 3D meshes = ||source-target||² 
         1 value per cell (=norm)
         """
-        device, _ = utilities.get_best_device(kernel.gpu_mode)
+        device, _ = get_best_device(kernel.gpu_mode)
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, device=device)
 
         n1_norm = torch.norm(n1, 2, 1) # 2 for L2 norm. 1 to compute norm across axis 1 -> a norm per row
@@ -365,7 +347,7 @@ class MultiObjectAttachment:
         """
         Point correspondance distance
         """
-        target_points = utilities.move_data(target.get_points(), dtype=str(points.type()), device=points.device)
+        target_points = move_data(target.get_points(), dtype=str(points.type()), device=points.device)
         assert points.device == target_points.device, 'tensors must be on the same device'
         return torch.sum((points.contiguous().view(-1) - target_points.contiguous().view(-1)) ** 2)
 
@@ -393,7 +375,7 @@ class MultiObjectAttachment:
         target: object intensities
         """
         assert isinstance(intensities, torch.Tensor)
-        target_intensities = utilities.move_data(target.get_intensities(), dtype=intensities.type(), device=intensities.device)
+        target_intensities = move_data(target.get_intensities(), dtype=intensities.type(), device=intensities.device)
 
         assert intensities.device == target_intensities.device, 'tensors must be on the same device'
 
@@ -413,17 +395,17 @@ class MultiObjectAttachment:
 
         # ajout fg: check wether points belong to source or target
         if source.points.shape[0] == points.shape[0]:
-            c1, n1 = source.get_centers_and_normals(points, tensor_scalar_type=utilities.get_torch_scalar_type(dtype=dtype),
+            c1, n1 = source.get_centers_and_normals(points, tensor_scalar_type=get_torch_scalar_type(dtype=dtype),
                                                     tensor_integer_type=utilities.get_torch_integer_type(dtype=dtype),
                                                     device=device, residuals = residuals)
-            c2, n2 = target.get_centers_and_normals(tensor_scalar_type=utilities.get_torch_scalar_type(dtype=dtype),
+            c2, n2 = target.get_centers_and_normals(tensor_scalar_type=get_torch_scalar_type(dtype=dtype),
                                                     tensor_integer_type=utilities.get_torch_integer_type(dtype=dtype),
                                                     device=device, residuals = residuals)
         else:
-            c1, n1 = source.get_centers_and_normals(tensor_scalar_type=utilities.get_torch_scalar_type(dtype=dtype),
+            c1, n1 = source.get_centers_and_normals(tensor_scalar_type=get_torch_scalar_type(dtype=dtype),
                                                     tensor_integer_type=utilities.get_torch_integer_type(dtype=dtype),
                                                     device=device, residuals = residuals)
-            c2, n2 = target.get_centers_and_normals(points, tensor_scalar_type=utilities.get_torch_scalar_type(dtype=dtype),
+            c2, n2 = target.get_centers_and_normals(points, tensor_scalar_type=get_torch_scalar_type(dtype=dtype),
                                                     tensor_integer_type=utilities.get_torch_integer_type(dtype=dtype),
                                                     device=device, residuals = residuals)
 

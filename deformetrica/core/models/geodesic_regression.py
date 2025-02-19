@@ -1,6 +1,6 @@
 import math
 import os.path as op
-from ...support import kernels as kernel_factory
+from ...support.kernels import factory
 from ...core import default
 from ...core.model_tools.deformations.geodesic import Geodesic
 from ...core.models.abstract_statistical_model import AbstractStatisticalModel
@@ -23,8 +23,6 @@ class GeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
 
-                 dimension=default.dimension,
-
                  deformation_kernel_width=default.deformation_kernel_width,
 
                  concentration_of_time_points=default.concentration_of_time_points, t0=default.t0,
@@ -34,18 +32,13 @@ class GeodesicRegression(AbstractStatisticalModel):
                  initial_control_points=default.initial_control_points,
                  initial_momenta=default.initial_momenta,
 
-                 gpu_mode=default.gpu_mode,
-
                  write_adjoint_parameters = False,
                  new_bounding_box = None,
 
                  **kwargs):
 
-        AbstractStatisticalModel.__init__(self, name='GeodesicRegression', gpu_mode=gpu_mode)
+        AbstractStatisticalModel.__init__(self, name='GeodesicRegression')
         
-        # Global-like attributes.
-        self.dimension = dimension
-
         self.write_adjoint_parameters = write_adjoint_parameters
 
         # Declare model structure.
@@ -56,19 +49,13 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.freeze_momenta = False
 
         self.t0 = t0
-
-        # Deformation.
-        self.geodesic = Geodesic(
-            kernel=kernel_factory.factory(gpu_mode=gpu_mode, kernel_width=deformation_kernel_width),
-            t0=t0, concentration_of_time_points=concentration_of_time_points)
-
-        self.device, _ = get_best_device(gpu_mode=gpu_mode)
-            
+       
         # Template.
-        (object_list, self.objects_extension, self.objects_noise_variance, self.multi_object_attachment) = \
-        create_template_metadata(template_specifications, self.dimension, gpu_mode=gpu_mode)
+        (object_list, self.objects_extension, self.objects_noise_variance, self.objects_attachment) = \
+                                                        create_template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
+        self.dimension = self.template.dimension
 
         self.number_of_objects = len(self.template.object_list)
 
@@ -76,50 +63,39 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.number_of_subjects = 1
         
         # Template data.
-        self.fixed_effects['template_data'] = self.template.get_data()
+        self.set_template_data(self.template.get_data())
+        self.points = self.get_points()
 
         # Control points.
-        self.control_points = initialize_control_points(initial_control_points, 
-            self.template, deformation_kernel_width, self.dimension,  new_bounding_box = new_bounding_box)
+        self.control_points = initialize_control_points(initial_control_points, self.template, 
+                                                    deformation_kernel_width,  new_bounding_box = new_bounding_box)
 
         # Momenta.
         self.fixed_effects['momenta'] = initialize_momenta(initial_momenta, len(self.control_points), self.dimension)
     
         self.current_residuals = None
+
+        # Deformation.
+        self.device, _ = get_best_device()
+
+        self.geodesic = Geodesic( kernel=factory(kernel_width=deformation_kernel_width),
+                                t0=t0, concentration_of_time_points=concentration_of_time_points)
         
-        
+        control_points = move_data(self.control_points, device=self.device)
+        self.geodesic.set_control_points_t0(control_points)
         
     def initialize_noise_variance(self, dataset):
-        if np.min(self.objects_noise_variance) < 0:
-            control_points = move_data(self.control_points, device=self.device)
-            template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
-            target_times = dataset.times[0]
-            target_objects = dataset.deformable_objects[0]
-
-            
-            tmin = min(math.trunc(min(target_times)), self.t0)
-            self.geodesic.set_tmin(tmin)
-            self.geodesic.set_tmax(math.ceil(max(target_times)))
-            self.geodesic.set_template_points_t0(template_points)
-            self.geodesic.set_control_points_t0(control_points)
-            self.geodesic.set_momenta_t0(momenta)
-            self.geodesic.update()
-
-            residuals = np.zeros((self.number_of_objects,))
-
-            for (time, target) in zip(target_times, target_objects):
-                deformed_points = self.geodesic.get_template_points(time)
-                deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-                residuals += self.multi_object_attachment.compute_distances(
-                    deformed_data, self.template, target).data.numpy()
+        if np.min(self.objects_noise_variance) < 0: # only if not provided by user
+            self.objects_noise_variance = [1] * self.number_of_objects
+            residuals = np.sum(self.compute_residuals(dataset))
 
             # Initialize the noise variance hyper-parameter as a 1/100th of the initial residual.
-            for k in range(self.objects_extension):
-                if self.objects_noise_variance[k] < 0:
-                    nv = 0.01 * residuals[k] / float(len(target_times))
-                    self.objects_noise_variance[k] = nv
-                    #logger.info('>> Automatically chosen noise std: %.4f [ %s ]' % (math.sqrt(nv), obj))
+            target_times = dataset.times[0]
+            for k in range(self.number_of_objects):
+                nv = 0.01 * residuals / float(len(target_times))
+                self.objects_noise_variance[k] = nv
 
+        logger.info('>> Chosen noise std {}'.format(math.sqrt(self.objects_noise_variance[0])))
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
@@ -131,6 +107,9 @@ class GeodesicRegression(AbstractStatisticalModel):
     def set_template_data(self, td):
         self.fixed_effects['template_data'] = td
         self.template.set_data(td)
+    
+    def get_points(self):
+        return list(self.fixed_effects['template_data'].keys())[0]
 
     # Momenta ----------------------------------------------------------------------------------------------------------
     def get_momenta(self):
@@ -159,7 +138,7 @@ class GeodesicRegression(AbstractStatisticalModel):
     ####################################################################################################################
 
     def compute_gradients(self, attachment, regularity, template_data, template_points,
-                           momenta,  with_grad=False):
+                           momenta, points, with_grad=False):
         # Compute gradient if needed -----------------------------------------------------------------------------------
         if with_grad:
             total = regularity + attachment
@@ -168,10 +147,10 @@ class GeodesicRegression(AbstractStatisticalModel):
             gradient = {}
             # Template data.
             if not self.freeze_template:
-                if 'landmark_points' in template_data.keys():
-                    gradient['landmark_points'] = template_points['landmark_points'].grad
-                if 'image_intensities' in template_data.keys():
-                    gradient['image_intensities'] = template_data['image_intensities'].grad
+                if points == 'landmark_points' :
+                    gradient[points] = template_points[points].grad
+                else:
+                    gradient[points] = template_data[points].grad
             
             gradient['momenta'] = momenta.grad
 
@@ -200,11 +179,11 @@ class GeodesicRegression(AbstractStatisticalModel):
 
         # Deform -------------------------------------------------------------------------------------------------------
         attachment, regularity = self._compute_attachment_and_regularity(
-            dataset, template_data, template_points, momenta)
+                                                            dataset, template_data, template_points, momenta)
         
         # Gradients -------------------------------------------------------------------------------------------------------
         return self.compute_gradients(attachment, regularity, template_data, template_points,
-                           momenta,  with_grad=with_grad)
+                                        momenta, self.points, with_grad=with_grad)
 
 
     ####################################################################################################################
@@ -212,22 +191,21 @@ class GeodesicRegression(AbstractStatisticalModel):
     ####################################################################################################################
 
     def _compute_batch_attachment_and_regularity(self, target_times, target_objects, template_data, 
-                                                template_points, momenta): # ajout fg        
+                                                template_points, momenta):       
 
         # Deform -------------------------------------------------------------------------------------------------------
         self.geodesic.set_template_points_t0(template_points)
-        self.geodesic.set_control_points_t0(control_points)
         self.geodesic.set_momenta_t0(momenta)
         self.geodesic.update()
         attachment = 0.
 
         self.current_residuals = []
         
-        for j, (time, obj) in enumerate(zip(target_times, target_objects)):
+        for time, obj in zip(target_times, target_objects):
             deformed_points = self.geodesic.get_template_points(time)
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
             
-            att = self.multi_object_attachment.compute_weighted_distance(
+            att = self.objects_attachment.compute_weighted_distance(
                         deformed_data, self.template, obj, self.objects_noise_variance)
             attachment -= att
             
@@ -249,9 +227,9 @@ class GeodesicRegression(AbstractStatisticalModel):
         obj = dataset.deformable_objects[0][j]
         
         if dist in ["current", "varifold"]:
-            return self.multi_object_attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
+            return self.objects_attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
         elif dist in ["ssim", "mse"]:
-            return self.multi_object_attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
+            return self.objects_attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
         template_data, _, _ = self.prepare_geodesic(dataset)
@@ -296,8 +274,7 @@ class GeodesicRegression(AbstractStatisticalModel):
             obj1.curvature_metrics(curvature)
         
         return self.template
-
-    
+        
     def _compute_attachment_and_regularity(self, dataset, template_data, template_points, 
                                             momenta):
         """
@@ -306,9 +283,8 @@ class GeodesicRegression(AbstractStatisticalModel):
         target_times = dataset.times[0]
         target_objects = dataset.deformable_objects[0]
 
-        tmin = min(math.trunc(min(target_times)), self.t0)
-        self.geodesic.set_tmin(tmin)
-        self.geodesic.set_tmax(math.ceil(max(target_times)))
+        self.geodesic.set_tmin(min(dataset.tmin, self.t0))
+        self.geodesic.set_tmax(dataset.tmax)
 
         return self._compute_batch_attachment_and_regularity(target_times, target_objects, 
                                                             template_data, template_points, 
@@ -320,9 +296,8 @@ class GeodesicRegression(AbstractStatisticalModel):
         target_objects = [t[1] for t in batch]
 
         # Careful: the batch selected might not go from tmin to tmax
-        tmin = min(math.trunc(min(dataset.times[0])), self.t0)
-        self.geodesic.set_tmin(tmin)
-        self.geodesic.set_tmax(math.ceil(max(dataset.times[0])))
+        self.geodesic.set_tmin(min(dataset.tmin, self.t0))
+        self.geodesic.set_tmax(dataset.tmax)
 
         template_data, template_points, momenta = self._fixed_effects_to_torch_tensors(with_grad)
                 
@@ -330,13 +305,12 @@ class GeodesicRegression(AbstractStatisticalModel):
                                                                                 template_data, template_points, momenta)
         
         return self.compute_gradients(attachement, regularity, template_data, template_points,
-                                        momenta,  with_grad=with_grad)
-        
+                                        momenta, self.points, with_grad=with_grad)
 
     def mini_batches(self, dataset, number_of_batches):
-        batch_size = len(dataset.deformable_objects[0])//number_of_batches
+        batch_size = len(dataset.deformable_objects[0]) // number_of_batches
 
-        targets = [[t,target] for t, target in zip(dataset.times[0], dataset.deformable_objects[0])]
+        targets = list(zip(dataset.times[0], dataset.deformable_objects[0]))
         targets_copy = targets.copy()
         np.random.shuffle(targets_copy)
 
@@ -351,7 +325,6 @@ class GeodesicRegression(AbstractStatisticalModel):
             mini_batches.append(mini_batch)
         
         return mini_batches
-        
 
     ####################################################################################################################
     ### Private utility methods:
@@ -368,9 +341,8 @@ class GeodesicRegression(AbstractStatisticalModel):
 
         # Template points.
         template_points = {key: move_data(value, device=self.device,
-                                            requires_grad=(not self.freeze_template and with_grad)) 
+                                        requires_grad=(not self.freeze_template and with_grad)) 
                             for key, value in self.template.get_points().items()}
-        
 
         # Momenta.
         momenta = move_data(self.get_momenta(),requires_grad=with_grad, device=self.device)
@@ -383,20 +355,15 @@ class GeodesicRegression(AbstractStatisticalModel):
     ####################################################################################################################        
     
     def prepare_geodesic(self, dataset):
-        control_points = move_data(self.control_points, device=self.device)
         template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
-        target_times = dataset.times[0]
-        target_objects = dataset.deformable_objects[0]
 
-        tmin = min(math.trunc(min(target_times)), self.t0)
-        self.geodesic.set_tmin(tmin)
-        self.geodesic.set_tmax(math.ceil(max(target_times)))
+        self.geodesic.set_tmin(min(dataset.tmin, self.t0))
+        self.geodesic.set_tmax(dataset.tmax)
         self.geodesic.set_template_points_t0(template_points)
-        self.geodesic.set_control_points_t0(control_points)
         self.geodesic.set_momenta_t0(momenta)
         self.geodesic.update()  
 
-        return template_data, target_times, target_objects
+        return template_data, dataset.times[0], dataset.deformable_objects[0]
 
     def compute_residuals(self, dataset, individual_RER = None, option = None):
         """
@@ -411,36 +378,17 @@ class GeodesicRegression(AbstractStatisticalModel):
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
             if not option:
-                #residuals.append(self.multi_object_attachment.compute_distances(deformed_data, self.template, target).cpu().numpy())
-                residuals.append(self.multi_object_attachment.compute_weighted_distance(
+                #residuals.append(self.objects_attachment.compute_distances(deformed_data, self.template, target).cpu().numpy())
+                residuals.append(self.objects_attachment.compute_weighted_distance(
                 deformed_data, self.template, target, self.objects_noise_variance).cpu().numpy())
             else:
-                residuals.append(self.multi_object_attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
+                residuals.append(self.objects_attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
 
         return residuals
     
-    def compute_residuals_per_point(self, dataset):
-        # residuals: if True, kernel=1 in distance computation for meshes
-
-        template_data, target_times, target_objects = self.prepare_geodesic(dataset)     
-
-        residuals = []
-
-        for (time, target) in zip(target_times, target_objects):
-            deformed_points = self.geodesic.get_template_points(time)
-            
-            deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-            residuals.append(self.multi_object_attachment.compute_distances(deformed_data, self.template, target).cpu().numpy())
-        
-        return residuals
-
     def write(self, dataset, individual_RER, output_dir, iteration, write_all = True):
         self._write_model_predictions(output_dir, dataset, write_all)
         self._write_model_parameters(output_dir, iteration, write_all)
-
-        residuals = self.compute_residuals(dataset)
-
-        write_2D_list(residuals, output_dir, "{}__Estimated__Residuals.txt".format(name))
 
     def _write_model_predictions(self, output_dir, dataset=None, write_all = True):
 
@@ -453,50 +401,49 @@ class GeodesicRegression(AbstractStatisticalModel):
                             output_dir, write_adjoint_parameters = self.write_adjoint_parameters, write_all = write_all)
 
         # Model predictions.
-        if dataset is not None: #and not write_all:
+        if dataset is not None and not write_all:
             for j, time in enumerate(target_times):
-                names = []
-                for ext in self.objects_extension:
-                    name = '{}__Reconstruction____tp_{}__age_{}'.format(self.name, j, time, ext)
-                    names.append(name)
+                names = ['{}__Reconstruction____tp_{}__age_{}'.format(self.name, j, time, ext)\
+                        for ext in self.objects_extension]
                 deformed_points = self.geodesic.get_template_points(time)
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
                 self.template.write(output_dir, names,
                                     {key: value.data.cpu().numpy() for key, value in deformed_data.items()})
 
     def output_path(self, output_dir, dataset):
-        self.cp_path = op.join(output_dir, self.name + "__Estimated__ControlPoints.txt")
-        self.momenta_path = op.join(output_dir, self.name + "__Estimated__Momenta.txt")
+        self.cp_path = op.join(output_dir, "{}__ControlPoints.txt".format(self.name))
+        self.momenta_path = op.join(output_dir, "{}__Estimated__Momenta.txt".format(self.name))
         
-        if self.geodesic.forward_exponential.number_of_time_points is None:
+        if self.geodesic.fw_exponential.n_time_points is None:
             self.prepare_geodesic(dataset)
 
         try:
             self.geodesic.output_path(self.name, self.objects_extension, output_dir)
         except:
             pass
+
     def _write_model_parameters(self, output_dir, iteration, write_all = True):
         
         # Template.
         template_names = []
-        for ext in self.objects_extension:
-            if not self.freeze_template:
-                aux =  '{}__Estimated__Template__tp_{}__age_{}{}'.format(self.name, 
-                self.geodesic.backward_exponential.number_of_time_points - 1, self.geodesic.t0, ext)
+        template_names = None
 
-            else:
-                aux =  '{}__Fixed__Template__tp_{}__age_{}{}'.format(self.name, 
-                self.geodesic.backward_exponential.number_of_time_points - 1, self.geodesic.t0, ext)
-            template_names.append(aux)
+        if not self.freeze_template:
+            template_names = ['{}__Estimated__Template__tp_{}__age_{}{}'.format(self.name, 
+                            self.geodesic.bw_exponential.n_time_points - 1, 
+                            self.geodesic.t0, ext) for ext in self.objects_extension]
+        else:
+            template_names = ['{}__Fixed__Template__tp_{}__age_{}{}'.format(self.name, 
+                                self.geodesic.bw_exponential.n_time_points - 1, 
+                                self.geodesic.t0, ext) for ext in self.objects_extension]
+
         self.template.write(output_dir, template_names)
 
         if self.objects_extension[0] != ".vtk":
-            #Control points.
             write_2D_array(self.control_points, output_dir, "{}__ControlPoints.txt".format(self.name))
-
-            # Momenta.
             write_3D_array(self.get_momenta(), output_dir, "{}__Estimated__Momenta.txt".format(self.name))
+
         else:
             # Fuse control points and momenta for paraview display
             concatenate_for_paraview(self.get_momenta(), self.control_points, output_dir, 
-                            self.name + "__Estimated__Fusion_CP_Momenta_iter_{}.vtk".format(iteration))
+                                    "{}__Estimated__Fusion_CP_Momenta_iter_{}.vtk".format(self.name, iteration))

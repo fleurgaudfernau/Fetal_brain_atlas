@@ -28,7 +28,7 @@ class Exponential:
 
     def __init__(self, 
                  kernel=default.deformation_kernel,
-                 number_of_time_points=None,
+                 n_time_points=None,
                  initial_control_points=None, control_points_t=None,
                  initial_momenta=None, momenta_t=None,
                  initial_template_points=None, template_points_t=None,
@@ -42,7 +42,7 @@ class Exponential:
         else:
             self.shoot_kernel = self.kernel
 
-        self.number_of_time_points = number_of_time_points
+        self.n_time_points = n_time_points
         # Initial position of control points
         self.initial_control_points = initial_control_points
         # Control points trajectory
@@ -62,7 +62,7 @@ class Exponential:
         # Wether to use a RK2 or a simple euler for shooting or flowing respectively.
         self.use_rk2_for_shoot = use_rk2_for_shoot
         self.use_rk2_for_flow = use_rk2_for_flow
-        # Contains the inverse kernel matrices for the time points 1 to self.number_of_time_points
+        # Contains the inverse kernel matrices for the time points 1 to self.n_time_points
         # (ACHTUNG does not contain the initial matrix, it is not needed)
         self.cometric_matrices = {}
         self.kernel_matrix = {}
@@ -85,7 +85,7 @@ class Exponential:
 
     def light_copy(self):
         light_copy = Exponential(deepcopy(self.kernel),
-                                 self.number_of_time_points,
+                                 self.n_time_points,
                                  self.initial_control_points, self.control_points_t,
                                  self.initial_momenta, self.momenta_t,
                                  self.initial_template_points, self.template_points_t,
@@ -167,7 +167,7 @@ class Exponential:
         Update the state of the object, depending on what's needed.
         This is the only clean way to call shoot or flow on the deformation.
         """
-        assert self.number_of_time_points > 0
+        assert self.n_time_points > 0
         if self.shoot_is_modified:
             if self.transport_cp:
                 self.cometric_matrices.clear()
@@ -197,10 +197,10 @@ class Exponential:
         self.control_points_t = [self.initial_control_points]
         self.momenta_t = [self.initial_momenta]
 
-        dt = 1.0 / float(self.number_of_time_points - 1)
+        dt = 1.0 / float(self.n_time_points - 1)
 
         if self.use_rk2_for_shoot:
-            for i in range(self.number_of_time_points - 1):
+            for i in range(self.n_time_points - 1):
                 new_cp, new_mom = self._rk2_step(self.shoot_kernel, self.control_points_t[i], self.momenta_t[i], dt,
                                                  return_mom=True)
                 self.control_points_t.append(new_cp)
@@ -208,7 +208,7 @@ class Exponential:
 
         else:
             #self.control_points_t et self.momenta_t listes de longueur 1 t -> 11t après la boucle
-            for i in range(self.number_of_time_points - 1): #10 time points for discretization   
+            for i in range(self.n_time_points - 1): #10 time points for discretization   
                 new_cp, new_mom = self._euler_step(self.shoot_kernel, self.control_points_t[i], self.momenta_t[i], dt)
                 self.control_points_t.append(new_cp)
                 self.momenta_t.append(new_mom)
@@ -226,19 +226,19 @@ class Exponential:
         assert len(self.momenta_t) > 0, "Control points given but no momenta"
 
         # Initialization.
-        dt = 1.0 / float(self.number_of_time_points - 1)
+        dt = 1.0 / float(self.n_time_points - 1)
         self.template_points_t = {}
 
         # Flow landmarks points.
         if 'landmark_points' in self.initial_template_points.keys():
             landmark_points = [self.initial_template_points['landmark_points']]
 
-            for i in range(self.number_of_time_points - 1):
+            for i in range(self.n_time_points - 1):
                 d_pos = self.kernel.convolve(landmark_points[i], self.control_points_t[i], self.momenta_t[i])
                 landmark_points.append(landmark_points[i] + dt * d_pos)
 
                 # In this case improved euler (= Heun's method)
-                if i < self.number_of_time_points - 2:
+                if i < self.n_time_points - 2:
                     landmark_points[-1] = landmark_points[i] + dt / 2 * \
                                             (self.kernel.convolve(landmark_points[i + 1],
                                             self.control_points_t[i + 1], self.momenta_t[i + 1]) + d_pos)
@@ -252,7 +252,7 @@ class Exponential:
             dimension = self.initial_control_points.size(1)
             image_shape = image_points[0].size()
 
-            for i in range(self.number_of_time_points - 1):
+            for i in range(self.n_time_points - 1):
                 vf = self.kernel.convolve(image_points[0].contiguous().view(-1, dimension), 
                                           self.control_points_t[i],
                                           self.momenta_t[i]).view(image_shape)
@@ -367,11 +367,11 @@ class Exponential:
         #       1) Nearly zero initial momenta yield no motion.
         if (torch.norm(self.initial_momenta).detach().cpu().numpy() < 1e-6 or
             torch.norm(momenta_to_transport).detach().cpu().numpy() < 1e-6):
-            parallel_transport_t = [momenta_to_transport] * (self.number_of_time_points - initial_time_point)
+            parallel_transport_t = [momenta_to_transport] * (self.n_time_points - initial_time_point)
             return parallel_transport_t
 
         # Step sizes ---------------------------------------------------------------------------------------------------
-        h = 1. / (self.number_of_time_points - 1.)
+        h = 1. / (self.n_time_points - 1.)
         epsilon = h
 
         # For #printing -------------------------------------------------------------------------------------------------
@@ -398,8 +398,8 @@ class Exponential:
         initial_norm_squared = self.scalar_product(self.control_points_t[initial_time_point], parallel_transport_t[0],
                                                    parallel_transport_t[0])
 
-        print("Transport from {} to {}".format(initial_time_point, self.number_of_time_points -1))
-        for i in range(initial_time_point, self.number_of_time_points - 1):
+        print("Transport from {} to {}".format(initial_time_point, self.n_time_points -1))
+        for i in range(initial_time_point, self.n_time_points - 1):
             parallel_transport_t = self.transport(i, h, parallel_transport_t, initial_norm_squared, epsilon,
                                                 norm_squared)
 
@@ -411,7 +411,7 @@ class Exponential:
             # print("Initial norm squared before ortho", initial_norm_squared_before_ortho)
             # print("Initial norm squared", initial_norm_squared)
             parallel_transport_t_ = []
-            for i in range(initial_time_point, self.number_of_time_points):
+            for i in range(initial_time_point, self.n_time_points):
                 # print(i, initial_time_point)
                 parallel_transport_t_.append(parallel_transport_t[i-initial_time_point] + sp * self.momenta_t[i])
                 # print("Norm before", self.scalar_product(self.control_points_t[i-initial_time_point], parallel_transport_t[i-initial_time_point],parallel_transport_t[i-initial_time_point]))
@@ -433,13 +433,13 @@ class Exponential:
     # def extend(self, number_of_additional_time_points):
 
     #     # Special case of the exponential reduced to a single point.
-    #     if self.number_of_time_points == 1:
-    #         self.number_of_time_points += number_of_additional_time_points
+    #     if self.n_time_points == 1:
+    #         self.n_time_points += number_of_additional_time_points
     #         self.update()
     #         return
 
     #     # Extended shoot.
-    #     dt = 1.0 / float(self.number_of_time_points - 1)  # Same time-step.
+    #     dt = 1.0 / float(self.n_time_points - 1)  # Same time-step.
     #     for i in range(number_of_additional_time_points):
     #         if self.use_rk2_for_shoot:
     #             new_cp, new_mom = self._rk2_step(self.kernel, self.control_points_t[-1], self.momenta_t[-1], dt,
@@ -483,9 +483,9 @@ class Exponential:
     #                 logger.warning(msg)
 
     #     # Scaling of the new length.
-    #     length_ratio = float(self.number_of_time_points + number_of_additional_time_points - 1) \
-    #                    / float(self.number_of_time_points - 1)
-    #     self.number_of_time_points += number_of_additional_time_points
+    #     length_ratio = float(self.n_time_points + number_of_additional_time_points - 1) \
+    #                    / float(self.n_time_points - 1)
+    #     self.n_time_points += number_of_additional_time_points
     #     self.initial_momenta = self.initial_momenta * length_ratio
     #     self.momenta_t = [elt * length_ratio for elt in self.momenta_t]
 
@@ -592,9 +592,9 @@ class Exponential:
         assert not self.flow_is_modified, \
             "You are trying to write data relative to the flow, but it has been modified and not updated."
 
-        for j in range(self.number_of_time_points):
+        for j in range(self.n_time_points):
 
-            if (not write_only_last) or (write_only_last and j == self.number_of_time_points -1):
+            if (not write_only_last) or (write_only_last and j == self.n_time_points -1):
                 names = []
                 for k, elt in enumerate(objects_names):
                     names.append(elt + "__tp_" + str(j) + objects_extensions[k])

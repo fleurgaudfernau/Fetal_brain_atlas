@@ -72,17 +72,16 @@ class Gradient():
         """
         logger.info("(Re)-initialize_step_size of {}".format(key))
 
-        if self.scale_initial_step_size:
-            value = gradient[key]
-            gradient_norm = math.sqrt(np.sum(value ** 2))
+        value = gradient[key]
+        gradient_norm = math.sqrt(np.sum(value ** 2))
 
-            if math.isinf(gradient_norm):
-                return 1e-10
+        if math.isinf(gradient_norm):
+            return 1e-10
 
-            if scale:
-                return self.initial_step_size / gradient_norm
-            
-            return 1 / gradient_norm
+        if scale:
+            return self.initial_step_size / gradient_norm
+        
+        return 1 / gradient_norm
 
     def initialize_momenta_step(self, steps, gradient, optimizer, iteration):
         if self.momenta.ctf_is_happening(): #gradient[haar_coef_momenta] = [[haar_d1, haar_d2, haar_d3] for each subj]

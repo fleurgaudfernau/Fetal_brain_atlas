@@ -7,15 +7,10 @@ from ...core import GpuMode
 import logging
 logger = logging.getLogger(__name__)
 
-
 def get_torch_scalar_type(dtype):
-    return {'float16': torch.HalfTensor,
-            'torch.float16': torch.HalfTensor,
-            'float32': torch.FloatTensor,
-            'torch.float32': torch.FloatTensor,
-            'float64': torch.DoubleTensor,
-            'torch.float64': torch.DoubleTensor}[dtype]
-
+    return {'float16': torch.HalfTensor, 'torch.float16': torch.HalfTensor,
+            'float32': torch.FloatTensor, 'torch.float32': torch.FloatTensor,
+            'float64': torch.DoubleTensor, 'torch.float64': torch.DoubleTensor}[dtype]
 
 def get_torch_integer_type(dtype):
     """
@@ -23,52 +18,27 @@ def get_torch_integer_type(dtype):
     'float32' is forced to torch LongTensors because of the following error: "RuntimeError: tensors used as indices must be long or byte tensors"
     """
 
-    return {'uint8': torch.ByteTensor,
-            'torch.uint8': torch.ByteTensor,
-            'int8': torch.CharTensor,
-            'torch.int8': torch.CharTensor,
-            'float16': torch.ShortTensor,
-            'torch.float16': torch.ShortTensor,
-            'float32': torch.LongTensor,        # IntTensor
-            'torch.float32': torch.LongTensor,  # IntTensor
-            'float64': torch.LongTensor,
-            'torch.float64': torch.LongTensor}[dtype]
-
+    return {'uint8': torch.ByteTensor, 'torch.uint8': torch.ByteTensor,
+            'int8': torch.CharTensor, 'torch.int8': torch.CharTensor,
+            'float16': torch.ShortTensor, 'torch.float16': torch.ShortTensor,
+            'float32': torch.LongTensor, 'torch.float32': torch.LongTensor,  # IntTensor
+            'float64': torch.LongTensor, 'torch.float64': torch.LongTensor}[dtype]
 
 def get_torch_dtype(t):
-    """
-    32-bit floating point	torch.float32 or torch.float	torch.FloatTensor	torch.cuda.FloatTensor
-    64-bit floating point	torch.float64 or torch.double	torch.DoubleTensor	torch.cuda.DoubleTensor
-    16-bit floating point	torch.float16 or torch.half	torch.HalfTensor	torch.cuda.HalfTensor
-    8-bit integer (unsigned)	torch.uint8	torch.ByteTensor	torch.cuda.ByteTensor
-    8-bit integer (signed)	torch.int8	torch.CharTensor	torch.cuda.CharTensor
-    16-bit integer (signed)	torch.int16 or torch.short	torch.ShortTensor	torch.cuda.ShortTensor
-    32-bit integer (signed)	torch.int32 or torch.int	torch.IntTensor	torch.cuda.IntTensor
-    64-bit integer (signed)	torch.int64 or torch.long	torch.LongTensor	torch.cuda.LongTensor
+    dtype_map = {  'float32': torch.float32, np.float32: torch.float32,
+                    'float64': torch.float64, np.float64: torch.float64,
+                    'float16': torch.float16, np.float16: torch.float16,
+                    'uint8': torch.uint8, np.uint8: torch.uint8,
+                    'int8': torch.int8, np.int8: torch.int8,
+                    'int16': torch.int16, np.int16: torch.int16,
+                    'int32': torch.int32, np.int32: torch.int32,
+                    'int64': torch.int64, np.int64: torch.int64 }
 
-    cf: https://pytorch.org/docs/stable/tensors.html
-    :param t:
-    :return:
-    """
-    if t in ['float32', np.float32]:
-        return torch.float32
-    if t in ['float64', np.float64]:
-        return torch.float64
-    if t in ['float16', np.float16]:
-        return torch.float16
-    if t in ['uint8', np.uint8]:
-        return torch.uint8
-    if t in ['int8', np.int8]:
-        return torch.int8
-    if t in ['int16', np.int16]:
-        return torch.int16
-    if t in ['int32', np.int32]:
-        return torch.int32
-    if t in ['int64', np.int64]:
-        return torch.int64
+    if dtype_map.get(t) is not None:
+        return dtype_map.get(t)
 
     assert t in [torch.float32, torch.float64, torch.float16, torch.uint8,
-                 torch.int8, torch.int16, torch.int32, torch.int64], 'dtype=' + t + ' was not recognized'
+                 torch.int8, torch.int16, torch.int32, torch.int64], f'dtype={t} was not recognized'
     return t
 
 def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = None):
@@ -140,7 +110,6 @@ def convert_deformable_object_to_torch(deformable_object, device='cpu'):
 
     return deformable_object
 
-
 def get_device_from_string(device):
 
     if isinstance(device, str) and device.startswith('cuda') and ':' in device:
@@ -157,7 +126,7 @@ def get_device_from_string(device):
     return torch_device, device_id
 
 
-def get_best_device(gpu_mode=GpuMode.AUTO):
+def get_best_device(gpu_mode=GpuMode.FULL):
     """
     :return:    Best device. can be: 'cpu', 'cuda:0', 'cuda:1' ...
     """
@@ -190,52 +159,7 @@ def get_best_device(gpu_mode=GpuMode.AUTO):
         device_id = process_id % torch.cuda.device_count()
         device = 'cuda:' + str(device_id)
 
-        # for device_id in range(torch.cuda.device_count()):
-        #     # pool_worker_id = device_id
-        #     if process_id < process_per_gpu:
-        #         device = 'cuda:' + str(device_id)
-        #         break
-        #         # if mp.current_process().name == 'PoolWorker-' + str(pool_worker_id):
-        #         #     device = 'cuda:' + str(device_id)
-        #         #     break
-
-        # try:
-        #     device_id = GPUtil.getFirstAvailable(order='first', maxMemory=0.5, attempts=1, verbose=False)[0]
-        #     device = 'cuda:' + str(device_id)
-        #
-        #     # for device_id in range(torch.cuda.device_count()):
-        #     #     pool_worker_id = device_id
-        #     #     if mp.current_process().name == 'PoolWorker-' + str(pool_worker_id):
-        #     #         device = 'cuda:' + str(device_id)
-        #     #         break
-        #
-        # except RuntimeError as e:
-        #     # if no device is available
-        #     logger.info(e)
-        #     pass
-    # elif torch.cuda.is_available() and mp.current_process().name == 'MainProcess':
-    #     device_id = 0
-    #     device = 'cuda:' + str(device_id)
-    #     device_id = -1
-    #     device = 'cpu'
-
-    # logger.info("get_best_device is " + device)
     return device, device_id
-    # return 'cuda:1', 1
-
-
-def adni_extract_from_file_name(file_name):
-    import re
-    # file_name = 'sub-ADNI002S0729_ses-M06.vtk'
-    m = re.search('\Asub-ADNI(.+?)_ses-M(.+?).vtk', file_name)
-    if m:
-        assert len(m.groups()) == 2
-        subject_id = m.group(1)
-        visit_age = m.group(2)
-        return subject_id, visit_age
-    else:
-        raise LookupError('could not extract id and age from ' + file_name)
-
 
 def longitudinal_extract_from_file_name(file_name):
     import re

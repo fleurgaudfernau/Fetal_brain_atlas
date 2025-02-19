@@ -37,7 +37,7 @@ def norm_squared(cp, momenta, deformation_kernel_width):
                                                 kernel_width=deformation_kernel_width)
     
     exponential = Exponential(kernel=deformation_kernel,
-                            number_of_time_points=default.number_of_time_points,
+                            n_time_points=default.number_of_time_points,
                             use_rk2_for_shoot=default.use_rk2_for_shoot, 
                             use_rk2_for_flow=default.use_rk2_for_flow,
                             transport_cp = False) 
@@ -72,7 +72,7 @@ def scalar_product(cp, momenta, momenta2, deformation_kernel_width):
     
     exponential = Exponential(dense_mode=default.dense_mode,
                             kernel=deformation_kernel,
-                            number_of_time_points=default.number_of_time_points,
+                            n_time_points=default.number_of_time_points,
                             use_rk2_for_shoot=default.use_rk2_for_shoot, 
                             use_rk2_for_flow=default.use_rk2_for_flow,
                             transport_cp = False) 

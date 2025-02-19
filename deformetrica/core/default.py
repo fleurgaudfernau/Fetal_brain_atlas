@@ -12,7 +12,7 @@ tensor_scalar_type = utilities.get_torch_scalar_type('float32')
 # deformation_kernel = kernel_factory.factory(kernel_factory.Type.TORCH, kernel_width=1.)
 deformation_kernel = None
 
-output_dir = os.path.join(os.getcwd(), 'output')
+output_dir = os.path.join(os.getcwd(), 'Output')
 preprocessing_dir = os.path.join(os.getcwd(), 'preprocessing')
 state_file = None
 load_state_file = False
@@ -52,12 +52,9 @@ line_search_expand = 1.5
 convergence_tolerance = 1e-4
 noise_variance_prior_normalized_dof = 0.01
 memory_length = 10
-scale_initial_step_size = True #before 27/01 TRUE
 downsampling_factor = 1
-gamma = 1
 
 gpu_mode = GpuMode.KERNEL
-# use_cuda = True if torch.cuda.is_available() else False
 _cuda_is_used = False   # true if at least one operation will use CUDA.
 _keops_is_used = False  # true if at least one keops kernel operation will take place.
 
@@ -65,36 +62,31 @@ freeze_template = False
 multiscale_momenta = False
 multiscale_images = False
 multiscale_meshes = False
-naive = True
 multiscale_strategy = "stairs"
 freeze_momenta = False
 freeze_modulation_matrix = False
 freeze_reference_time = False
 freeze_noise_variance = False
-freeze_principal_directions = False
 freeze_rupture_time = True
 
 # For metric learning atlas
-freeze_metric_parameters = False
 freeze_p0 = False
 freeze_v0 = False
 initial_control_points = None
 initial_momenta = None
-initial_principal_directions = None
 initial_control_points_to_transport = None
 initial_momenta_to_transport = None
-initial_latent_positions = None
 initial_modulation_matrix = None
 initial_sources = None
 initial_sources_mean = None
 initial_sources_std = None
 
-# momenta_proposal_std = 0.01
-# sources_proposal_std = 0.01
+momenta_proposal_std = 0.01
+sources_proposal_std = 0.01
 
 #modify fleur
-momenta_proposal_std = 1
-sources_proposal_std = 1
+#momenta_proposal_std = 1
+#sources_proposal_std = 1
 
 kernel_regression = False
 
