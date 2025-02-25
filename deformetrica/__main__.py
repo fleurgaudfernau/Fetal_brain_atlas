@@ -80,46 +80,45 @@ def main():
     dataset_spec = dfca.io.get_dataset_specifications(xml)
     estimator_options = dfca.io.get_estimator_options(xml)
     model_options = dfca.io.get_model_options(xml)
+
+    logger.info("*******************************************************************")
+    logger.info(">>> Dataset informations: ")
+    logger.info("       Number of subjects: {}".format(dataset_spec["n_subjects"]))
+    logger.info("       Total number of observations: {}".format(dataset_spec["n_observations"]))
+    logger.info("       Number of objects: {}".format(dataset_spec["n_objects"]))
     
-    if xml.model_type == 'Registration'.lower():
+    if xml.model_type in ['Registration'.lower(), 'DeformableTemplate'.lower(), 'Regression'.lower(),
+                        'PiecewiseRegression'.lower(), 'KernelRegression'.lower(),
+                        'InitializedBayesianGeodesicRegression'.lower()]:
+
         assert args.command == 'estimate', \
             'The estimation of a registration model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
+            '"deformetrica estimate" (and not {}.'.format(args.command)
+
+    if xml.model_type == 'Registration'.lower():
         deformetrica.estimate_registration(xml.template_specifications, dataset_spec,
                                             model_options, estimator_options)
         
     elif xml.model_type == 'DeformableTemplate'.lower():
-        assert args.command == 'estimate', \
-            'The estimation of a deformable template should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.estimate_deformable_template(xml.template_specifications, dataset_spec,
                                                     model_options, estimator_options)        	
 
     elif xml.model_type == 'Regression'.lower():
-        assert args.command == 'estimate', \
-            'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.estimate_geodesic_regression(xml.template_specifications, dataset_spec,
                                                     model_options, estimator_options)
     
     elif xml.model_type == 'KernelRegression'.lower(): # ajout fg
-        assert args.command == 'estimate', \
-            'The estimation of a kernel regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.estimate_kernel_regression(age, xml.template_specifications, dataset_spec,
                                                 model_options, estimator_options)
     
     elif xml.model_type == 'PiecewiseRegression'.lower(): #ajout fg
-        assert args.command == 'estimate', \
-            'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
         deformetrica.estimate_piecewise_geodesic_regression(xml.template_specifications, dataset_spec,
                                                             model_options, estimator_options)
     
     elif xml.model_type == 'BayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
+            '"deformetrica estimate" (and not {}.'.format(args.command)
         if args.command == 'estimate':
             deformetrica.estimate_piecewise_bayesian_geodesic_regression(
                 xml.template_specifications, dataset_spec,  model_options, estimator_options)
@@ -130,27 +129,27 @@ def main():
     elif xml.model_type == 'InitializeBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
+            '"deformetrica estimate" (and not {}.'.format(args.command)
         deformetrica.initialize_piecewise_bayesian_geodesic_regression(
                             xml.template_specifications, dataset_spec,  model_options, estimator_options)
     
     elif xml.model_type == 'InitializedBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not "%s").' % args.command
+            '"deformetrica estimate" (and not {}.'.format(args.command)
         deformetrica.initialized_piecewise_bayesian_geodesic_regression(
                             xml.template_specifications, dataset_spec, model_options, estimator_options)
                         
     elif xml.model_type == 'Shooting'.lower():
         assert args.command == 'compute', \
             'The computation of a shooting task should be launched with the command: ' \
-            '"deformetrica compute" (and not "%s").' % args.command
+            '"deformetrica compute" (and not {}.'.format(args.command)
         deformetrica.compute_shooting(xml.template_specifications, model_options)
 
     elif xml.model_type == 'ParallelTransport'.lower():
         assert args.command == 'compute', \
             'The computation of a parallel transport task should be launched with the command: ' \
-            '"deformetrica compute" (and not "%s").' % args.command
+            '"deformetrica compute" (and not {}.'.format(args.command)
         deformetrica.compute_parallel_transport(xml.template_specifications, model_options)
 
     else:

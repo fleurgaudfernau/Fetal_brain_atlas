@@ -3,9 +3,10 @@ import logging
 import numpy as np
 import os
 from ...in_out.array_readers_and_writers import write_2D_list
+from ...core.estimator_tools.multiscale_meshes import MultiscaleMeshes
+from ...core.model_tools.deformations.exponential_tools import norm, scalar_product, current_distance
 from ...support.utilities.plot_tools import scatter_plot, plot_value_evolution, plot_sources
-from ...support.utilities.tools import ratio, change, norm, scalar_product, current_distance
-#from ...core.models.model_functions import gaussian_kernel
+from ...support.utilities.tools import ratio, change
 from .curvature_functions import Curvature
 import os.path as op
 from copy import deepcopy
@@ -93,9 +94,9 @@ class Residuals():
         self.set_condition("Rupture_time", self.n_components > 1 and not self.model.freeze_rupture_time)
         self.set_condition("Template_changes")
         self.set_condition("Template_distance", ("Atlas" in self.name))
-        self.set_condition("Modulation_matrix_distance", (self.name == "BayesianGeodesicRegression"))
-        self.set_condition("Modulation_matrix_changes",(self.name == "BayesianGeodesicRegression"))
-        self.set_condition("Modulation_matrix_norm", (self.name == "BayesianGeodesicRegression"))
+        self.set_condition("Modulation_matrix_distance", self.name == "BayesianGeodesicRegression")
+        self.set_condition("Modulation_matrix_changes",self.name == "BayesianGeodesicRegression")
+        self.set_condition("Modulation_matrix_norm", self.name == "BayesianGeodesicRegression")
 
         # Residuals computations
         self.templates = []

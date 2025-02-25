@@ -13,7 +13,7 @@ from ...core.models.model_functions import initialize_control_points, initialize
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata, compute_noise_dimension
-from ...support.utilities import get_best_device, move_data
+from ...support.utilities import get_best_device, move_data, detach
 from ...support.probability_distributions.multi_scalar_inverse_wishart_distribution import \
     MultiScalarInverseWishartDistribution
 from ...support.probability_distributions.multi_scalar_normal_distribution import MultiScalarNormalDistribution
@@ -70,12 +70,12 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
     
         
         (object_list, self.objects_extension, self.objects_noise_variance, 
-        self.objects_attachment) = create_template_metadata(template_specifications)
+        self.attachment) = create_template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
         self.dimension = self.template.dimension 
 
-        self.objects_noise_dimension = compute_noise_dimension(self.template, self.objects_attachment)
+        self.objects_noise_dimension = compute_noise_dimension(self.template, self.attachment)
         self.number_of_objects = len(self.template.object_list)
         
         self.deformation_kernel_width = deformation_kernel_width
@@ -112,7 +112,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                             nb_components = self.nb_components, template_tR = None,
                             transport_cp = False)
         cp = move_data(self.control_points, device=self.device)
-        self.piecewise_geodesic.set_control_points_tR(cp)
+        self.piecewise_geodesic.set_cp_tR(cp)
         self.piecewise_geodesic_is_modified = True
         
         # Noise variance.
@@ -172,7 +172,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
             residuals_per_object = np.zeros((self.number_of_objects,))
             for j in range(self.number_of_objects):
-                residuals_per_object[j] = np.sum([r[j].detach().cpu().numpy() for r in residuals])
+                residuals_per_object[j] = np.sum([detach(r[j]) for r in residuals])
             
             for k, scale_std in enumerate(self.objects_noise_variance_prior_scale_std):
                 if scale_std is None:
@@ -338,10 +338,10 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
             gradient = {key: value.data.cpu().numpy() for key, value in gradient.items()}
 
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
+            return detach(attachment), detach(regularity), gradient
 
         else:
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy()
+            return detach(attachment), detach(regularity)
 
     # Compute the functional. Numpy input/outputs.
     def compute_log_likelihood(self, dataset, individual_RER, mode='complete', with_grad=False):
@@ -442,7 +442,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
             for time, target in zip(target_times[i], target_objects[i]):
                 deformed_points = self.piecewise_geodesic.get_template_points(time, sources[i], device=self.device)
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-                residual = self.objects_attachment.compute_distances(deformed_data, self.template, target)
+                residual = self.attachment.compute_distances(deformed_data, self.template, target)
                 residuals_i.append(residual.cpu())
             residuals.append(residuals_i)
         t2= perf_counter()
@@ -535,9 +535,9 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
         if dist in ["current", "varifold"]:
-            return self.objects_attachment.compute_vtk_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
+            return self.attachment.compute_vtk_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
         elif dist in ["ssim", "mse"]:
-            return self.objects_attachment.compute_ssim_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
+            return self.attachment.compute_ssim_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
         template_data, _, _ = self.prepare_geodesic(dataset)
@@ -652,17 +652,15 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         self.piecewise_geodesic_is_modified = False
 
-    def write(self, dataset, individual_RER, output_dir, iteration, 
-                write_adjoint_parameters=False, write_all = True):
-        self._write_model_predictions(output_dir, individual_RER, dataset, write_adjoint_parameters, write_all)
+    def write(self, dataset, individual_RER, output_dir, iteration, write_all = True):
+        self._write_model_predictions(output_dir, individual_RER, dataset, write_all)
         self._write_model_parameters(output_dir, iteration, write_all)
 
         #residuals = self.compute_residuals(dataset, individual_RER)
 
         #write_2D_list(residuals, output_dir, self.name + "__EstimatedParameters__Residuals.txt")
 
-    def _write_model_predictions(self, output_dir, individual_RER, dataset=None, 
-                                 write_adjoint_parameters=False, write_all = True):
+    def _write_model_predictions(self, output_dir, individual_RER, dataset=None, write_all = True):
 
         # Initialize ---------------------------------------------------------------------------------------------------
         template_data, target_times, _ = self.prepare_geodesic(dataset) 
@@ -672,8 +670,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         # write Geometric modes + optionally writes flow of A0, 
         # + call geodesic.write (trajectory)
         self.piecewise_geodesic.write(self.name, self.objects_extension, self.template, template_data,
-                            output_dir, write_adjoint_parameters = False, write_exponential_flow = True,
-                            write_all = write_all)
+                            output_dir, write_exponential_flow = True, write_all = write_all)
 
         # Write sources
         name = '{}__EstimatedParameters__Sources.txt'.format(self.name) 

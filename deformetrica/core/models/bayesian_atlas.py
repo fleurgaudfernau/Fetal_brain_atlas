@@ -11,7 +11,7 @@ from ...core.models.model_functions import initialize_momenta, initialize_covari
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata, compute_noise_dimension
-from ...support.utilities import get_best_device, move_data
+from ...support.utilities import get_best_device, move_data, detach
 from ...support.probability_distributions.inverse_wishart_distribution import InverseWishartDistribution
 from ...support.probability_distributions.multi_scalar_inverse_wishart_distribution import \
     MultiScalarInverseWishartDistribution
@@ -134,7 +134,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         for k, scale_std in enumerate(self.objects_noise_variance_prior_scale_std):
             if scale_std is None:
                 self.priors['noise_variance'].scale_scalars.append(
-                    0.01 * residuals_per_object[k].detach().cpu().numpy()
+                                    0.01 * detach(residuals_per_object[k])
                     / self.priors['noise_variance'].degrees_of_freedom[k])
             else:
                 self.priors['noise_variance'].scale_scalars.append(scale_std ** 2)
@@ -288,24 +288,26 @@ class BayesianAtlas(AbstractStatisticalModel):
             gradient = {}
             if not self.freeze_template:
                 if 'landmark_points' in template_data.keys():
-                    gradient['landmark_points'] = template_points['landmark_points'].grad.detach().cpu().numpy()
+                    gradient['landmark_points'] = template_points['landmark_points'].grad
                 if 'image_intensities' in template_data.keys():
-                    gradient['image_intensities'] = template_data['image_intensities'].grad.detach().cpu().numpy()
+                    gradient['image_intensities'] = template_data['image_intensities'].grad
 
             if mode == 'complete':
-                gradient['momenta'] = momenta.grad.detach().cpu().numpy()
+                gradient['momenta'] = momenta.grad
+
+            gradient = {key: detach(value) for key, value in gradient.items()}   
 
             # Return as appropriate.
             if mode in ['complete', 'class2']:
-                return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
+                return detach(attachment), detach(regularity), gradient
             elif mode == 'model':
-                return attachments.detach().cpu().numpy(), gradient
+                return detach(attachments), gradient
 
         else:
             if mode in ['complete', 'class2']:
-                return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy()
+                return detach(attachments), detach(regularity)
             elif mode == 'model':
-                return attachments.detach().cpu().numpy()
+                return detach(attachments)
 
     def compute_sufficient_statistics(self, dataset, individual_RER, residuals=None, model_terms=None):
         """
@@ -340,7 +342,7 @@ class BayesianAtlas(AbstractStatisticalModel):
             residuals = [torch.sum(residuals_i) for residuals_i in residuals]
 
         for i in range(len(targets)):
-            sufficient_statistics['S2'] += residuals[i].detach().cpu().numpy()
+            sufficient_statistics['S2'] += detach(residuals[i])
 
         return sufficient_statistics
 
@@ -568,7 +570,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Write residuals.
         if write_residuals:
-            residuals_list = [[residuals_i_k.detach().cpu().numpy() for residuals_i_k in residuals_i]
+            residuals_list = [[detach(residuals_i_k) for residuals_i_k in residuals_i]
                               for residuals_i in residuals]
             write_2D_list(residuals_list, output_dir, self.name + "__EstimatedParameters__Residuals.txt")
 
@@ -605,7 +607,7 @@ class BayesianAtlas(AbstractStatisticalModel):
                     name = self.name + '__Reconstruction__' + object_name + '__subject_' + subject_id + object_extension
                     names.append(name)
                 self.template.write(output_dir, names,
-                                {key: value.detach().cpu().numpy() for key, value in deformed_data.items()})
+                                {key: detach(value) for key, value in deformed_data.items()})
 
         return residuals
 

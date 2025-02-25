@@ -7,6 +7,23 @@ from ...core import GpuMode
 import logging
 logger = logging.getLogger(__name__)
 
+#assert_same_size(**kwargs):
+
+def reverse_if(array, condition):
+    return array[::(-1 if condition else 1)]
+
+def interpolate(weight_L, weight_R, liste, index):
+    return weight_L * liste[index - 1] + weight_R * liste[index]
+
+def assert_same_device(**kwargs):
+    devices = {tensor.device for tensor in kwargs.values()}
+    if len(devices) > 1:
+        raise AssertionError(f"Tensors are on different devices:\n" +
+                             "\n".join(f"- '{name}': {tensor.device}"
+                                       for name, tensor in kwargs.items()))
+def detach(array):
+    return array.detach().cpu().numpy()
+
 def get_torch_scalar_type(dtype):
     return {'float16': torch.HalfTensor, 'torch.float16': torch.HalfTensor,
             'float32': torch.FloatTensor, 'torch.float32': torch.FloatTensor,
@@ -59,13 +76,15 @@ def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = N
             dtype = get_torch_scalar_type("float32")    
     
     #dtype = get_torch_dtype(data.dtype)
-
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data).type(dtype)
     elif isinstance(data, list):
         data = torch.tensor(data, dtype=dtype, device=device) #dtype: torch.tensorType
+    elif isinstance(data, (np.float64, np.float32, float)): #ajout fg
+        data = torch.from_numpy(np.array([data])).type(dtype) #ajout fg
+        #data = torch.tensor([data], dtype=dtype, device=device)
 
-    assert isinstance(data, torch.Tensor), 'Expecting Torch.Tensor instance not ' + str(type(data))
+    assert isinstance(data, torch.Tensor), 'Expecting Torch.Tensor instance not {}'.format(type(data))
 
     # move data to device. Note: tensor.to() does not move if data is already on target device
     data = data.type(dtype).to(device=device)
@@ -132,6 +151,7 @@ def get_best_device(gpu_mode=GpuMode.FULL):
     """
     assert gpu_mode is not None
     assert isinstance(gpu_mode, GpuMode)
+    
     use_cuda = False
     if gpu_mode in [GpuMode.AUTO]:
         # TODO this should be more clever

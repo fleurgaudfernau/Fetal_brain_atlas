@@ -16,7 +16,6 @@ from scipy.spatial import KDTree
 from scipy.spatial import ConvexHull
 from ....support import kernels as kernel_factory
 
-
 import logging
 logger = logging.getLogger(__name__)
 

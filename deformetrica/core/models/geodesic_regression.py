@@ -8,7 +8,7 @@ from ...core.models.model_functions import initialize_control_points, initialize
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata
-from ...support.utilities import get_best_device, move_data
+from ...support.utilities import get_best_device, move_data, detach
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +32,12 @@ class GeodesicRegression(AbstractStatisticalModel):
                  initial_control_points=default.initial_control_points,
                  initial_momenta=default.initial_momenta,
 
-                 write_adjoint_parameters = False,
                  new_bounding_box = None,
 
                  **kwargs):
 
         AbstractStatisticalModel.__init__(self, name='GeodesicRegression')
         
-        self.write_adjoint_parameters = write_adjoint_parameters
-
         # Declare model structure.
         self.fixed_effects['template_data'] = None
         self.fixed_effects['momenta'] = None
@@ -51,8 +48,8 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.t0 = t0
        
         # Template.
-        (object_list, self.objects_extension, self.objects_noise_variance, self.objects_attachment) = \
-                                                        create_template_metadata(template_specifications)
+        (object_list, self.objects_extension, self.objects_noise_variance, self.attachment) = \
+                                                create_template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
         self.dimension = self.template.dimension
@@ -82,7 +79,7 @@ class GeodesicRegression(AbstractStatisticalModel):
                                 t0=t0, concentration_of_time_points=concentration_of_time_points)
         
         control_points = move_data(self.control_points, device=self.device)
-        self.geodesic.set_control_points_t0(control_points)
+        self.geodesic.set_cp_t0(control_points)
         
     def initialize_noise_variance(self, dataset):
         if np.min(self.objects_noise_variance) < 0: # only if not provided by user
@@ -205,7 +202,7 @@ class GeodesicRegression(AbstractStatisticalModel):
             deformed_points = self.geodesic.get_template_points(time)
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
             
-            att = self.objects_attachment.compute_weighted_distance(
+            att = self.attachment.compute_weighted_distance(
                         deformed_data, self.template, obj, self.objects_noise_variance)
             attachment -= att
             
@@ -227,9 +224,9 @@ class GeodesicRegression(AbstractStatisticalModel):
         obj = dataset.deformable_objects[0][j]
         
         if dist in ["current", "varifold"]:
-            return self.objects_attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
+            return self.attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
         elif dist in ["ssim", "mse"]:
-            return self.objects_attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
+            return self.attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
         template_data, _, _ = self.prepare_geodesic(dataset)
@@ -274,7 +271,7 @@ class GeodesicRegression(AbstractStatisticalModel):
             obj1.curvature_metrics(curvature)
         
         return self.template
-        
+
     def _compute_attachment_and_regularity(self, dataset, template_data, template_points, 
                                             momenta):
         """
@@ -378,11 +375,11 @@ class GeodesicRegression(AbstractStatisticalModel):
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
             if not option:
-                #residuals.append(self.objects_attachment.compute_distances(deformed_data, self.template, target).cpu().numpy())
-                residuals.append(self.objects_attachment.compute_weighted_distance(
+                #residuals.append(self.attachment.compute_distances(deformed_data, self.template, target).cpu().numpy())
+                residuals.append(self.attachment.compute_weighted_distance(
                 deformed_data, self.template, target, self.objects_noise_variance).cpu().numpy())
             else:
-                residuals.append(self.objects_attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
+                residuals.append(self.attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
 
         return residuals
     
@@ -398,7 +395,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Write --------------------------------------------------------------------------------------------------------
         # Geodesic flow.
         self.geodesic.write(self.name, self.objects_extension, self.template, template_data,
-                            output_dir, write_adjoint_parameters = self.write_adjoint_parameters, write_all = write_all)
+                            output_dir, write_all = write_all)
 
         # Model predictions.
         if dataset is not None and not write_all:

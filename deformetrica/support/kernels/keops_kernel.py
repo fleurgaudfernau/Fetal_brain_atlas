@@ -4,7 +4,6 @@ import numpy as np
 from ...support.kernels import AbstractKernel
 from ...core import default, GpuMode
 from pykeops.torch import Genred
-import numpy as np
 
 import logging
 logger = logging.getLogger(__name__)
@@ -184,7 +183,6 @@ class KeopsKernel(AbstractKernel):
 
     def convolve_gradient(self, px, x, y=None, py=None, mode='gaussian'):
         
-        
         if y is None:
             y = x
         if py is None:
@@ -208,6 +206,13 @@ class KeopsKernel(AbstractKernel):
         
         return res.cpu() if self.gpu_mode is GpuMode.KERNEL else res
     
+    def convolve_image_points(self, image_points, control_points, momenta, mode="gaussian"):
+        dimension = control_points.size(1)
+        image_shape = image_points.size()
+        
+        return self.convolve(image_points.contiguous().view(-1, dimension), 
+                                control_points, momenta, mode).view(image_shape)
+        
     def update_width(self, new_width):
         """
         Ajout fg

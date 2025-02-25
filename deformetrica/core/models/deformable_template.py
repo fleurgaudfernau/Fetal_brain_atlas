@@ -20,7 +20,7 @@ from ...core.models.model_functions import initialize_control_points, initialize
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata
-from ...support.utilities import get_best_device, move_data
+from ...support.utilities import get_best_device, move_data, detach, assert_same_device
 
 warnings.filterwarnings("ignore") #fg
 logger = logging.getLogger(__name__)
@@ -69,12 +69,11 @@ class DeformableTemplate(AbstractStatisticalModel):
         self.deformation_kernel_width = deformation_kernel_width
 
         # Template.
-        (object_list, self.objects_extension, self.objects_noise_variance, self.objects_attachment) = \
+        (object_list, self.objects_extension, self.objects_noise_variance, self.attachment) = \
                                                 create_template_metadata(template_specifications)
 
         self.template = DeformableMultiObject(object_list)
         self.number_of_objects = len(object_list)
-
         self.dimension = self.template.dimension 
         
         # Deformation.
@@ -110,7 +109,7 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def initialize_noise_variance(self, dataset):
         if np.min(self.objects_noise_variance) < 0:
-            template_data, template_points, momenta = self._fixed_effects_to_torch_tensors(device=self.device)
+            template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
             targets = dataset.deformable_objects
             targets = [target[0] for target in targets]
 
@@ -122,12 +121,12 @@ class DeformableTemplate(AbstractStatisticalModel):
                 self.exponential.update()
                 deformed_points = self.exponential.get_template_points()
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-                residuals_torch.append(self.objects_attachment.compute_distances(
-                    deformed_data, self.template, target))
+                residuals_torch.append(self.attachment.compute_distances(
+                                        deformed_data, self.template, target))
 
             residuals = np.zeros((self.number_of_objects,))
             for i in range(len(residuals_torch)):
-                residuals += residuals_torch[i].detach().cpu().numpy()
+                residuals += detach(residuals_torch[i])
 
             # Initialize the noise variance hyper-parameter as a 1/100th of the initial residual.
             for k in range(self.number_of_objects):
@@ -183,7 +182,7 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def setup_multiprocess_pool(self, dataset):
         self._setup_multiprocess_pool(initargs=([target[0] for target in dataset.deformable_objects],
-                                                self.objects_attachment,
+                                                self.attachment,
                                                 self.objects_noise_variance,
                                                 self.freeze_template, 
                                                 self.freeze_momenta, 
@@ -225,11 +224,8 @@ class DeformableTemplate(AbstractStatisticalModel):
         attachment = -objects_attachment.compute_weighted_distance(deformed_data, template, deformable_objects,
                                                                     objects_noise_variance)
         regularity = -exponential.get_norm_squared()
-
-        assert torch.device(device) == attachment.device == regularity.device,\
-                'Attachment and regularity tensors must be on same device '+ \
-                'device={}, attachment.device={}, regularity.device={}'\
-                .format(device, attachment.device, regularity.device)
+        
+        assert_same_device(attachment = attachment, regularity = regularity)
         
         return attachment, regularity
          
@@ -252,11 +248,11 @@ class DeformableTemplate(AbstractStatisticalModel):
             if not freeze_momenta:
                 gradient['momenta'] = momenta.grad
 
-            gradient = {key: value.detach.cpu().numpy() for key, value in gradient.items()}                                                         
-            res = attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
+            gradient = {key: detach(value) for key, value in gradient.items()}                                                         
+            res = detach(attachment), detach(regularity), gradient
 
         else:
-            res = attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy()
+            res = detach(attachment), detach(regularity)
 
         return res
     
@@ -272,7 +268,7 @@ class DeformableTemplate(AbstractStatisticalModel):
         for i, target in targets:
             new_attachment, new_regularity = DeformableTemplate._deform_and_compute_attachment_and_regularity(
                                             self.exponential, template_points, momenta[i],
-                                            self.template, template_data, self.objects_attachment,
+                                            self.template, template_data, self.attachment,
                                             target, self.objects_noise_variance, self.device)
             self.current_residuals = new_attachment.cpu()
 
@@ -381,8 +377,8 @@ class DeformableTemplate(AbstractStatisticalModel):
             deformed_points = self.exponential.get_template_points() #template points
             deformed_data = self.template.get_deformed_data(deformed_points, template_data) #template intensities after deformation
 
-            att = self.objects_attachment.compute_weighted_distance(deformed_data, self.template, target[0],
-                                                                        self.objects_noise_variance)
+            att = self.attachment.compute_weighted_distance(deformed_data, self.template, target[0],
+                                                            self.objects_noise_variance)
             
             residuals.append(att)
         

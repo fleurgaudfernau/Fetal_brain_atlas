@@ -4,7 +4,8 @@ from ....core import default
 from ....core.model_tools.deformations.exponential import Exponential
 from ....core.model_tools.deformations.piecewise_geodesic import PiecewiseGeodesic
 from ....in_out.array_readers_and_writers import *
-from ....support import utilities
+#from ....support import utilities
+from ....support.utilities import detach, interpolate
 
 
 class SpatialPiecewiseGeodesic:
@@ -30,9 +31,9 @@ class SpatialPiecewiseGeodesic:
             concentration_of_time_points=concentration_of_time_points, template_tR=template_tR,
             nb_components=nb_components, num_components=num_components, transport_cp = transport_cp)
 
-        self.modulation_matrix_tR = None
-        self.projected_modulation_matrix_tR = None
-        self.projected_modulation_matrix_t = None
+        self.mod_matrix_tR = None
+        self.projected_mod_matrix_tR = None
+        self.projected_mod_matrix_t = None
         self.number_of_sources = None
         self.nb_components = nb_components
 
@@ -40,7 +41,7 @@ class SpatialPiecewiseGeodesic:
 
         self.times = None
         self.template_points_t = None
-        self.control_points_t = None
+        self.cp_t = None
 
     ####################################################################################################################
     ### Encapsulation methods:
@@ -68,8 +69,8 @@ class SpatialPiecewiseGeodesic:
     def set_template_points_tR(self, td):
         self.geodesic.set_template_points_tR(td)
 
-    def set_control_points_tR(self, cp):
-        self.geodesic.set_control_points_tR(cp)
+    def set_cp_tR(self, cp):
+        self.geodesic.set_cp_tR(cp)
         self.transport_is_modified = True
 
     def set_momenta_tR(self, mom):
@@ -78,7 +79,7 @@ class SpatialPiecewiseGeodesic:
         self.momenta_size = mom[0].size()
 
     def set_modulation_matrix_tR(self, mm):
-        self.modulation_matrix_tR = mm
+        self.mod_matrix_tR = mm
         self.number_of_sources = mm.size()[1]
         self.transport_is_modified = True
 
@@ -107,24 +108,30 @@ class SpatialPiecewiseGeodesic:
     def add_component(self):
         self.geodesic.add_component()
     
+    def get_exponential(l):
+        return self.geodesic.exponential[l]
+    
+    def exponential_initial_cp(l):
+        return self.get_exponential(l).get_initial_cp()
+
     def add_exponential(self, c):
         self.geodesic.add_exponential(c)
     
     def get_space_shift(self, s):
-        return self.projected_modulation_matrix_tR[:, s].contiguous().view(self.momenta_size)
-
+        return self.projected_mod_matrix_tR[:, s].contiguous().view(self.momenta_size)
+    
     # def get_template_points_exponential_parameters(self, time, sources):
 
     #     # Assert for coherent length of attribute lists.
-    #     assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.control_points_t) == len(
-    #         self.projected_modulation_matrix_t) == len(self.times)
+    #     assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.cp_t) == len(
+    #         self.projected_mod_matrix_t) == len(self.times)
 
     #     # Deal with the special case of a geodesic reduced to a single point.
     #     if len(self.times) == 1:
     #         logger.info('>> The spatiotemporal reference frame geodesic seems to be reduced to a single point.')
     #         initial_template_points = {key: value[0] for key, value in self.template_points_t.items()}
-    #         initial_control_points = self.control_points_t[0]
-    #         initial_momenta = torch.mm(self.projected_modulation_matrix_t[0], sources.unsqueeze(1)).view(
+    #         initial_control_points = self.cp_t[0]
+    #         initial_momenta = torch.mm(self.projected_mod_matrix_t[0], sources.unsqueeze(1)).view(
     #                                     self.momenta_size)
 
     #     # Standard case.
@@ -132,8 +139,8 @@ class SpatialPiecewiseGeodesic:
     #         index, weight_L, weight_R = self._get_interpolation_index_and_weights(time)
     #         template_points = {key: weight_L * value[index - 1] + weight_R * value[index]
     #                            for key, value in self.template_points_t.items()}
-    #         control_points = weight_L * self.control_points_t[index - 1] + weight_R * self.control_points_t[index]
-    #         modulation_matrix = weight_L * self.projected_modulation_matrix_t[index - 1] + weight_R * self.projected_modulation_matrix_t[index]
+    #         control_points = weight_L * self.cp_t[index - 1] + weight_R * self.cp_t[index]
+    #         modulation_matrix = weight_L * self.projected_mod_matrix_t[index - 1] + weight_R * self.projected_mod_matrix_t[index]
     #         space_shift = torch.mm(modulation_matrix, sources.unsqueeze(1)).view(self.momenta_size)
 
     #         initial_template_points = template_points
@@ -148,15 +155,15 @@ class SpatialPiecewiseGeodesic:
         """
 
         # Assert for coherent length of attribute lists.
-        assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.control_points_t) \
-               == len(self.projected_modulation_matrix_t) == len(self.times)
+        assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.cp_t) \
+               == len(self.projected_mod_matrix_t) == len(self.times)
 
         # Deal with the special case of a geodesic reduced to a single point.
         if len(self.times) == 1:
             logger.info('>> The spatiotemporal reference frame geodesic is reduced to a single point.')
-            self.exponential.set_initial_template_points({key: value[0] for key, value in self.template_points_t.items()})
-            self.exponential.set_initial_control_points(self.control_points_t[0])
-            self.exponential.set_initial_momenta(torch.mm(self.projected_modulation_matrix_t[0],
+            self.exponential.set_initial_template_points({k: v[0] for k, v in self.template_points_t.items()})
+            self.exponential.set_initial_cp(self.cp_t[0])
+            self.exponential.set_initial_momenta(torch.mm(self.projected_mod_matrix_t[0],
                                                           sources.unsqueeze(1)).view(self.momenta_size))
 
         # Standard case.
@@ -164,16 +171,15 @@ class SpatialPiecewiseGeodesic:
             # Get the template points at time t
             # get modulation matrix at time t -> time shift
             # Shoot the template points at time t with space shift using the Exp
-            index, weight_L, weight_R = self._get_interpolation_index_and_weights(time)
-            template_points = {k: weight_L * v[index - 1] + weight_R * v[index]
+            i, weight_L, weight_R = self._get_interpolation_index_and_weights(time)
+            template_points = {k: interpolate(weight_L, weight_R, v, i)
                                for k, v in self.template_points_t.items()}
-            control_points = weight_L * self.control_points_t[index - 1] + weight_R * self.control_points_t[index]
-            modulation_matrix = weight_L * self.projected_modulation_matrix_t[index - 1] \
-                                + weight_R * self.projected_modulation_matrix_t[index]
+            control_points = interpolate(weight_L, weight_R, self.cp_t, i)
+            modulation_matrix = interpolate(weight_L, weight_R, self.projected_mod_matrix_t, i)
             space_shift = torch.mm(modulation_matrix, sources.unsqueeze(1)).view(self.momenta_size)
 
             self.exponential.set_initial_template_points(template_points)
-            self.exponential.set_initial_control_points(control_points)
+            self.exponential.set_initial_cp(control_points)
             self.exponential.set_initial_momenta(space_shift)
 
         if device is not None:
@@ -183,12 +189,15 @@ class SpatialPiecewiseGeodesic:
         return self.exponential.get_template_points()
 
     def _get_interpolation_index_and_weights(self, time):
-        for index in range(1, len(self.times)):
-            if time - self.times[index] < 0: #before : time.data.cpu().numpy()
+        for i in range(1, len(self.times)):
+            if time - self.times[i] < 0: #before : time.data.cpu().numpy()
                 break
-        weight_L = (self.times[index] - time) / (self.times[index] - self.times[index - 1])
-        weight_R = (time - self.times[index - 1]) / (self.times[index] - self.times[index - 1])
-        return index, weight_L, weight_R
+
+        time_diff = self.times[i] - self.times[i - 1]
+        weight_L = (self.times[i] - time) / time_diff
+        weight_R = (time - self.times[i - 1]) / time_diff
+
+        return i, weight_L, weight_R
 
     ####################################################################################################################
     ### Public methods:
@@ -207,25 +216,24 @@ class SpatialPiecewiseGeodesic:
         # Convenient attributes for later use.
         self.times = self.geodesic.get_times()
         self.template_points_t = self.geodesic.get_template_points_trajectory()
-        self.control_points_t = self.geodesic.get_control_points_trajectory()
+        self.cp_t = self.geodesic.get_cp_trajectory()
 
         if self.transport_is_modified:
             # Projects the modulation_matrix_t0 attribute columns (orthogonal to geodesic momenta)
-            self._update_projected_modulation_matrix_tR(device=device)
+            self._update_projected_mod_matrix_tR(device=device)
 
-            # Initializes the projected_modulation_matrix_t attribute size.
-            self.projected_modulation_matrix_t = [torch.zeros(self.modulation_matrix_tR.size(), 
-                                                dtype=self.modulation_matrix_tR.dtype, device=device)
-                                                for _ in range(len(self.control_points_t))]
+            # Initializes the projected_mod_matrix_t attribute size.
+            self.projected_mod_matrix_t = [torch.zeros(self.mod_matrix_tR.size(), 
+                                                dtype=self.mod_matrix_tR.dtype, device=device)
+                                                for _ in range(len(self.cp_t))]
 
             # Transport each column, ignoring the tangential components.
             for s in range(self.number_of_sources):
                 #print("\nPT for source", s)
                 space_shift_tR = self.get_space_shift(s)
-                space_shift_t = self.geodesic.parallel_transport(space_shift_tR, 
-                                                                is_orthogonal=False)
+                space_shift_t = self.geodesic.parallel_transport(space_shift_tR, is_orthogonal=False)
 
-                # Set the result correctly in the projected_modulation_matrix_t attribute.
+                # Set the result correctly in the projected_mod_matrix_t attribute.
                 for t, space_shift in enumerate(space_shift_t):
                     try:
                         print("space_shift.view(-1) working ?")
@@ -233,39 +241,38 @@ class SpatialPiecewiseGeodesic:
                     except:
                         print("no: space_shift.contiguous().view(-1) working")
                         ss = space_shift.contiguous().view(-1)
-                    self.projected_modulation_matrix_t[t][:, s] = ss
+                    self.projected_mod_matrix_t[t][:, s] = ss
 
             self.transport_is_modified = False
 
             t3=time.perf_counter()
 
-        assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.control_points_t) \
-               == len(self.times) == len(self.projected_modulation_matrix_t), \
+        assert len(self.template_points_t[list(self.template_points_t.keys())[0]]) == len(self.cp_t) \
+               == len(self.times) == len(self.projected_mod_matrix_t), \
             "That's weird: len(self.template_points_t[list(self.template_points_t.keys())[0]]) = %d, " \
-            "len(self.control_points_t) = %d, len(self.times) = %d,  len(self.projected_modulation_matrix_t) = %d" % \
-            (len(self.template_points_t[list(self.template_points_t.keys())[0]]), len(self.control_points_t),
-             len(self.times), len(self.projected_modulation_matrix_t))
+            "len(self.cp_t) = %d, len(self.times) = %d,  len(self.projected_mod_matrix_t) = %d" % \
+            (len(self.template_points_t[list(self.template_points_t.keys())[0]]), len(self.cp_t),
+             len(self.times), len(self.projected_mod_matrix_t))
 
     ####################################################################################################################
     ### Auxiliary methods:
     ####################################################################################################################
 
-    def _update_projected_modulation_matrix_tR(self, device='cpu'):
-        self.projected_modulation_matrix_tR = self.modulation_matrix_tR.clone()
+    def _update_projected_mod_matrix_tR(self, device='cpu'):
+        self.projected_mod_matrix_tR = self.mod_matrix_tR.clone()
         momenta_orth = self.ortho()   
 
         for l in range(self.nb_components):
-            initial_cp_l = self.geodesic.exponential[l].get_initial_control_points()
-            norm_squared = self.geodesic.exponential[l].scalar_product(
-                        initial_cp_l, momenta_orth[l], momenta_orth[l])
+            initial_cp_l = self.exponential_initial_cp(l)
+            norm_squared = self.get_exponential(l).norm(initial_cp_l, momenta_orth[l])
 
             if norm_squared != 0:
                 for s in range(self.number_of_sources):
                     space_shift_tR = self.get_space_shift(s).clone()
-                    sp = self.geodesic.exponential[l].scalar_product(initial_cp_l, momenta_orth[l], space_shift_tR) / norm_squared
+                    sp = self.get_exponential(l).scalar_product(initial_cp_l, momenta_orth[l], space_shift_tR) / norm_squared
                     # orthogonal projection of SS WR to ortho momenta
                     projected_space_shift_tR = space_shift_tR - sp * momenta_orth[l]
-                    self.projected_modulation_matrix_tR[:, s] = projected_space_shift_tR.view(-1).contiguous()
+                    self.projected_mod_matrix_tR[:, s] = projected_space_shift_tR.view(-1).contiguous()
 
     def ortho(self):
         """
@@ -281,13 +288,13 @@ class SpatialPiecewiseGeodesic:
             momenta = self.geodesic.momenta.copy()
             momenta_ortho = self.geodesic.momenta.copy()
 
-        for k in range(1, momenta.__len__()): # for each component/subject
+        for k in range(1, self.n_components): # for each component/subject (before: momenta.__len__())
             for l in range(k): #
                 # Make momenta k ortho to the momenta that precede it
-                initial_cp_l = self.geodesic.exponential[l].get_initial_control_points()
-                norm_squared = self.geodesic.exponential[l].scalar_product(initial_cp_l, momenta[l], momenta[l])
+                initial_cp_l = self.exponential_initial_cp()
+                norm_squared = self.get_exponential(l).norm(initial_cp_l, momenta[l])
                 if norm_squared != 0:
-                    sp_to_ortho = self.geodesic.exponential[l].scalar_product(initial_cp_l,momenta[k], momenta[l]) / norm_squared
+                    sp_to_ortho = self.get_exponential(l).scalar_product(initial_cp_l, momenta[k], momenta[l]) / norm_squared
                     momenta_ortho.data[k] = momenta_ortho.data[k] - sp_to_ortho * momenta_ortho.data[l]
 
         return momenta_ortho
@@ -313,7 +320,7 @@ class SpatialPiecewiseGeodesic:
                 for sign, si in  zip([1, -1], ["+", "-"]): # Direct and indirect flows
                     space_shift = self.get_space_shift(s)
                     self.exponential.set_initial_template_points(self.geodesic.template_points_tR)
-                    self.exponential.set_initial_control_points(self.geodesic.control_points)
+                    self.exponential.set_initial_cp(self.geodesic.control_points)
                     self.exponential.set_initial_momenta(sign * space_shift)
                     self.exponential.update()
 
@@ -328,8 +335,7 @@ class SpatialPiecewiseGeodesic:
                             names.append(name)
                         deformed_points = self.exponential.get_template_points(j)
                         deformed_data = template.get_deformed_data(deformed_points, template_data)
-                        template.write(output_dir, names,
-                                    {key: value.detach().cpu().numpy() for key, value in deformed_data.items()})
+                        template.write(output_dir, names, {k: detach(v) for k,v in deformed_data.items()})
 
         # Correctly resets the initial number of time points.
         self.set_number_of_time_points(1 + (self.nb_of_tp() - 1) // 3)
@@ -337,15 +343,14 @@ class SpatialPiecewiseGeodesic:
         # Optionally write the projected modulation matrices along the geodesic flow -----------------------------------
         if write_adjoint_parameters:
             times = self.geodesic.get_times()
-            for t, (time, modulation_matrix) in enumerate(zip(times, self.projected_modulation_matrix_t)):
-                write_2D_array(
-                    modulation_matrix.detach().cpu().numpy(), output_dir,
-                    root_name + '__PiecewiseGeodesicFlow__ModulationMatrix__tp_' + str(t) + ('__age_%.2f' % time) + '.txt')
+            for t, (time, modulation_matrix) in enumerate(zip(times, self.projected_mod_matrix_t)):
+                write_2D_array(detach(modulation_matrix), output_dir,
+                            root_name + '__PiecewiseGeodesicFlow__ModulationMatrix__tp_' + str(t) + ('__age_%.2f' % time) + '.txt')
 
         # Optionally write the exp-parallel curves and associated flows (massive writing) ------------------------------
         if write_exponential_flow:
             times = self.geodesic.get_times()
-            for t, (time, modulation_matrix) in enumerate(zip(times, self.projected_modulation_matrix_t)):
+            for t, (time, modulation_matrix) in enumerate(zip(times, self.projected_mod_matrix_t)):
                 for s in range(self.number_of_sources):
 
                     # Forward: uses the shooting exponential
@@ -353,7 +358,7 @@ class SpatialPiecewiseGeodesic:
                     space_shift = self.get_space_shift(s)
                     self.exponential.set_initial_template_points({key: value[t]
                                                                   for key, value in self.template_points_t.items()})
-                    self.exponential.set_initial_control_points(self.control_points_t[t])
+                    self.exponential.set_initial_cp(self.cp_t[t])
                     self.exponential.set_initial_momenta(space_shift)
                     self.exponential.update()
 

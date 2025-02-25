@@ -1,7 +1,6 @@
 import logging
 import warnings
 import os
-
 # Image readers
 import PIL.Image as pimg
 import nibabel as nib

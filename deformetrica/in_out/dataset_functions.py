@@ -18,7 +18,7 @@ from ..support.utilities.general_settings import Settings
 logger = logging.getLogger(__name__)
 
 def create_dataset(visit_ages=None, dataset_filenames=None, subject_ids=None, 
-                    interpolation = "linear", kernel_width = None):
+                    interpolation = "linear", kernel_width = None, **kwargs):
     """
     Creates a longitudinal dataset object from xml parameters. 
 

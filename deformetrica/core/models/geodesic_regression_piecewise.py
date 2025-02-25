@@ -8,7 +8,7 @@ from ...core.models.model_functions import initialize_control_points, initialize
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
 from ...in_out.dataset_functions import create_template_metadata
-from ...support.utilities import get_best_device, move_data
+from ...support.utilities import get_best_device, move_data, detach
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.device, _ = get_best_device()
 
         # Template TODO? several templates
-        (object_list, self.objects_extension, self.objects_noise_variance, self.objects_attachment) = \
+        (object_list, self.objects_extension, self.objects_noise_variance, self.attachment) = \
                                                     create_template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
@@ -97,7 +97,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         #self.geodesic.set_t0(self.t0)
 
         control_points = move_data(self.control_points, device = self.device)
-        self.geodesic.set_control_points_tR(control_points) # a list
+        self.geodesic.set_cp_tR(control_points) # a list
     
         self.current_residuals = None
     
@@ -198,10 +198,10 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
             # Convert the gradient back to numpy.
             gradient = {key: value.data.cpu().numpy() for key, value in gradient.items()}
 
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
+            return detach(attachment), detach(regularity), gradient
 
         else:
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy()
+            return detach(attachment), detach(regularity)
 
     # Compute the functional. Numpy input/outputs.
     def compute_log_likelihood(self, dataset, individual_RER, mode='complete', with_grad=False):
@@ -241,7 +241,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         for time, obj in zip(target_times, target_objects):
             deformed_points = self.geodesic.get_template_points(time)
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-            att = self.objects_attachment.compute_weighted_distance(
+            att = self.attachment.compute_weighted_distance(
                             deformed_data, self.template, obj, self.objects_noise_variance)
             attachment -= att
             self.current_residuals.append(att.cpu())
@@ -313,9 +313,9 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         obj = dataset.deformable_objects[0][j]
         if dist in ["current", "varifold"]:
-            return self.objects_attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
+            return self.attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
         elif dist in ["ssim", "mse"]:
-            return self.objects_attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
+            return self.attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
 
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
@@ -418,10 +418,10 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
             deformed_points = self.geodesic.get_template_points(time)
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
             if not option:
-                residuals.append(self.objects_attachment.compute_weighted_distance(
+                residuals.append(self.attachment.compute_weighted_distance(
                 deformed_data, self.template, target, self.objects_noise_variance).cpu().numpy())
             else:
-                residuals.append(self.objects_attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
+                residuals.append(self.attachment.compute_additional_distances(deformed_data, self.template, target, option).cpu().numpy())
             
         return residuals
 
@@ -438,8 +438,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Write --------------------------------------------------------------------------------------------------------
         # Geodesic flow.
         self.geodesic.write(self.name, self.objects_extension, self.template, template_data,
-                            output_dir, write_adjoint_parameters = self.write_adjoint_parameters, 
-                            write_all = write_all)
+                            output_dir, write_all = write_all)
 
         # Model predictions.
         if dataset is not None and not write_all:

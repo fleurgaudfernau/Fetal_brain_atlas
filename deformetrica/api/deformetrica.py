@@ -138,7 +138,6 @@ class Deformetrica:
         :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
-        
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
                                         'Registration', model_options, dataset_spec, estimator_options)
@@ -174,7 +173,6 @@ class Deformetrica:
         :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
-
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization('DeformableTemplate', 
                                                                 model_options, dataset_spec, estimator_options)
@@ -322,7 +320,6 @@ class Deformetrica:
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization(
                                     'BayesianGeodesicRegression', model_options, dataset_spec, estimator_options)
-
         # Instantiate dataset.
         dataset = create_dataset(**dataset_spec)
 

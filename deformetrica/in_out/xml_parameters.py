@@ -17,6 +17,9 @@ def get_dataset_specifications(xml_parameters):
     specifications['interpolation'] = xml_parameters.interpolation
     specifications['kernel_width'] = xml_parameters.template_specifications["Object_1"]["kernel_width"]
     specifications['n_subjects'] = len(xml_parameters.subject_ids)
+    n_observations = sum(len(visit) for subject in xml_parameters.dataset_filenames for visit in subject)
+    specifications['n_observations'] = n_observations
+    specifications['n_objects'] = len(xml_parameters.dataset_filenames[0][0]) 
 
     return specifications
 
@@ -287,6 +290,7 @@ class XmlParameters:
                 warnings.warn(msg)
 
     # Read the parameters from the dataset xml.
+    
     def _read_dataset_xml(self, dataset_xml_path):
         if dataset_xml_path is not None and dataset_xml_path != 'None':
 
