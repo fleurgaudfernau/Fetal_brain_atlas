@@ -167,7 +167,7 @@ class MultiscaleMomenta():
         return gradient
     
         if "regression" in self.model_name.lower() and "kernel" not in self.model_name.lower():
-            cp = torch.tensor(self.model.control_points, dtype=torch.float32, device='cuda:0')
+            cp = torch.tensor(self.model.cp, dtype=torch.float32, device='cuda:0')
             try:
                 n_comp = len(self.model.fixed_effects['rupture_time']) + 1
             except:
@@ -226,77 +226,8 @@ class MultiscaleMomenta():
                     # Momenta update
                     momenta_recovered = haar_coef_momenta[c][d].haar_backward()
                     new_parameters['momenta'][c, :, d] = momenta_recovered.flatten()
-        
-        # def vect_norm(array, order = 2):
-        #     return np.linalg.norm(array, ord = order, axis = 1)
-
-        # if self.multiscale and self.scale > 1:
-        #     logger.info("Smoothing momenta... ")
-
-        #     tensor_scalar_type = utilities.get_torch_scalar_type('float32')
-        #     device, _ = utilities.get_best_device(gpu_mode=GpuMode.KERNEL)
-
-        #     mom = torch.from_numpy(new_parameters['momenta'])
-        #     cp = torch.from_numpy(self.model.control_points)
-        #     mom = utilities.move_data(mom, dtype=tensor_scalar_type, requires_grad=False, device=device)
-        #     cp = utilities.move_data(cp, dtype=tensor_scalar_type, requires_grad=False, device=device)
-        #     self.smoothing_kernel_ = kernel_factory.factory("keops", gpu_mode = GpuMode.KERNEL,
-        #                                                kernel_width=10)
-        #     filtered_mom = self.smoothing_kernel_.convolve(cp, cp, mom, mode = "gaussian_weighted")
-        #     filtered_mom = filtered_mom.detach().cpu().numpy()
-        #     old_norm = vect_norm(new_parameters['momenta'])
-        #     new_norm = vect_norm(filtered_mom)
-        #     ratio = np.expand_dims(old_norm/new_norm, axis = 1)
-
-        #     new_parameters['momenta'] = filtered_mom * ratio
-
-        # Update momenta
-        # haar_coef_momenta = self.compute_haar_transform(parameters['momenta'])
-        # updated_momenta = [np.zeros((self.n_cp, self.dimension))] * self.n_momenta
                 
-        # if self.n_momenta != 1:
-        #     updated_momenta = np.array(updated_momenta)
-        # elif updated_momenta[0].shape == parameters['momenta'].shape:
-        #     updated_momenta = updated_momenta[0] 
-        # else:
-        #     updated_momenta = updated_momenta[0].reshape(parameters['momenta'].shape)
-
-        # new_parameters['momenta'] = updated_momenta
-        
         return new_parameters
-
-    ####################################################################################################################
-    ### Local adaptation
-    ####################################################################################################################     
-
-    def silence_fine_or_smooth_zones(self, gradient_of_coef, sujet):
-        """
-            Filters the values of the Haar coefficients of the gradient of the momenta
-            Coefficients whose scale is lower than the current scale are set to 0
-
-        zones: dictionary containing information about zone 
-        silent_haar_coef_momenta_subject: zones to silence 
-        gradient_of_coef: Haar coefficients of the gradient of the momenta
-        """
-        silent_haar_coef_momenta_subject = self.silent_haar_coef_momenta_subjects[sujet]
-        
-        indices_to_browse_along_dim = [list(range(e)) for e in list(gradient_of_coef.wc.shape)]
-
-        for indices in itertools.product(*indices_to_browse_along_dim):
-            position, type, scale = gradient_of_coef.haar_coeff_pos_type([i for i in indices])
-
-            #silence finer zones that we haven't reached yet
-            if scale < self.scale: #the higher the scale, the coarser
-                gradient_of_coef.wc[indices] = 0 #fine scales : only ad, da, dd
-                
-            #silence smooth zones
-            elif silent_haar_coef_momenta_subject and scale in silent_haar_coef_momenta_subject.keys():
-                zones_to_silence_at_scale = silent_haar_coef_momenta_subject[scale]
-                positions_to_silence_at_scale = [self.zones[scale][k]["position"] for k in zones_to_silence_at_scale]
-                if position in positions_to_silence_at_scale and type != ['L', 'L']:
-                    gradient_of_coef.wc[indices] = 0
-                        
-        return gradient_of_coef  
 
     ####################################################################################################################
     ### Optimization tools

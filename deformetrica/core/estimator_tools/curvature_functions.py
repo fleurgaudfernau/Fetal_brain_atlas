@@ -32,22 +32,21 @@ class Curvature():
                 curvature = c.replace("Curvature_", "")
                 for time in (range(int(min(self.ages)), int(max(self.ages)))):
                     results = self.model.compute_flow_curvature(dataset, time, curvature)
-                    for object in results.object_list:
-                        self.add_curvature(c, object.curv[curvature]["mean"], "Regression")
+                    for obj in results.object_list:
+                        self.add_curvature(c, obj.curv[curvature]["mean"], "Regression")
 
     def compute_mesh_curvatures(self, dataset, iter, individual_RER = None):
         """
-            At iter 0, compute object curvature. 
+            At iter 0, compute obj curvature. 
             Otherwise deformed template to subject curvature. 
         """
         k = "Original" if iter == 0 else "Current"
         for j in range(self.n_obs):  
             for c in self.curvatures.keys():
                 curvature = c.replace("Curvature_", "")
-                results = self.model.compute_curvature(dataset, j, individual_RER, 
-                                                        curvature, iter)   
-                for object in results.object_list:
-                    self.add_curvature(c, object.curv[curvature]["mean"], k = k)
+                results = self.model.compute_curvature(dataset, j, individual_RER, curvature, iter)   
+                for obj in results.object_list:
+                    self.add_curvature(c, obj.curv[curvature]["mean"], k = k)
         
         # Template curvature
         k = "Template (original)" if iter == 0 else "Template (final)"
@@ -55,8 +54,8 @@ class Curvature():
             curvature = c.replace("Curvature_", "")
             results = self.model.compute_curvature(dataset, None, individual_RER, 
                                                     curvature, iter)   
-            for object in results.object_list:
-                self.add_curvature(c, object.curv[curvature]["mean"], k = k)
+            for obj in results.object_list:
+                self.add_curvature(c, obj.curv[curvature]["mean"], k = k)
 
     def plot_reconstructions_curvature(self, output_dir):
         for c in self.curvatures.keys():

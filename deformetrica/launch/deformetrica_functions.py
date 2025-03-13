@@ -209,12 +209,12 @@ def insert_model_xml_deformation_parameters(model_xml_0, key, value):
 
 
 def shoot(control_points, momenta, kernel_width,
-          number_of_time_points=default.number_of_time_points):
+          n_time_points=default.n_time_points):
     control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
     momenta_torch = torch.from_numpy(momenta).type(default.tensor_scalar_type)
-    exponential = Exponential(number_of_time_points=number_of_time_points,
+    exponential = Exponential(n_time_points=n_time_points,
                             kernel=kernel_factory.factory(kernel_width=kernel_width),
-                            initial_control_points=control_points_torch, initial_momenta=momenta_torch)
+                            initial_cp=control_points_torch, initial_momenta=momenta_torch)
     exponential.shoot()
     return exponential.control_points_t[-1].detach().cpu().numpy(), exponential.momenta_t[-1].detach().cpu().numpy()
 
@@ -234,7 +234,7 @@ def reproject_momenta(source_control_points, source_momenta, target_control_poin
 
 def parallel_transport(source_control_points, source_momenta, driving_momenta,
                        kernel_width, kernel_device='cpu',
-                       number_of_time_points=default.number_of_time_points):
+                       n_time_points=default.n_time_points):
     
     source_cp_torch = default.tensor_scalar_type(source_control_points)
     source_momenta_torch = default.tensor_scalar_type(source_momenta)
@@ -243,9 +243,9 @@ def parallel_transport(source_control_points, source_momenta, driving_momenta,
      
     #
     print("1")
-    exponential = Exponential(number_of_time_points=number_of_time_points, use_rk2_for_shoot=True,
+    exponential = Exponential(n_time_points=n_time_points, use_rk2_for_shoot=True,
         kernel = kernel_factory.factory(kernel_width=kernel_width),
-        initial_control_points=source_cp_torch, initial_momenta=driving_momenta_torch)
+        initial_cp=source_cp_torch, initial_momenta=driving_momenta_torch)
     print("2")
     # Usually there is an error shooting the exponential
     # this is not a PT issue 

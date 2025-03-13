@@ -25,11 +25,10 @@ class Exponential:
     ####################################################################################################################
     def __init__(self, 
                  kernel=default.deformation_kernel, n_time_points=None,
-                 initial_control_points=None, control_points_t=None,
+                 initial_cp=None, cp_t=None,
                  initial_momenta=None, momenta_t=None,
                  initial_template_points=None, template_points_t=None,
-                 shoot_is_modified=True, flow_is_modified=True, use_rk2_for_shoot=False, 
-                 use_rk2_for_flow=False, transport_cp = True):
+                 shoot_is_modified=True, flow_is_modified=True, use_rk2_for_shoot=False):
 
         self.kernel = kernel
 
@@ -40,11 +39,11 @@ class Exponential:
 
         self.n_time_points = n_time_points
         # Initial position of control points
-        self.initial_cp = initial_control_points
+        self.initial_cp = initial_cp
         # Initial momenta
         self.initial_momenta = initial_momenta
         # Control points and momenta trajectory
-        self.cp_t = control_points_t
+        self.cp_t = cp_t
         self.momenta_t = momenta_t
         
         # Initial template points
@@ -57,15 +56,11 @@ class Exponential:
         self.flow_is_modified = flow_is_modified
         # Wether to use a RK2 or a simple euler for shooting or flowing respectively.
         self.use_rk2_for_shoot = use_rk2_for_shoot
-        self.use_rk2_for_flow = use_rk2_for_flow
 
         # Contains the inverse kernel matrices for the time points 1 to self.n_time_points
         self.cometric_matrices = {}
         self.kernel_matrix = {}
         self.kernel_matrix_inv = {}
-
-        # ajout fg
-        self.transport_cp = transport_cp
     
     def move_data_to_(self, device):
         if self.initial_cp is not None:
@@ -79,8 +74,7 @@ class Exponential:
                                             self.initial_template_points.items()}
 
     def light_copy(self):
-        light_copy = Exponential(deepcopy(self.kernel),
-                                 self.n_time_points,
+        light_copy = Exponential(deepcopy(self.kernel), self.n_time_points,
                                  self.initial_cp, self.cp_t,
                                  self.initial_momenta, self.momenta_t,
                                  self.initial_template_points, self.template_points_t,
@@ -113,6 +107,9 @@ class Exponential:
 
     def get_initial_cp(self):
         return self.initial_cp
+    
+    def last_cp(self):
+        return self.cp_t[-1]
 
     def get_initial_momenta(self):
         return self.initial_momenta
@@ -151,15 +148,34 @@ class Exponential:
         """
         if self.flow_is_modified:
             warnings.warn("The flow was modified, the exponential should be updated")
-
-        if time_index is None:
-            return {key: self.template_points_t[key][-1] for key in self.initial_template_points.keys()}
         
+        if time_index is None:
+            return self.last_template_points()
+
         return {key: self.template_points_t[key][time_index] for key in self.initial_template_points.keys()}
+    
+    def last_template_points(self):
+
+        return {key: self.template_points_t[key][-1] for key in self.initial_template_points.keys()}
 
     ####################################################################################################################
     ### Main methods:
     ####################################################################################################################
+    
+    def prepare_and_update(self, cp, momenta, template = None, 
+                            length = None, device = None):
+        
+        if momenta is not None:
+            self.set_initial_momenta(momenta)
+        if cp is not None:
+            self.set_initial_cp(cp)
+        if template is not None:
+            self.set_initial_template_points(template)
+        if length is not None:
+            self.n_time_points = length
+        if device is not None:
+            self.move_data_to_(device = device)
+        self.update()
 
     def update(self):
         """
@@ -168,19 +184,13 @@ class Exponential:
         """
         assert self.n_time_points > 0
         if self.shoot_is_modified:
-            if self.transport_cp:
-                self.cometric_matrices.clear()
             self.shoot()
             if self.initial_template_points is not None:
                 self.flow()
-            else:
-                logger.warning("In exponential update,  I don't have any template points to flow")
 
         if self.flow_is_modified:
             if self.initial_template_points is not None:
                 self.flow()
-            else:
-                logger.warning("In exponential update,  I don't have any template points to flow")
 
     def shoot(self):
         """
@@ -203,12 +213,11 @@ class Exponential:
 
         else:
             #self.cp_t et self.momenta_t listes de longueur 1 t -> 11t après la boucle
-            for i in range(self.n_time_points - 1): #10 time points for discretization   
+            for i in range(self.n_time_points - 1): #10 time points for discretization  
                 new_cp, new_mom = self._euler_step(self.shoot_kernel, self.cp_t[i], self.momenta_t[i], dt)
                 self.cp_t.append(new_cp)
                 self.momenta_t.append(new_mom)
 
-        # Correctly resets the attribute flag.
         self.shoot_is_modified = False
 
     def flow(self):
@@ -256,16 +265,13 @@ class Exponential:
         # Correctly resets the attribute flag.
         self.flow_is_modified = False
 
-    def transport(self, i, h, parallel_transport_t, initial_norm_squared, eps, norm_squared):
-        """
-        transport_cp: ajout fg to avoid recomputing cometric matrices for the non moving cp
-        """
+    def transport_along(self, i, h, initial_norm_squared, eps, norm_squared):
         # Shoot the two perturbed geodesics ------------------------------------------------------------------------
         cp_eps_pos = self._rk2_step(self.shoot_kernel, self.cp_t[i],
-                                    self.momenta_t[i] + eps * parallel_transport_t[-1], 
+                                    self.momenta_t[i] + eps * self.parallel_transport_t[-1], 
                                     h, return_mom=False)
         cp_eps_neg = self._rk2_step(self.shoot_kernel, self.cp_t[i],
-                                    self.momenta_t[i] - eps * parallel_transport_t[-1], 
+                                    self.momenta_t[i] - eps * self.parallel_transport_t[-1], 
                                     h, return_mom=False)
 
         # Compute J/h ----------------------------------------------------------------------------------------------
@@ -285,7 +291,7 @@ class Exponential:
         kernel_matrix_inv = torch.cholesky_inverse(kernel_matrix_reg, upper=True)
         #kernel_matrix_inv = torch.inverse(cholesky)
         
-        print("\ni", i)
+        #print("\ni", i)
         # print("Condition number of K", np.linalg.cond(kernel_matrix.cpu().numpy()))
         # print("Condition number of K", np.linalg.cond(kernel_matrix.cpu().numpy()))
             
@@ -335,11 +341,10 @@ class Exponential:
         #     worst_renormalization_factor = renormalization_factor.detach().cpu().numpy()
 
         # Finalization ---------------------------------------------------------------------------------------------
-        parallel_transport_t.append(renormalized_momenta)
+        self.parallel_transport_t.append(renormalized_momenta)
 
-        return parallel_transport_t
 
-    def parallel_transport(self, momenta_to_transport, initial_time_point=0, is_ortho=False):
+    def transport(self, momenta_to_transport, is_ortho=False, initial_tp=0, ):
         """
         Parallel transport of the initial_momenta along the exponential.
         momenta_to_transport is assumed to be a torch Variable, carried at the control points on the diffeo.
@@ -356,55 +361,50 @@ class Exponential:
         #       1) Nearly zero initial momenta yield no motion.
         if (detach(torch.norm(self.initial_momenta)) < 1e-6 or
             detach(torch.norm(momenta_to_transport)) < 1e-6):
-            parallel_transport_t = [momenta_to_transport] * (self.n_time_points - initial_time_point)
-            return parallel_transport_t
+            return [momenta_to_transport] * (self.n_time_points - initial_tp)
 
         # Step sizes ---------------------------------------------------------------------------------------------------
         h = 1. / (self.n_time_points - 1.)
         eps = h
 
-        # For #printing -------------------------------------------------------------------------------------------------
+        # For printing -------------------------------------------------------------------------------------------------
         worst_renormalization_factor = 1.0
         self.sp = []
         # Optional initial orthogonalization ---------------------------------------------------------------------------
         norm_squared = self.get_norm_squared()
 
         if not is_ortho: # Always goes in this loop
-            sp = self.scalar_product(self.cp_t[initial_time_point], momenta_to_transport,
-                                     self.momenta_t[initial_time_point]) / norm_squared
-            momenta_to_transport_orthogonal = momenta_to_transport - sp * self.momenta_t[initial_time_point]
-            parallel_transport_t = [momenta_to_transport_orthogonal]
+            sp = self.scalar_product(self.cp_t[initial_tp], momenta_to_transport,
+                                     self.momenta_t[initial_tp]) / norm_squared
+            momenta_to_transport_orthogonal = momenta_to_transport - sp * self.momenta_t[initial_tp]
+            self.parallel_transport_t = [momenta_to_transport_orthogonal]
         else:
-            sp = detach(( self.scalar_product( self.cp_t[initial_time_point], momenta_to_transport,
-                                            self.momenta_t[initial_time_point]) / norm_squared ))
-
-            parallel_transport_t = [momenta_to_transport]
+            sp = detach(( self.scalar_product( self.cp_t[initial_tp], momenta_to_transport,
+                                            self.momenta_t[initial_tp]) / norm_squared ))
+            self.parallel_transport_t = [momenta_to_transport]
 
         # Then, store the initial norm of this orthogonal momenta ------------------------------------------------------
-        initial_norm_squared_before_ortho = self.scalar_product(self.cp_t[initial_time_point], momenta_to_transport,
+        initial_norm_squared_before_ortho = self.scalar_product(self.cp_t[initial_tp], momenta_to_transport,
                                                                 momenta_to_transport)
-        initial_norm_squared = self.scalar_product(self.cp_t[initial_time_point], parallel_transport_t[0],
-                                                   parallel_transport_t[0])
+        initial_norm_squared = self.scalar_product(self.cp_t[initial_tp], self.parallel_transport_t[0],
+                                                   self.parallel_transport_t[0])
 
-        print("Transport from {} to {}".format(initial_time_point, self.n_time_points -1))
-        for i in range(initial_time_point, self.n_time_points - 1):
-            parallel_transport_t = self.transport(i, h, parallel_transport_t, initial_norm_squared, eps,
-                                                norm_squared)
+        print("Transport from t={} to t={}".format(initial_tp, self.n_time_points -1))
+        for i in range(initial_tp, self.n_time_points - 1):
+            self.transport_along(i, h, initial_norm_squared, eps, norm_squared)
 
         # We now need to add back the component along the velocity to the transported vectors.
         #the norm is modified here 
         if not is_ortho:
-            parallel_transport_t_ = []
-            for i in range(initial_time_point, self.n_time_points):
-                parallel_transport_t_.append(parallel_transport_t[i-initial_time_point] + sp * self.momenta_t[i])
-            parallel_transport_t =parallel_transport_t_
+            self.parallel_transport_t = [ self.parallel_transport_t[i - initial_tp] + sp * self.momenta_t[i] \
+                                        for i in range(initial_tp, self.n_time_points) ]
 
         if abs(worst_renormalization_factor - 1.) > 0.05:
             msg = ("Watch out, a large renormalization factor %.4f is required during the parallel transport. "
                    "Try using a finer discretization." % worst_renormalization_factor)
             logger.warning(msg)
 
-        return parallel_transport_t
+        return self.parallel_transport_t
 
     ####################################################################################################################
     ### Utility methods:
@@ -505,40 +505,33 @@ class Exponential:
     ### Writing methods:
     ####################################################################################################################
 
-    def write_flow(self, objects_names, objects_extensions, template, template_data, output_dir,
+    def write_flow(self, extensions, template, template_data, output_dir,
                    write_adjoint_parameters=False, write_only_last = False):
-        assert not self.flow_is_modified, "You are trying to write flow data, but it has been modified and not updated."
+        assert not self.flow_is_modified, "You are trying to write flow data, but it has been modified."
 
         for j in range(self.n_time_points):
 
             if (not write_only_last) or (write_only_last and j == self.n_time_points -1):
-                names = []
-                for k, elt in enumerate(objects_names):
-                    names.append(elt + "__tp_" + str(j) + objects_extensions[k])
+                names = ["Template_flow__tp_{}{}".format(j, ext) for ext in extensions]
 
                 deformed_points = self.get_template_points(j)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)
                 
-                #modif fg: do not write flow
-                template.write(output_dir, names, {key: detach(value) for key, value in deformed_data.items()})
+                template.write(output_dir, names, deformed_data)
 
                 if write_adjoint_parameters:
-                    cp = detach(self.cp_t[j])
-                    mom = detach(self.momenta_t[j])
-                    if self.transport_cp:
-                        write_2D_array(cp, output_dir, elt + "__ControlPoints__tp_" + str(j) + ".txt")
-                    write_3D_array(mom, output_dir, elt + "__Momenta__tp_" + str(j) + ".txt")
+                    write_cp(self.cp_t[j], output_dir, time = j)
+                    write_momenta(self.momenta_t[j], output_dir, time = j)
 
-    def write_control_points_and_momenta_flow(self, name):
+    def write_cp_and_momenta_flow(self, name):
         """
         Write the flow of cp and momenta
-        names are expected without extension
         """
         assert not self.shoot_is_modified, \
             "You are trying to write data relative to the shooting, but it has been modified and not updated."
         assert len(self.cp_t) == len(self.momenta_t), \
             "Something is wrong, not as many cp as momenta in diffeo"
         
-        for j, (control_points, momenta) in enumerate(zip(self.cp_t, self.momenta_t)):
-            write_2D_array(detach(control_points), name + "__control_points_" + str(j) + ".txt")
-            write_2D_array(detach(momenta), name + "__momenta_" + str(j) + ".txt")
+        for j, (cp, momenta) in enumerate(zip(self.cp_t, self.momenta_t)):
+            write_cp(self.cp_t[j], output_dir, name, time = j)
+            write_momenta(self.momenta_t[j], output_dir, name, time = j)

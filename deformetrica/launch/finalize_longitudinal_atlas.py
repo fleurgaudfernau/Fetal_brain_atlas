@@ -9,7 +9,7 @@ import xml.etree.ElementTree as et
 from xml.dom.minidom import parseString
 
 from ..in_out.xml_parameters import XmlParameters
-from ..in_out.dataset_functions import create_template_metadata
+from ..in_out.dataset_functions import template_metadata
 from ..in_out.array_readers_and_writers import *
 
 def insert_model_xml_level1_entry(model_xml_level0, key, value):
@@ -74,7 +74,7 @@ def finalize_longitudinal_atlas(model_xml_path, output_dir='output'):
     longitudinal_atlas_output_path = os.path.relpath(output_dir, os.getcwd())
 
     global_objects_name, global_objects_name_extension \
-        = create_template_metadata(xml_parameters.template_specifications)[1:3]
+        = template_metadata(xml_parameters.template_specifications)[1:3]
 
     # Template.
     estimated_template_objects_path = []

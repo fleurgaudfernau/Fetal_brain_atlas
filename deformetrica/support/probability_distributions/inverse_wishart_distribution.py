@@ -7,7 +7,7 @@ class InverseWishartDistribution:
     ####################################################################################################################
 
     def __init__(self):
-        self.degrees_of_freedom = 1
+        self.dof = 1
         self.scale_matrix = np.ones((1, 1))
         # self.scale_matrix_inverse = np.ones((1, 1))
 
@@ -33,5 +33,5 @@ class InverseWishartDistribution:
         See "A Bayesian Framework for Joint Morphometry of Surface and Curve meshes in Multi-Object Complexes",
         Gori et al. 2016 (equations 8 and 9).
         """
-        return - 0.5 * self.degrees_of_freedom * (
+        return - 0.5 * self.dof * (
             np.trace(np.dot(observation_inverse, self.scale_matrix)) - np.linalg.slogdet(observation_inverse)[1])

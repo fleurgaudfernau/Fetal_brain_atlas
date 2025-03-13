@@ -4,7 +4,7 @@ from ..core import default
 from ..core.model_tools.deformations.geodesic import Geodesic
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ..in_out.array_readers_and_writers import *
-from ..in_out.dataset_functions import create_template_metadata
+from ..in_out.dataset_functions import template_metadata
 from ..support import kernels as kernel_factory
 from ..core.models.model_functions import create_regular_grid_of_points
 
@@ -90,11 +90,11 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
 
 def compute_shooting(template_specifications,
                      deformation_kernel_width=default.deformation_kernel_width,
-                     initial_control_points=default.initial_control_points,
+                     initial_cp=default.initial_cp,
                      initial_momenta=default.initial_momenta,
-                     concentration_of_time_points=default.concentration_of_time_points,
+                     time_concentration=default.time_concentration,
                      t0=None, tmin=default.tmin, tmax=default.tmax,
-                     number_of_time_points=default.number_of_time_points,
+                     n_time_points=default.n_time_points,
                      gpu_mode=default.gpu_mode,
                      output_dir=default.output_dir, 
                      write_adjoint_parameters = True, 
@@ -104,7 +104,7 @@ def compute_shooting(template_specifications,
     Create the template object
     """
     (object_list, t_name_extension, t_noise_variance, multi_object_attachment) = \
-                            create_template_metadata(template_specifications, gpu_mode=gpu_mode)
+                            template_metadata(template_specifications, gpu_mode=gpu_mode)
 
     template = DeformableMultiObject(object_list)
 
@@ -112,8 +112,8 @@ def compute_shooting(template_specifications,
     Reading Control points and momenta
     """
 
-    if initial_control_points is not None:
-        control_points = read_2D_array(initial_control_points)
+    if initial_cp is not None:
+        control_points = read_2D_array(initial_cp)
     else:
         raise RuntimeError('Please specify a path to control points to perform a shooting')
 
@@ -136,7 +136,7 @@ def compute_shooting(template_specifications,
                      for key, value in template.get_data().items()}
     
     control_points_torch = torch.from_numpy(control_points).type(default.tensor_scalar_type)
-    geodesic = Geodesic(concentration_of_time_points=concentration_of_time_points, t0=t0,
+    geodesic = Geodesic(time_concentration=time_concentration, t0=t0,
                         kernel=deformation_kernel)
 
     print("Old Norm", geodesic.forward_exponential.scalar_product(control_points_torch, momenta_torch, momenta_torch))
@@ -184,8 +184,8 @@ def compute_shooting(template_specifications,
         geodesic.set_momenta_t0(momenta_torch)
         geodesic.update()
 
-        print("geodesic.backward_exponential.number_of_time_points", geodesic.backward_exponential.number_of_time_points)
-        print("geodesic.forward_exponential.number_of_time_points", geodesic.forward_exponential.number_of_time_points)
+        print("geodesic.backward_exponential.n_time_points", geodesic.backward_exponential.n_time_points)
+        print("geodesic.forward_exponential.n_time_points", geodesic.forward_exponential.n_time_points)
         names = [elt for elt in t_name]
         geodesic.write('Shooting', names, t_name_extension, template, template_data, output_dir,
                        write_adjoint_parameters=write_adjoint_parameters)

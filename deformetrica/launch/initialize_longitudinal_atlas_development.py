@@ -8,7 +8,7 @@ from imageio import imsave, imread
 from PIL import Image
 
 from ..launch.compute_shooting import compute_shooting
-from ..launch.compute_parallel_transport import compute_parallel_transport
+from ..launch.compute_parallel_transport import launch_parallel_transport
 from torch.autograd import Variable
 
 import warnings
@@ -22,13 +22,13 @@ from xml.dom.minidom import parseString
 from scipy.stats import norm, truncnorm
 from ..core import default
 from ..in_out.xml_parameters import XmlParameters, get_dataset_specifications, get_estimator_options, get_model_options
-from ..in_out.dataset_functions import create_template_metadata, create_dataset
+from ..in_out.dataset_functions import template_metadata, create_dataset
 from ..core.model_tools.deformations.exponential import Exponential
 from ..core.model_tools.deformations.geodesic import Geodesic
 from ..in_out.array_readers_and_writers import *
 from ..support import kernels as kernel_factory
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
-from ..in_out.deformable_object_reader import DeformableObjectReader
+from ..in_out.deformable_object_reader import ObjectReader
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
 from ..support import utilities
@@ -75,7 +75,7 @@ class LongitudinalAtlasInitializer():
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
         self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
-        self.objects_name, self.objects_ext = create_template_metadata(self.xml_parameters.template_specifications)[1:3]
+        self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
        
         self.dataset = create_dataset(self.xml_parameters.template_specifications, 
@@ -101,11 +101,11 @@ class LongitudinalAtlasInitializer():
         self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
-        self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
+        self.concentration_of_tp = self.xml_parameters.time_concentration
         self.global_t0 = self.xml_parameters.t0
         self.global_tmin = np.mean([e[0] for e in self.global_visit_ages])
         self.global_tmax = np.max([e[-1] for e in self.global_visit_ages])
-        self.global_nb_of_tp = self.xml_parameters.number_of_time_points
+        self.global_nb_of_tp = self.xml_parameters.n_time_points
         self.geodesic_nb_of_tp = int(1 + (self.global_t0 - self.global_tmin) * self.concentration_of_tp)
         
         self.number_of_sources = 4
@@ -254,7 +254,7 @@ class LongitudinalAtlasInitializer():
 
         # Read the current model xml parameters.
         xml_parameters = copy.deepcopy(self.xml_parameters)
-        xml_parameters.concentration_of_time_points = 1
+        xml_parameters.time_concentration = 1
     
         for i, ind in enumerate(self.longitudinal_subjects_ind):
             logger.info('\n Geodesic regression for subject ' + self.global_subject_ids[ind] + '\n')
@@ -273,8 +273,8 @@ class LongitudinalAtlasInitializer():
 
             compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
                             deformation_kernel_width=self.global_kernel_width,
-                            initial_control_points=self.regression_cp_path[i], initial_momenta=self.regression_momenta_path[i], 
-                            concentration_of_time_points=1,
+                            initial_cp=self.regression_cp_path[i], initial_momenta=self.regression_momenta_path[i], 
+                            time_concentration=1,
                             t0=self.global_visit_ages[ind][0], tmin=min([self.global_t0, self.global_visit_ages[ind][0]]), 
                             tmax=max([self.global_t0, self.global_visit_ages[ind][0]]),
                             output_dir=self.longitudinal_shooted_subjects_paths[i])  
@@ -338,7 +338,7 @@ class LongitudinalAtlasInitializer():
         xml_parameters.template_specifications["img"]['filename'] = self.template_for_atlas
         
         # Use the regression cp
-        xml_parameters.initial_control_points = self.regression_cp_path[-1]
+        xml_parameters.initial_cp = self.regression_cp_path[-1]
         xml_parameters.max_iterations = 10 #TODO
         
         # Launch and save the outputted noise standard deviation, for later use ----------------------------------------
@@ -404,7 +404,7 @@ class LongitudinalAtlasInitializer():
 
         logger.info('\nCompute average template trajectory\n')
 
-        geodesic = Geodesic(self.kernel, t0=self.global_t0, concentration_of_time_points=10)
+        geodesic = Geodesic(self.kernel, t0=self.global_t0, time_concentration=10)
 
         geodesic.set_tmin(min([self.global_t0, self.global_tmin]))
         geodesic.set_tmax(max([self.global_t0, self.global_tmax]))
@@ -431,9 +431,9 @@ class LongitudinalAtlasInitializer():
 
         # compute_shooting(xml_parameters.template_specifications, dimension=3,
         #                 deformation_kernel_width=self.global_kernel_width,
-        #                 initial_control_points=self.regression_cp_path[0], 
+        #                 initial_cp=self.regression_cp_path[0], 
         #                 initial_momenta=self.global_initial_momenta_for_atlas, 
-        #                 concentration_of_time_points=10, t0=self.global_t0, 
+        #                 time_concentration=10, t0=self.global_t0, 
         #                 tmin=min([self.global_t0, self.global_tmin]), 
         #                 tmax=max([self.global_t0, self.global_tmax]),
         #                 output_dir=self.atlas_trajectory_output_2)
@@ -536,7 +536,7 @@ class LongitudinalAtlasInitializer():
             
             # Instantiate a geodesic.
             geodesic = Geodesic(self.kernel, t0=self.global_tmin, 
-                                concentration_of_time_points=self.concentration_of_tp)
+                                time_concentration=self.concentration_of_tp)
 
             geodesic.set_tmin(min([self.global_t0, self.global_visit_ages[i][0]]))
             geodesic.set_tmax(max([self.global_t0, self.global_visit_ages[i][0]]))
@@ -593,7 +593,7 @@ class LongitudinalAtlasInitializer():
         print("\n xml_parameters.dataset_filenames", xml_parameters.dataset_filenames)
         
         # Use the regression cp
-        xml_parameters.initial_control_points = self.regression_cp_path[0]
+        xml_parameters.initial_cp = self.regression_cp_path[0]
 
         # Use the previously estimated template for initialization
         xml_parameters.template_specifications[self.objects_name[0]]['filename'] = self.global_initial_template_path[0]
@@ -647,7 +647,7 @@ class LongitudinalAtlasInitializer():
             self.estimated_template_path = join(self.longitudinal_atlas_output,
                                     '{}Template_%s__tp_%d__age_%.2f%s' %
                                     (object_name, self.global_t0, ext))
-                                    #model.spatiotemporal_reference_frame.geodesic.backward_exponential.number_of_time_points - 1,
+                                    #model.spatiotemporal_reference_frame.geodesic.backward_exponential.n_time_points - 1,
                                     #model.get_reference_time(), ext))
         #LongitudinalRegistration__EstimatedParameters__Template_right_hippocampus__tp_23__age_76.28
 

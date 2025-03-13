@@ -14,7 +14,7 @@ class MultiscaleImages():
         self.model = model
         self.model_name = model.name
         self.original_dataset = copy.deepcopy(dataset)
-        self.ext = self.model.objects_extension[0]
+        self.ext = self.model.extensions[0]
 
         self.output_dir = output_dir
 
@@ -99,7 +99,7 @@ class MultiscaleImages():
                 or (self.too_much(iteration)) #and residuals_change(avg_residuals) < 0.01)  
 
     def save_image(self, intensities, names = "Subject_"):
-        device, _ = utilities.get_best_device(gpu_mode=self.model.gpu_mode)
+        device = utilities.get_best_device()
         image_data = self.model._fixed_effects_to_torch_tensors(False, device = device)[0]
 
         image_data[self.points] = intensities

@@ -78,17 +78,16 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
 
 def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_specifications,
             deformation_kernel_width=default.deformation_kernel_width,
-            initial_control_points=default.initial_control_points,
-            initial_momenta_tR=default.initial_momenta, tmin=default.tmin, tmax=default.tmax,
-            concentration_of_time_points=default.concentration_of_time_points,
-            t0=default.t0, nb_components = 4, tR = [], number_of_time_points=default.number_of_time_points,
+            initial_cp=default.initial_cp,initial_momenta_tR=default.initial_momenta, 
+            tmin=default.tmin, tmax=default.tmax, time_concentration=default.time_concentration,
+            t0=default.t0, nb_components = 4, tR = [], n_time_points=default.n_time_points,
             gpu_mode=default.gpu_mode, output_dir=default.output_dir, 
             overwrite = True, flow_path = None, target_time = None, **kwargs):
 
     # Visualize
     modulation_matrix = read_3D_array(path_to_mm)
     sources = read_3D_array(path_to_sources)
-    cp = read_3D_array(initial_control_points)
+    cp = read_3D_array(initial_cp)
 
     ages = [a[0] for a in dataset_specifications["visit_ages"]]
     
@@ -111,19 +110,16 @@ def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_speci
 
         print(">>> Parallel transport along main geodesic of space shift {}".format(s))
         
-        pt = PiecewiseParallelTransport(template_specifications, tmin, tmax, 
-                                        concentration_of_time_points, t0, 
+        pt = PiecewiseParallelTransport(template_specifications, tmin, tmax, time_concentration, t0, 
                                         start_time = target_time, target_time = None, tR = tR, 
                                         gpu_mode = gpu_mode, output_dir = space_shift_folder, 
-                                        flow_path = flow_path, initial_control_points = initial_control_points)
+                                        flow_path = flow_path, initial_cp = initial_cp)
 
         #Initialize for later shooting
         initial_momenta_to_transport = op.join(output_dir, "Space_shift_{}.txt".format(s))
 
-        pt.initialize_(deformation_kernel_width,
-                        initial_control_points, initial_momenta_tR,
-                        initial_momenta_to_transport, number_of_time_points,
-                        nb_components)   
+        pt.initialize_(deformation_kernel_width, initial_cp, initial_momenta_tR,
+                        initial_momenta_to_transport, n_time_points, nb_components)   
         pt.set_geodesic()     
         
         if not overwrite and pt.check_pt_for_ica():

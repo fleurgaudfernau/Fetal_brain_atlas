@@ -1,8 +1,15 @@
 import numpy as np
-
+import torch
+from ....support.utilities import detach
 import logging
 logger = logging.getLogger(__name__)
 
+def detach(data):
+    if isinstance(data, dict):
+        for k,v in data.items():
+            if isinstance(v, torch.Tensor):
+                data[k] = v.detach().cpu().numpy()
+    return data
 
 class DeformableMultiObject:
     """
@@ -82,7 +89,6 @@ class DeformableMultiObject:
 
         points = {}
         if len(landmark_points) > 0:
-            # points['landmark_points'] = landmark_points
             points = {'landmark_points': np.concatenate(landmark_points)}
         if image_points is not None:
             points['image_points'] = image_points
@@ -100,7 +106,6 @@ class DeformableMultiObject:
             image_object_list = [elt for elt in self.object_list if elt.type.lower() == 'image']
             
             assert len(image_object_list) == 1, 'That\'s unexpected.'
-            
             deformed_data['image_intensities'] = image_object_list[0].get_deformed_intensities(
                 deformed_points['image_points'], template_data['image_intensities'])
 
@@ -154,8 +159,9 @@ class DeformableMultiObject:
         """
         Save the list of objects with the given names
         """
-        if names is None:
-            return
+        if names is None: return
+        
+        data = detach(data)
             
         assert len(names) == len(self.object_list), "Give as many names as objects to save multi-object"
         pos = 0

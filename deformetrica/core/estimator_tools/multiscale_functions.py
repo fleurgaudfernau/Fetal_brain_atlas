@@ -23,7 +23,7 @@ class Multiscale():
         self.initial_step_size = initial_step_size
         self.output_dir = output_dir
 
-        self.points_per_axis = [len(set(list(model.control_points[:, k]))) for k in range(model.dimension)]
+        self.points_per_axis = [len(set(list(model.cp[:, k]))) for k in range(model.dimension)]
 
         ctf_interval = 15
         ctf_max_interval = 80 if "Regression" in self.name else 50
@@ -108,8 +108,6 @@ class Multiscale():
         cond = self.momenta.convergence(iteration, cond)
         cond = self.images.convergence(iteration, cond)
         cond = self.meshes.convergence(iteration, cond)
-
-        print("Check_convergence_condition:", cond)
             
         return cond
     
@@ -393,7 +391,7 @@ class DualMultiscale():
                 ctf_max_interval):
         self.model = model
         self.name = model.name
-        self.ext = self.model.objects_extension[0]
+        self.ext = self.model.extensions[0]
 
         self.momenta = momenta
         self.images = images

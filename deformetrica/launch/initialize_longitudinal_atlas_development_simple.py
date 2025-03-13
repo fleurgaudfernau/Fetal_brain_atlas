@@ -17,17 +17,17 @@ from xml.dom.minidom import parseString
 from scipy.stats import norm, truncnorm
 from ..core import default
 from ..in_out.xml_parameters import XmlParameters, get_dataset_specifications, get_estimator_options, get_model_options
-from ..in_out.dataset_functions import create_template_metadata, create_dataset
+from ..in_out.dataset_functions import template_metadata, create_dataset
 from ..core.model_tools.deformations.exponential import Exponential
 from ..core.model_tools.deformations.geodesic import Geodesic
 from ..in_out.array_readers_and_writers import *
 from ..support import kernels as kernel_factory
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
-from ..in_out.deformable_object_reader import DeformableObjectReader
+from ..in_out.deformable_object_reader import ObjectReader
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
 from .tools import *
-from .compute_parallel_transport import compute_parallel_transport
+from .compute_parallel_transport import launch_parallel_transport
 
 warnings.filterwarnings("ignore")
 
@@ -67,7 +67,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
         self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
-        self.objects_name, self.objects_ext = create_template_metadata(self.xml_parameters.template_specifications)[1:3]
+        self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
        
         self.dataset = create_dataset(self.xml_parameters.template_specifications, 
@@ -93,11 +93,11 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
-        self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
+        self.concentration_of_tp = self.xml_parameters.time_concentration
         self.global_t0 = self.xml_parameters.t0
         self.global_tmin = np.mean([e[0] for e in self.global_visit_ages])
         self.global_tmax = np.max([e[-1] for e in self.global_visit_ages])
-        self.global_nb_of_tp = self.xml_parameters.number_of_time_points
+        self.global_nb_of_tp = self.xml_parameters.n_time_points
         self.geodesic_nb_of_tp = int(1 + (self.global_t0 - self.global_tmin) * self.concentration_of_tp)
         
         self.number_of_sources = 4
@@ -359,7 +359,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
 
             # set the  template as the Bayesian template
             xml_parameters.template_specifications["img"]['filename'] = self.global_initial_template_path[0]
-            xml_parameters.initial_control_points = self.global_initial_cp_path
+            xml_parameters.initial_cp = self.global_initial_cp_path
 
             # Adapt the specific xml parameters and update
             #join filenames as if from a single subject = [[{obs 1}] [{obs2}]] -> [[{obs 1} {obs2}]]
@@ -463,13 +463,13 @@ class CrossSectionalLongitudinalAtlasInitializer():
                 # if shooting to True, equivalent to shoot template to subject age + 1 (parallel curve at t0)
                 # and shoot subject to subject age + 1 using transported momenta
                 
-                compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
+                launch_parallel_transport(xml_parameters.template_specifications, self.dimension, 
                                             self.global_kernel_width,
                                             None, self.regression_cp_path, self.registration_momenta[i],
                                             self.regression_cp_path, self.momenta_shot_to_subjects[i],
                                             tmin=0, tmax=1, t0 = 0, 
-                                            concentration_of_time_points=self.concentration_of_tp,
-                                            number_of_time_points=self.global_nb_of_tp,
+                                            time_concentration=self.concentration_of_tp,
+                                            n_time_points=self.global_nb_of_tp,
                                             output_dir=self.registration_subjects_paths[i], perform_shooting = False)
                 
                 logger.info("Shoot subject{} to t0".format(self.global_subject_ids[i]))
@@ -477,9 +477,9 @@ class CrossSectionalLongitudinalAtlasInitializer():
 
                 compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
                                 deformation_kernel_width=self.global_kernel_width,
-                                initial_control_points=self.regression_cp_path, 
+                                initial_cp=self.regression_cp_path, 
                                 initial_momenta=self.transported_regression_momenta_path[i], 
-                                concentration_of_time_points=self.concentration_of_tp, t0=self.global_visit_ages[i][0], 
+                                time_concentration=self.concentration_of_tp, t0=self.global_visit_ages[i][0], 
                                 tmin=min([self.global_t0, self.global_visit_ages[i][0]]), 
                                 tmax=max([self.global_t0, self.global_visit_ages[i][0]]),
                                 output_dir=self.shooted_subjects_paths[i], write_adjoint_parameters = False)  
@@ -634,7 +634,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
             xml_parameters.optimized_log_likelihood = 'class2'.lower()
             xml_parameters.template_specifications["img"]['filename'] = self.global_initial_template_path_2[0]
             xml_parameters.initial_momenta = self.global_initial_momenta_path
-            xml_parameters.initial_control_points = self.global_initial_cp_path
+            xml_parameters.initial_cp = self.global_initial_cp_path
             xml_parameters.initial_modulation_matrix = self.global_initial_mod_matrix_path
             xml_parameters.initial_sources = self.global_initial_sources_path
             xml_parameters.number_of_sources = self.number_of_sources

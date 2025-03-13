@@ -1,4 +1,4 @@
-import os.path
+import os.path as op
 import numpy as np
 import pyvista as pv
 import torch
@@ -71,8 +71,11 @@ class Landmark:
         connec_names = {2: 'LINES', 3: 'POLYGONS'}
         if points is None:
             points = self.points
+        
+        if isinstance(points, torch.Tensor):
+            points = points.cpu().numpy() 
 
-        with open(os.path.join(output_dir, name), 'w', encoding='utf-8') as f:
+        with open(op.join(output_dir, name), 'w', encoding='utf-8') as f:
             s = '# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET POLYDATA\nPOINTS {} float\n'.format(len(self.points))
             f.write(s)
             for p in points:
@@ -100,7 +103,7 @@ class Landmark:
                 cp = torch.tensor(cp, dtype=torch.float32, device='cuda:0')
                 momenta = torch.tensor(momenta, dtype=torch.float32, device='cuda:0')
             momenta_to_points = kernel.convolve(points, cp, momenta)            
-            polydata = pv.PolyData(os.path.join(output_dir, name))
+            polydata = pv.PolyData(op.join(output_dir, name))
             polydata.point_data["momenta_to_mesh"] = momenta_to_points.cpu().numpy()
-            polydata.save(os.path.join(output_dir, name))
+            polydata.save(op.join(output_dir, name))
 

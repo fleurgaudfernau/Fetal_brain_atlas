@@ -18,7 +18,7 @@ class Residuals():
         # Model parameters
         self.model = model
         self.name = model.name
-        self.ext = self.model.objects_extension[0]     
+        self.ext = self.model.extensions[0]     
         self.width = self.model.deformation_kernel_width   
         self.print_every_n_iters = print_every_n_iters
         self.convergence_threshold = 1e-2 #0.001
@@ -76,8 +76,7 @@ class Residuals():
         to_plot = ["Residuals_average", "Residuals_subjects",
                    "Template_changes", "Template_distance", 
                    "Gradient_norm", "Momenta_norm", "Modulation_matrix_distance", 
-                   "Modulation_matrix_changes", 
-                    "Modulation_matrix_norm", "Rupture_time"]
+                   "Modulation_matrix_changes", "Modulation_matrix_norm", "Rupture_time"]
         self.plot = {k: deepcopy(d) for k in to_plot}
 
         # Plots that have several series to plot
@@ -103,7 +102,7 @@ class Residuals():
         self.ss = {c : [] for c in range(self.n_sources)}
 
         # Curvatures
-        self.curvature = Curvature(dataset, self.model, self.ext, self.name, self.ages, self.n_obs)
+        #self.curvature = Curvature(dataset, self.model, self.ext, self.name, self.ages, self.n_obs)
 
         #self.first_write = [True, True]
         
@@ -230,7 +229,7 @@ class Residuals():
         if self.to_plot("Momenta_norm"):
                         
             for i in range(self.n_components):
-                n = norm(self.model.control_points, self.model.get_momenta()[i], self.width)
+                n = norm(self.model.cp, self.model.get_momenta()[i], self.width)
                 self.add_value("Momenta_norm", n, i)
                 self.add_iter("Momenta_norm", iteration)
 
@@ -255,14 +254,13 @@ class Residuals():
         if self.to_plot("Modulation_matrix_norm"):
 
             # Compute MM norm and distance to original MM
-            cp = self.model.control_points
             modulation_matrix = self.model.get_modulation_matrix()
 
             for s in range(modulation_matrix.shape[1]):
-                self.ss[s].append(np.reshape(modulation_matrix[:, s], cp.shape))
+                self.ss[s].append(np.reshape(modulation_matrix[:, s], self.model.cp.shape))
 
-                dist = current_distance(cp, self.ss[s][-1], self.ss[s][0], self.width)
-                norm_ = norm(cp, self.ss[s][-1], self.width)
+                dist = current_distance(self.model.cp, self.ss[s][-1], self.ss[s][0], self.width)
+                norm_ = norm(self.model.cp, self.ss[s][-1], self.width)
                 changes = change(self.ss[s])
 
                 self.add_value("Modulation_matrix_distance", dist, s)  

@@ -10,7 +10,7 @@ from itertools import product
 from pyvista import _vtk
 from ....core import default
 from ....core.observations.deformable_objects.landmark import Landmark
-from ....support import utilities
+from ....support.utilities import move_data
 from vtk.util import numpy_support as nps
 from scipy.spatial import KDTree
 from scipy.spatial import ConvexHull
@@ -32,7 +32,7 @@ class SurfaceMesh(Landmark):
     ####################################################################################################################
 
     def __init__(self, points, triangles, object_filename = None, polydata= None,
-                kernel = None, kernel_width = None):
+                kernel_width = None):
         Landmark.__init__(self, points) #self.points = points
         self.type = 'SurfaceMesh'
         
@@ -64,11 +64,6 @@ class SurfaceMesh(Landmark):
         self.current_scale = None
         self.faces = dict()
         self.change = True
-
-        # Multiscale mesh v2
-        self.smoothing_kernel = None
-        if kernel is not None:
-            self.smoothing_kernel = kernel_factory.factory(kernel, kernel_width=kernel_width)
 
         # All of these are torch tensor attributes.
         self.centers, self.normals = SurfaceMesh._get_centers_and_normals(
@@ -219,13 +214,12 @@ class SurfaceMesh(Landmark):
         self.polydata.cell_data["Normals_normalized"] = normals_normalized.cpu().numpy()    
     
     @staticmethod
-    def _get_centers_and_normals(points, triangles,
-                                 device='cpu'):
+    def _get_centers_and_normals(points, triangles, device='cpu'):
         """
          Computed by hand so that centers and normals keep the autograd of point
         """
-        points = utilities.move_data(points, device=device)
-        triangles = utilities.move_data(triangles, integer = True, device=device)
+        points = move_data(points, device=device)
+        triangles = move_data(triangles, integer = True, device=device)
 
         a = points[triangles[:, 0]]
         b = points[triangles[:, 1]]
@@ -238,32 +232,21 @@ class SurfaceMesh(Landmark):
 
         return centers, normals
 
-    def get_centers_and_normals(self, points=None,
-                                device='cpu', residuals = False):
+    def get_centers_and_normals(self, points=None, device='cpu', residuals = False):
         """
         Given a new set of points, use the corresponding connectivity available in the polydata
         to compute the new normals, all in torch
         """
         if points is None:
             if not self.is_modified:
-
-                return (utilities.move_data(self.centers, device=device),
-                        utilities.move_data(self.normals, device=device))
+                return (move_data(self.centers, device=device), move_data(self.normals, device=device))
 
             else:
-                logger.debug('Call of SurfaceMesh.get_centers_and_normals with is_modified=True flag.')
                 points = torch.from_numpy(self.points)
 
         centers, normals = SurfaceMesh._get_centers_and_normals(points, torch.from_numpy(self.connectivity), 
                              device=device)
 
-        # Haar transform normals
-        if self.multiscale_mesh and self.current_scale is not None: # iter 0, 1st residuals computation
-            if not residuals:
-                self.filter_new_normals(centers.clone(), normals.clone())
-                normals = utilities.move_data(self.normals, 
-                                            requires_grad = (normals.grad_fn is not None), 
-                                                device=device)
         return (centers, normals)
 
     def get_centers_and_normals_pyvista(self, points = None, device='cpu'):
@@ -280,62 +263,3 @@ class SurfaceMesh(Landmark):
 
         return centers, normals
 
-    ####################################################################################################################
-    ### Multiscale meshes - Filtering of normals
-    ####################################################################################################################    
-    
-    def set_kernel_scale(self, kernel_width):
-        self.smoothing_kernel.update_width(kernel_width)
-        self.multiscale_mesh = True
-        self.current_scale = kernel_width
-
-    def filter_vectors(self, centers, normals):
-        filtered_normals = self.smoothing_kernel.convolve(centers, centers, normals, mode = "gaussian_weighted")
-
-        old_norm = vect_norm(normals.detach().cpu().numpy())
-        new_norm = vect_norm(filtered_normals.detach().cpu().numpy())
-        ratio = np.expand_dims(old_norm/new_norm, axis = 1)
-        ratio = utilities.move_data(torch.from_numpy(ratio), dtype=filtered_normals.dtype, 
-                                    device=filtered_normals.device)
-        filtered_normals = filtered_normals * ratio
-
-        # Works well but too long!
-        # weights = torch.sum((centers[:, None, :] - centers[None, :, :]) ** 2, 2)
-        # #weights -= torch.max(weights, dim=1)[0][:, None]  # subtract the max for robustness
-        # gamma = -1/(self.smoothing_kernel.kernel_width**2)
-        # weights = torch.exp(weights*gamma) / torch.sum(torch.exp(weights*gamma), dim=1)[:, None]
-        # filtered_normals = weights @ normals
-
-        return filtered_normals
-
-
-    def filter_normals(self):
-        """
-         Called by multiscale meshes.
-         Modify self.normals as set by the filter width & polydata (for vizualisation)
-        """
-        self.filtered = True
-                
-        centers, normals = self.centers, self.original_normals.clone()
-
-        if self.current_scale > 0:
-            normals = self.filter_vectors(centers, normals)
-            #self.set_kernel_scale(10)
-            #filtered_centers = self.filter_vectors(centers, centers)
-                    
-        self.normals = normals
-        self.set_centers_point_data("New_normals", self.normals.detach().cpu().numpy())
-        
-    def filter_new_normals(self, centers = None, normals = None):
-        centers_ = centers.detach().clone().cpu().numpy()
-        normals_ = normals.detach().clone().cpu().numpy()
-        self.check_change_(centers_)
-        self.update_polydata_(centers_, normals_)
-
-        if self.current_scale > 0:
-            normals = self.filter_vectors(centers, normals)
-        
-        self.normals = normals
-        self.set_centers_point_data("New_normals", self.normals.detach().cpu().numpy())
-
-        

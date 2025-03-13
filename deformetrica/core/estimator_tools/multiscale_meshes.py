@@ -6,30 +6,13 @@ from ...support.utilities.tools import residuals_change
 
 logger = logging.getLogger(__name__)
 
-def compute_mesh_scale(model_name, momenta_scale, current_mesh_scale = None):
-    if momenta_scale > 1:
-        mesh_scale = min(30000, 7**(momenta_scale)) #before 27/01: 6
-    else:
-        mesh_scale = 0
-    ## smaller steps
-    # if not current_mesh_scale:
-    #     if momenta_scale > 1:
-    #         mesh_scale = 8**(momenta_scale)
-    # else: 
-    #     mesh_scale = current_mesh_scale/2
-    
-    # if mesh_scale < 100:
-    #     mesh_scale = 0
-        
-    return int(mesh_scale)
-
 class MultiscaleMeshes():
     def __init__(self, multiscale, multiscale_momenta, model, dataset, output_dir, 
                 ctf_interval, ctf_max_interval, points):
         self.model = model
         self.model_name = model.name
         self.original_dataset = copy.deepcopy(dataset)
-        self.ext = self.model.objects_extension[0]
+        self.ext = self.model.extensions[0]
 
         self.output_dir = output_dir
 
@@ -43,7 +26,6 @@ class MultiscaleMeshes():
         self.iter = [0] if multiscale else []
 
         self.points = points 
-        self.compute_scale = compute_mesh_scale
 
     ####################################################################################################################
     ### Coarse to fine on meshes - smoothing of the normal vectors
@@ -70,10 +52,6 @@ class MultiscaleMeshes():
         Authorizes coarse to fine if more than 2 iterations after previous CTF (or beginning of algo)
         and if residuals diminution is low
         """
-        #if self.model.k == 0: return False
-        #self.scale = [[e if e>1 else 0 for e in f] for f in self.scale]
-
-        #if all(e==0 for e in sum(self.scale,[])): return False
         if not self.multiscale: return False
 
         if self.multiscale_momenta: return False
@@ -136,7 +114,7 @@ class MultiscaleMeshes():
         if self.coarse_to_fine_condition(iteration, avg_residuals, end):
             return self.coarse_to_fine_step(parameters, iteration)
         
-        print("\n No Coarse to Fine allowed")  
+        #print("\n No Coarse to Fine allowed")  
 
         return current_dataset, parameters
 
@@ -195,49 +173,3 @@ class MultiscaleMeshes():
         self.scale.append(max_scales)
         
         print("self.scale", self.scale)
-
-    def filter_template_mesh_(self, parameters, iteration):
-        """
-            Function that filters the template image when it is frozen (ie during registration)
-            /!\ this only modifies the template in the model, not the estimator -> works if template not optimized!
-        """
-        if (iteration == 0 and  self.model_name in ["DeterministicAtlas"])\
-        or (self.model_name in ["Registration", "GeodesicRegression"] and self.freeze_template):
-
-            for o, object in enumerate(self.model.template.object_list):
-                object.set_scale(self.scale[-1][0])
-                haar_filtered_normals = object.haar_transform_normals()[0]
-                haar_filtered_normals.save(op.join(self.output_dir, "Template_iter_{}_scale_{}{}".format(iteration, self.scale[-1][0], self.ext)), binary=False) 
-            
-            # the points=landmark_points= position of vertices
-            # we did not modify these.
-            # self.model.set_template_data({self.points : points})
-            # if self.points in parameters:
-            #     parameters[self.points] = points
-
-        return parameters
-
-    def filter_(self, parameters, iteration):
-        """
-        !! Distance computed from normals. Normals computed from new landmark points positions
-        (in case of deformed template!)
-        Here only the targets are filtered -> need to filter also deformed source
-        """
-        new_dataset = copy.deepcopy(self.original_dataset)
-
-        if self.multiscale:
-            
-            if iteration == 0: logger.info('\nInitial filtering of meshes...\n')
-
-            for i, _ in enumerate(new_dataset.subject_ids): #for each subject
-                for o, observation in enumerate(new_dataset.deformable_objects[i]):
-                    for object in observation.object_list:
-                        print("Subject {} osb {}".format(i, o))
-                        object.set_scale(self.scale[i][o])
-                        haar_filtered_normals = object.haar_transform_normals()
-                        haar_filtered_normals[0].save(op.join(self.output_dir, "Filtered_subject_{}_obs_{}_scale_{}.vtk".format(i, o, object.current_scale)), binary=False) 
-                        haar_filtered_normals[1].save(op.join(self.output_dir, "Grid_subject_{}_obs_{}_scale_{}.vtk".format(i, o, object.current_scale)), binary=False) 
-        
-            parameters = self.filter_template_mesh(parameters, iteration)
-
-        return new_dataset, parameters

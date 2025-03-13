@@ -24,7 +24,7 @@ def object_type(filename):
     elif ".npy" in filename or ".nii" in filename or ".png" in filename:
         return "Image"
 
-class DeformableObjectReader:
+class ObjectReader:
     """
     Creates PyDeformetrica objects from specified filename and object type.
 
@@ -33,25 +33,23 @@ class DeformableObjectReader:
 
     # Create a PyDeformetrica object from specified filename and object type.
     @staticmethod
-    def create_object(object_filename, interpolation = "linear", kernel = None, 
-                        kernel_width=None):
+    def create_object(object_filename, interpolation = "linear", kernel_width=None):
 
-        type = object_type(object_filename)
+        obj_type = object_type(object_filename)
 
-        if type.lower() == 'SurfaceMesh'.lower():
-            points, connectivity = DeformableObjectReader.read_file(object_filename, extract_connectivity=True)
+        if obj_type.lower() == 'SurfaceMesh'.lower():
+            points, connectivity = ObjectReader.read_file(object_filename, extract_connectivity=True)
             out_object = SurfaceMesh(points, connectivity, object_filename, 
-                                    kernel=kernel, kernel_width = kernel_width)
+                                    kernel_width = kernel_width)
             out_object.remove_null_normals()
 
-        elif type.lower() == 'Image'.lower():
+        elif obj_type.lower() == 'Image'.lower():
             if object_filename.find(".png") > 0:
                 img_data = np.array(pimg.open(object_filename))
                 dimension = len(img_data.shape)
                 img_affine = np.eye(dimension + 1)
                 if len(img_data.shape) > 2:
-                    warnings.warn('Multi-channel images are not managed (yet).')
-                    dimension = 2
+                    warnings.warn('Multi-channel images are not managed.')
                     img_data = img_data[:, :, 0]
 
             elif object_filename.find(".npy") > 0:
@@ -65,9 +63,6 @@ class DeformableObjectReader:
                 dimension = len(img_data.shape)
                 img_affine = img.affine
                 assert len(img_data.shape) == 3, "Multi-channel images not available (yet!)."
-
-            else:
-                raise TypeError('Unknown image extension for file: %s' % object_filename)
 
             # Rescaling between 0. and 1.
             img_data, img_data_dtype = normalize_image_intensities(img_data)

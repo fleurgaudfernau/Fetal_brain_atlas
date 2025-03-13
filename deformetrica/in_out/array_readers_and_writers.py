@@ -1,10 +1,123 @@
+import torch
 import logging
 logger = logging.getLogger(__name__)
 import pyvista as pv
 import os.path as op
-
 import numpy as np
+from ..support.utilities import detach
 
+####################################################################################################################
+### Specific writing functions
+####################################################################################################################
+
+def cp_name(name = "", time = "", age = ""):
+    if len(str(time)) > 0:
+        return "{}ControlPoints__tp_{}.txt".format(name, time)
+
+    return "{}__ControlPoints.txt".format(name)
+
+def momenta_name(name = "", time = "", age = ""):
+    if len(str(time)) > 0 and len(str(age)) > 0:
+        return '{}Momenta__tp_{}__age_{:.2f}.txt'.format(name, time, age)
+    
+    elif len(str(time)) > 0:
+        return "{}Momenta__tp_{}.txt".format(name, time)
+    
+    return "{}__Estimated__Momenta.txt".format(name)
+
+def source_name(name):
+    return '{}__Estimated__Sources.txt'.format(name)
+
+def mod_matrix_name(name):
+    return "{}__Estimated__ModulationMatrix.txt".format(name)
+
+def mod_matrix_flow_name(name, t, time):
+    return name + '__PiecewiseGeodesicFlow__ModulationMatrix__tp_' + str(t) + ('__age_%.2f' % time) + '.txt'
+
+def paraview_name(name, iteration = "", comp = ""):
+    if name in ["KernelRegression",  "DeformableTemplate"]:
+        return "{}__Estimated__Fusion_CP_Momenta_{}.vtk".format(name, iteration)
+    
+    elif name in ["GeodesicRegression", "BayesianGeodesicRegression"] and len(str(comp)) > 0:
+        return "{}__Estimated__Fusion_CP_Momenta__component_{}_iter_{}.vtk".format(name, comp, iteration)
+    
+    elif name == "GeodesicRegression" and len(str(iteration)) > 0:
+        return "{}__Estimated__Fusion_CP_Momenta__iter_{}.vtk".format(name, iteration)
+
+    elif name == "GeodesicRegression":
+        return "{}__Estimated__Fusion_CP_Momenta.vtk".format(name)
+        
+    else:
+        return name
+
+def reconstruction_name(name, subject_id = "", time = "", age = "", ext = ""):
+    if name == "KernelRegression":
+        return "{}__Reconstruction__subject_{}_age_{}".format(name, subject_id, age, ext)
+
+    elif name == "DeformableTemplate":
+        return '{}__Reconstruction__subject_{}{}'.format(name, subject_id, ext)
+
+    elif name == "GeodesicRegression":
+        return '{}__Reconstruction____tp_{}__age_{}'.format(name, time, age, ext)
+    
+    elif name == "BayesianGeodesicRegression":
+        return '{}__Reconstruction__subject__{}__tp_{}__age_{}{}'.format(name, subject_id, time, age, ext)
+
+def template_name(name, time = "", age = "", t0 = "", iteration = "", 
+                ext = "", freeze_template = False):
+    if name == "KernelRegression":
+        return "{}__Estimated__Template_time_{}{}".format(name, time, ext)
+    
+    elif name in ["DeformableTemplate", "BayesianAtlas"]:
+        if not freeze_template and len(iteration) > 0:
+            return "{}__Estimated__Template_{}{}".format(name, iteration, ext)
+        else:
+            return "{}__Estimated__Template_{}".format(name, ext)
+
+    elif name == "GeodesicRegression":
+        if not freeze_template:   
+            return '{}__Estimated__Template__tp_{}__age_{}{}'.format(name, time, t0, ext)
+        else:
+            return '{}__Fixed__Template__tp_{}__age_{}{}'.format(name, time, t0, ext)
+
+    elif name == "BayesianGeodesicRegression":
+        if not freeze_template:
+            return '{}__Estimated__Template___tp_{}__age_{}{}'.format(name, time, age, ext)
+        else:
+            return '{}__Fixed__Template___tp_{}__age_{}{}'.format(name, time, age, ext)
+
+def flow_name(name, t, time, comp = "", ext = ""):
+    if len(str(comp)) > 0:
+        return '{}component_{}_tp_{}__age_{:.2f}{}'.format(name, comp, t, time, ext)
+    
+    return '{}tp_{}__age_{}{}'.format(name, t, time, ext)
+
+def space_shift_name(name, source, t, time, ext, backward = False):
+    if backward:
+        return "{}__IndependentComponent_{}__tp_{}__age_{}__BackwardExponentialFlow{}"\
+            .format(name, source, t, time, ext)
+        
+    return "{}__IndependentComponent_{}__tp_{}__age_{}__ForwardExponentialFlow{}"\
+            .format(name, source, t, time, ext)
+
+def write_cp(cp, output_dir, name, time = "", age = ""):
+    write_2D_array(cp, output_dir, cp_name(name, time, age))
+
+def write_momenta(momenta, output_dir, name, time = "", age = ""):
+    write_3D_array(momenta, output_dir, momenta_name(name, time, age))
+
+def write_sources(sources, output_dir, name):
+    write_2D_array(sources, output_dir, source_name(name))
+
+def write_mod_matrix(mod_matrix, output_dir, name):
+    write_2D_array(mod_matrix, output_dir, mod_matrix_name(name))
+
+def write_mod_matrix_flow(modulation_matrix, output_dir, name, t, time):
+    write_2D_array(modulation_matrix, output_dir, mod_matrix_flow_name(name, t, time))
+
+####################################################################################################################
+### Write arrays
+####################################################################################################################
 
 def write_2D_array(array, output_dir, name, fmt='%f'):
     """
@@ -17,11 +130,12 @@ def write_2D_array(array, output_dir, name, fmt='%f'):
         array = array.reshape(1,)
     np.savetxt(save_name, array, fmt=fmt)
 
-
 def write_3D_array(array, output_dir, name):
     """
     Saving an array has dim (numsubjects, numcps, dimension), using deformetrica format
     """
+    array = detach(array)
+
     # s = array.shape
     # if len(s) == 2:
     #     array = np.array([array])
@@ -49,7 +163,15 @@ def write_3D_array(array, output_dir, name):
                 f.write(" ".join(map(str, cp)) + "\n") 
 
 
-def concatenate_for_paraview(array_momenta, array_cp, output_dir, name, **kwargs):
+def concatenate_for_paraview(array_momenta, array_cp, output_dir, name, iteration = "", comp = "",
+                            **kwargs):
+    
+    name = paraview_name(name, iteration, comp)
+
+    array_momenta = detach(array_momenta)
+    array_cp = detach(array_cp)
+    kwargs = {k : detach(v) for k,v in kwargs.items()}
+
     if len(array_momenta.shape) == 1:
         array_momenta = np.array([array_momenta])
     if len(array_momenta.shape) == 2:
@@ -73,9 +195,12 @@ def concatenate_for_paraview(array_momenta, array_cp, output_dir, name, **kwargs
             else:
                 polydata.point_data[str(k)] = v
         
-        save_name = op.join(output_dir, name).replace(".vtk", "_sujet_{}.vtk".format(sujet))
+        save_name = op.join(output_dir, name).replace(".vtk", "_sujet_{}".format(sujet)) + ".vtk"
         polydata.save(save_name, binary=False)
 
+####################################################################################################################
+### Write lists
+####################################################################################################################
 
 def read_2D_list(path):
     """
@@ -90,6 +215,8 @@ def write_2D_list(input_list, output_dir, name):
     """
     Saving a list of list.
     """
+    input_list = [detach(l) for l in input_list]
+
     save_name = op.join(output_dir, name)
     with open(save_name, "w") as f:
         for elt_i in input_list:
@@ -149,6 +276,10 @@ def write_3D_list(list, output_dir, name):
 
 def flatten_3D_list(list3):
     return [elt for list2 in list3 for list1 in list2 for elt in list1]
+
+####################################################################################################################
+### Read arrays
+####################################################################################################################
 
 def read_2D_array(name):
     """

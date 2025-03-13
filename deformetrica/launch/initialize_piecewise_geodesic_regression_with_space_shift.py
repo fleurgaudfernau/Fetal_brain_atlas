@@ -15,12 +15,12 @@ from ..support import utilities
 
 from ..core import default
 from ..in_out.xml_parameters import XmlParameters, get_dataset_specifications, get_estimator_options, get_model_options
-from ..in_out.dataset_functions import create_template_metadata, create_dataset
+from ..in_out.dataset_functions import template_metadata, create_dataset
 from ..in_out.array_readers_and_writers import *
 from ..support import kernels as kernel_factory
 from ..api.deformetrica import Deformetrica
 from .deformetrica_functions import *
-from .compute_parallel_transport import compute_parallel_transport, compute_piecewise_parallel_transport
+from .compute_parallel_transport import launch_parallel_transport, launch_piecewise_parallel_transport
 
 warnings.filterwarnings("ignore")
 
@@ -178,7 +178,7 @@ class BayesianRegressionInitializer():
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
         self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
-        self.objects_name, self.objects_ext = create_template_metadata(self.xml_parameters.template_specifications)[1:3]
+        self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
         
         for _, object in self.xml_parameters.template_specifications.items():
@@ -197,7 +197,7 @@ class BayesianRegressionInitializer():
         self.kernel = kernel_factory.factory(kernel_width=self.global_kernel_width)
         
         # Times
-        self.concentration_of_tp = self.xml_parameters.concentration_of_time_points
+        self.concentration_of_tp = self.xml_parameters.time_concentration
         self.global_t0 = self.xml_parameters.t0
         self.global_t0_for_pt = self.global_t0
         self.global_t0_for_pt = 30
@@ -207,7 +207,7 @@ class BayesianRegressionInitializer():
         # times 23.00, 23.2, 23.4... 
         self.global_times = [np.round(i, 2) for i in np.arange(np.floor(self.global_tmin), np.ceil(self.global_tmax) + 1, 1/self.concentration_of_tp)]
         # Number of time points (entiers eg 11)
-        self.global_nb_of_tp = self.xml_parameters.number_of_time_points
+        self.global_nb_of_tp = self.xml_parameters.n_time_points
         self.geodesic_nb_of_tp = int(1 + (self.global_t0 - self.global_tmin) * self.concentration_of_tp)
         
         self.num_component = self.xml_parameters.num_component
@@ -382,13 +382,13 @@ class BayesianRegressionInitializer():
         xml_parameters.multiscale_meshes = False
 
         # to ensure we keep the same bounding box
-        xml_parameters.initial_control_points = self.global_initial_cp_path
+        xml_parameters.initial_cp = self.global_initial_cp_path
         self.global_deformetrica.output_dir = self.subjects.registration_path(i)
         
         return xml_parameters
 
     def parallel_transport(self, xml_parameters, i):        
-            compute_piecewise_parallel_transport(xml_parameters.template_specifications, self.dimension, 
+            launch_piecewise_parallel_transport(xml_parameters.template_specifications, self.dimension, 
                                    self.global_kernel_width,
                                     None, self.global_initial_cp_path, self.global_initial_momenta_path, # initial mom
                                     self.subjects.registration_momenta_path(i), # mom to transport
@@ -396,7 +396,7 @@ class BayesianRegressionInitializer():
                                     t0 = self.global_t0,
                                     t1 = self.subjects.age(i),
                                     tR=self.global_tR, nb_components=self.num_component,
-                                    number_of_time_points=self.global_nb_of_tp,
+                                    n_time_points=self.global_nb_of_tp,
                                     output_dir=self.subjects.shooting_path(i), 
                                     perform_shooting = True)
 
@@ -421,14 +421,14 @@ class BayesianRegressionInitializer():
                 print("!!!", self.subjects.shot_momenta_path(i))
                 logger.info('\n[ Parallel transport registration momenta of subject {} of age {} to t0 {}]'.format(self.subjects.id(i), self.subjects.age(i), self.global_t0_for_pt))
                 xml_parameters = self.set_template_xml(xml_parameters, self.subjects.same_age_template(i))
-                compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
+                launch_parallel_transport(xml_parameters.template_specifications, self.dimension, 
                                  self.global_kernel_width, None, self.global_initial_cp_path, 
                                 self.subjects.same_age_momenta(i), # initial mom
                                 self.subjects.registration_momenta_path(i), # mom to transport
                                 self.subjects.tmin(i), self.subjects.tmax(i), 
-                                concentration_of_time_points=1,
+                                time_concentration=1,
                                 t0 = self.subjects.age(i),
-                                number_of_time_points=self.global_nb_of_tp,
+                                n_time_points=self.global_nb_of_tp,
                                 output_dir=self.subjects.shooting_path(i))
 
         self.insert_xml()
@@ -452,13 +452,13 @@ class BayesianRegressionInitializer():
                 if not op.exists(self.subjects.shot_momenta_path(i)):
                     logger.info('\n[ Parallel transport regression momenta along registration momenta of subject {} of age]'.format(self.subjects.age(i)))
                     
-                    compute_parallel_transport(xml_parameters.template_specifications, self.dimension, 
+                    launch_parallel_transport(xml_parameters.template_specifications, self.dimension, 
                                         self.global_kernel_width,None, self.global_initial_cp_path, 
                                         self.subjects.registration_momenta_path(i),
                                         self.subjects.same_age_momenta(i),
                                         tmin=0, tmax=1, t0 = 0,
-                                        concentration_of_time_points=1,
-                                        number_of_time_points=self.global_nb_of_tp,
+                                        time_concentration=1,
+                                        n_time_points=self.global_nb_of_tp,
                                         output_dir=self.subjects.shooting_path(i), 
                                         perform_shooting = False)
 
@@ -467,9 +467,9 @@ class BayesianRegressionInitializer():
                     xml_parameters = self.set_template_xml(xml_parameters, self.subjects.filename(i))
                     compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
                                     deformation_kernel_width=self.global_kernel_width,
-                                    initial_control_points=self.global_initial_cp_path, 
+                                    initial_cp=self.global_initial_cp_path, 
                                     initial_momenta=self.subjects.shot_momenta_path(i), 
-                                    concentration_of_time_points=1, 
+                                    time_concentration=1, 
                                     t0=self.subjects.age(i), 
                                     tmin=self.subjects.tmin(i), tmax=self.subjects.tmax(i), 
                                     output_dir=self.subjects.shooting_path(i), 
@@ -560,9 +560,9 @@ class BayesianRegressionInitializer():
 
             compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
                             deformation_kernel_width=self.global_kernel_width,
-                            initial_control_points=self.global_initial_cp_path, 
+                            initial_cp=self.global_initial_cp_path, 
                             initial_momenta=self.subjects.shot_momenta_path(i), 
-                            concentration_of_time_points=1, 
+                            time_concentration=1, 
                             output_dir=self.ICA_output, 
                             write_adjoint_parameters = False) 
             

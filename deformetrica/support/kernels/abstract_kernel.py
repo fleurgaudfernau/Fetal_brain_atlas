@@ -116,7 +116,7 @@ class AbstractKernel(ABC):
 
         if gpu_mode in [GpuMode.FULL, GpuMode.KERNEL]:
             # tensors should already be on the target device, if not, they will be moved
-            dev, _ = utilities.get_best_device(gpu_mode=gpu_mode)
+            dev = utilities.get_best_device(gpu_mode=gpu_mode)
             t = utilities.move_data(t, device=dev)
 
         elif gpu_mode is GpuMode.NONE:

@@ -6,7 +6,6 @@ import numpy as np
 
 
 def normalize_image_intensities(intensities):
-
     dtype = str(intensities.dtype)
     if dtype == 'uint8':
         return np.array(intensities / 255.0, dtype="float32"), dtype

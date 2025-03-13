@@ -5,7 +5,7 @@ import os.path as op
 from ....core import default
 from ....core.model_tools.deformations.exponential import Exponential
 from ....in_out.array_readers_and_writers import *
-from ....support.utilities import get_best_device, move_data, detach
+from ....support.utilities import get_best_device, move_data, detach, interpolate, reverse_if
 
 import logging
 logger = logging.getLogger(__name__)
@@ -14,20 +14,22 @@ logger = logging.getLogger(__name__)
 def _parallel_transport(*args):
 
     # read args
-    compute_backward, exponential, momenta_to_transport_t0, is_ortho = args
+    compute_backward, exponential, momenta_to_transport, is_ortho = args
 
     # compute
     if compute_backward:
-        return compute_backward, exponential.parallel_transport(momenta_to_transport_t0, is_ortho=is_ortho)
+        return compute_backward, exponential.transport(momenta_to_transport, is_ortho)
     else:
-        return compute_backward, exponential.parallel_transport(momenta_to_transport_t0, is_ortho=is_ortho)
+        return compute_backward, exponential.transport(momenta_to_transport, is_ortho)
+
+def concatenate(backward, forward):
+    return backward[::-1] + forward[1:]
 
 class Geodesic:
     """
     Control-point-based LDDMM geodesic.
     See "Morphometry of anatomical shape complexes with dense deformations and sparse parameters",
     Durrleman et al. (2013).
-
     """
 
     ####################################################################################################################
@@ -35,9 +37,12 @@ class Geodesic:
     ####################################################################################################################
 
     def __init__(self, kernel=default.deformation_kernel,
-                 t0=default.t0, concentration_of_time_points=default.concentration_of_time_points):
+                 t0=default.t0, time_concentration=default.time_concentration,
+                 extensions = None, root_name = ""):
 
-        self.concentration_of_time_points = concentration_of_time_points
+        self.extensions = extensions
+        self.root_name = '{}__GeodesicFlow__'.format(root_name)
+        self.time_concentration = time_concentration
         self.t0 = t0
         self.tmax = None
         self.tmin = None
@@ -46,26 +51,30 @@ class Geodesic:
         self.momenta_t0 = None
         self.template_points_t0 = None
 
-        self.bw_exponential = Exponential(kernel=kernel)
-        self.fw_exponential = Exponential(kernel=kernel)
+        self.bw_exponential = Exponential(kernel=kernel, use_rk2_for_shoot = True)
+        self.fw_exponential = Exponential(kernel=kernel, use_rk2_for_shoot = True)
 
         # Flags to save extra computations that have already been made in the update methods.
         self.shoot_is_modified = True
         self.flow_is_modified = True
         self.backward_extension = 0
         self.forward_extension = 0
+    
+    def new_exponential(self):
+        return Exponential(kernel = self.bw_exponential.kernel, use_rk2_for_shoot = True)
 
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
+    def set_file_extensions(self, ext):
+        self.extension = ext
 
     def set_kernel(self, kernel):
         self.bw_exponential.kernel = kernel
         self.fw_exponential.kernel = kernel
         
     def best_device(self):
-        device, _ = get_best_device(self.bw_exponential.kernel.gpu_mode)
-        return device
+        return get_best_device(self.bw_exponential.kernel.gpu_mode)
 
     def set_t0(self, t0):
         self.t0 = t0
@@ -94,7 +103,7 @@ class Geodesic:
                 else:
                     self.tmin = tmin
                     length = self.t0 - self.tmin
-                    self.backward_extension = max(0, int(length * self.concentration_of_time_points + 0.5))
+                    self.backward_extension = max(0, int(length * self.time_concentration + 0.5))
                     self.bw_exponential.set_initial_momenta(- self.momenta_t0 * length)
 
     def get_tmax(self):
@@ -117,7 +126,7 @@ class Geodesic:
                 else:
                     self.tmax = tmax
                     length = self.tmax - self.t0
-                    self.forward_extension = max(0, int(length * self.concentration_of_time_points + 0.5))
+                    self.forward_extension = max(0, int(length * self.time_concentration + 0.5))
                     self.fw_exponential.set_initial_momenta(self.momenta_t0 * length)
 
     def get_template_points_t0(self):
@@ -134,41 +143,42 @@ class Geodesic:
     def set_momenta_t0(self, mom):
         self.momenta_t0 = mom
         self.shoot_is_modified = True
-    
-    def get_momenta_t(self, time = None):
-        momenta_t = [detach(elt) for elt in self.get_momenta_trajectory()]
+        
+    def get_momenta_t(self, time = None, transform = detach):
+        j = self.get_time_index(time)
 
-        if time:
-            return momenta_t[time]
-        else:
-            return momenta_t[-1]
+        momenta_t = [transform(elt) for elt in self.get_momenta_trajectory()]
+
+        return momenta_t[j] if j is not None else momenta_t[-1]
+    
+    def get_cp_t(self, time=None, transform = detach):
+        j = self.get_time_index(time)
+
+        cp_t = [transform(elt) for elt in self.get_cp_trajectory()]
+
+        return cp_t[j] if j is not None else cp_t[-1]
 
     def get_template_points(self, time):
         """
         Returns the position of the landmark points, at the given time.
         Performs a linear interpolation between the two closest available data points.
         """
-
         assert self.tmin <= time <= self.tmax
         if self.shoot_is_modified or self.flow_is_modified:
             warnings.warn("Asking for deformed template data but geodesic was modified and not updated")
 
         times = self.get_times()
+        j = self.get_time_index(time)
 
-        # Deal with the special case of a geodesic reduced to a single point.
-        if len(times) == 1:
-            logger.info('>> The geodesic seems to be reduced to a single point.')
+        if j is None:
             return self.template_points_t0
 
-        # Standard case.
-        for j in range(1, len(times)):
-            if time - times[j] < 0: break
-        
         delta = times[j] - times[j - 1]
         weight_l = move_data((times[j] - time) / delta, device = self.best_device() )
         weight_r = move_data((time - times[j - 1]) / delta, device = self.best_device())
-        template_t = {key: [move_data(v, device = self.best_device()) for v in value] for key, value in self.get_template_points_trajectory().items()}
-        deformed_points = {k: interpolate(weight_l, weight_r, value, j) for k, v in template_t.items()}
+        template_t = {key: [move_data(v, device = self.best_device()) for v in value]\
+                    for key, value in self.get_template_points_trajectory().items()}
+        deformed_points = {k: interpolate(weight_l, weight_r, v, j) for k, v in template_t.items()}
 
         return deformed_points
 
@@ -213,72 +223,20 @@ class Geodesic:
 
             if self.fw_exponential.is_long():
                 self.fw_exponential.move_data_to_(device = self.best_device())
-                self.fw_exponential.update()
-
-            self.shoot_is_modified = False
-            self.flow_is_modified = False
-            self.backward_extension = 0
-            self.forward_extension = 0
+                self.fw_exponential.update() 
 
         else:
             if self.backward_extension > 0:
                 self.bw_exponential.extend(self.backward_extension)
-                self.backward_extension = 0
 
             if self.forward_extension > 0:
                 self.fw_exponential.extend(self.forward_extension)
-                self.forward_extension = 0
+        
+        self.shoot_is_modified, self.flow_is_modified = False, False
+        self.backward_extension, self.forward_extension = 0, 0
     
     def nb_of_tp(self, length):
-        return max(1, int(length * self.concentration_of_time_points + 1.5))
-
-    def update_(self):
-        """
-        Ajout fg: update mais sans la multiplication par la longueur de l'exp
-        """
-        assert self.t0 >= self.tmin, "tmin should be smaller than t0"
-        assert self.t0 <= self.tmax, "tmax should be larger than t0"
-
-        if self.shoot_is_modified or self.flow_is_modified:
-
-            # Backward exponential -------------------------------------------------------------------------------------
-            length = self.t0 - self.tmin
-            self.bw_exponential.n_time_points = self.nb_of_tp(length)
-
-            if self.shoot_is_modified:
-                self.bw_exponential.set_initial_momenta(- self.momenta_t0)
-                self.bw_exponential.set_initial_cp(self.cp_t0)
-            if self.flow_is_modified:
-                self.bw_exponential.set_initial_template_points(self.template_points_t0)
-            if self.bw_exponential.is_long():
-                self.bw_exponential.move_data_to_(device = self.best_device())
-                self.bw_exponential.update()
-
-            # Forward exponential --------------------------------------------------------------------------------------
-            length = self.tmax - self.t0
-            self.fw_exponential.n_time_points = self.nb_of_tp(length)
-            if self.shoot_is_modified:
-                self.fw_exponential.set_initial_momenta(self.momenta_t0)
-                self.fw_exponential.set_initial_cp(self.cp_t0)
-            if self.flow_is_modified:
-                self.fw_exponential.set_initial_template_points(self.template_points_t0)
-            if self.fw_exponential.is_long():
-                self.fw_exponential.move_data_to_(device = self.best_device())
-                self.fw_exponential.update()
-
-            self.shoot_is_modified = False
-            self.flow_is_modified = False
-            self.backward_extension = 0
-            self.forward_extension = 0
-
-        else:
-            if self.backward_extension > 0:
-                self.bw_exponential.extend(self.backward_extension)
-                self.backward_extension = 0
-
-            if self.forward_extension > 0:
-                self.fw_exponential.extend(self.forward_extension)
-                self.forward_extension = 0
+        return max(1, int(length * self.time_concentration + 1.5))
 
     def get_norm_squared(self):
         """
@@ -286,144 +244,129 @@ class Geodesic:
         """
         return self.fw_exponential.scalar_product(self.cp_t0, self.momenta_t0, self.momenta_t0)
 
-    def parallel_transport(self, momenta_to_transport_t0, 
-                            is_ortho=False, t1 = 0):
+    ####################################################################################################################
+    ### Parallel transport:
+    ####################################################################################################################
+
+    def transport(self, momenta_to_transport, target_time = None, is_ortho=False):
         """
-        :param momenta_to_transport_t0: the vector to parallel transport, given at t0 and carried at cp_t0
+        :param momenta_to_transport: vector to transport, given at t0 and carried at cp_t0
         :returns: the full trajectory of the parallel transport, from tmin to tmax.
-        #modif fg: t1 : time point at which momenta_to_transport_t0 is defined
+        """
+        logger.info("Classical parallel transport: momenta to transport defined at t0")
+        
+        if target_time is None:
+            logger.info("Combining backward + forward transports from t0")
+
+            backward_transport = ( self.bw_exponential.transport(momenta_to_transport, is_ortho)
+                                    if self.bw_exponential.is_long()
+                                    else [momenta_to_transport] )
+
+            forward_transport = (self.fw_exponential.transport(momenta_to_transport, is_ortho)
+                                if self.fw_exponential.is_long() else [] )
+
+            return concatenate(backward_transport, forward_transport)
+        
+        if target_time < self.t0:
+            logger.info("-> -> Backward transport from t0={} to {}".format(self.t0, target_time))
+            return self.bw_exponential.transport(momenta_to_transport, is_ortho)
+        
+        elif target_time >= self.t0:
+            logger.info("<- <- Forward transport from t0={} to {}".format(self.t0, target_time))
+            return self.fw_exponential.transport(momenta_to_transport, is_ortho)
+
+    def transport_(self, momenta_to_transport, start_time, target_time, is_ortho=False):
+        """
+        Special case of a transport between start_time and target_time,
+        instead of transport from t0 to tmax and tmin
         """
         if self.shoot_is_modified:
             msg = "Trying to parallel transport but the geodesic object was modified, please update before."
             warnings.warn(msg)
-        
-        # backwards
-        print("\n Starting backward PT")
-        backward_transport = ( self.bw_exponential.parallel_transport(momenta_to_transport_t0, 
-                                                                initial_time_point=t1, 
-                                                                is_ortho=is_ortho)
-                                if self.bw_exponential.is_long()
-                                else [momenta_to_transport_t0] )
-        # forwards
-        print("\n Starting Forward PT")
-        forward_transport = (self.fw_exponential.parallel_transport(momenta_to_transport_t0, 
-                                                                    initial_time_point=t1, 
-                                                                    is_ortho=is_ortho)
-                                if self.fw_exponential.is_long()
-                                else [] )
-
-        return backward_transport[::-1] + forward_transport[1:]
-    
-    def parallel_transport_(self, momenta_to_transport_t0, 
-                           start_time, target_time, is_ortho=False):
-        """
-        :param momenta_to_transport_t0: the vector to parallel transport, given at t0 and carried at cp_t0
-        :returns: the full trajectory of the parallel transport, from tmin to tmax.
-        #modif fg: t1 : time point at which momenta_to_transport_t0 is defined
-        """
-        if self.shoot_is_modified:
-            msg = "Trying to parallel transport but the geodesic object was modified, please update before."
-            warnings.warn(msg)
-
-        # Get momenta at start time
-        length = abs(self.t0 - start_time)
-        start_time_ = self.nb_of_tp(length)
-        momenta_at_start_time = ( self.bw_exponential.momenta_t[start_time_]
-                                  if start_time < self.t0
-                                  else self.fw_exponential.momenta_t[start_time_] )
-
-        new_expo = Exponential(kernel=self.bw_exponential.kernel, 
-                                transport_cp = self.bw_exponential.transport_cp)
-
-        if start_time > target_time:
-            # Backward transport
-            minimal_time = self.t0 if start_time > self.t0 else self.tmin
-            length = start_time - minimal_time
-            momenta_at_start_time *= -1 if start_time > self.t0 else 1
-
-            new_expo.n_time_points = self.nb_of_tp(length)
-            new_expo.set_initial_momenta(momenta_at_start_time * length)
-            new_expo.set_initial_cp(self.cp_t0)
-            new_expo.move_data_to_(device = self.best_device())
-            new_expo.update()
-
-            # Transport momenta to self.tR[l-1]
-            last_transported_mom = momenta_to_transport_t0
-            backward_transport = ( new_expo.parallel_transport(last_transported_mom, 
-                                                        is_ortho=is_ortho)
-                                    if new_expo.is_long()
-                                    else [last_transported_mom] ) 
-            last_transported_mom = backward_transport[-1]
-
-            if new_expo.is_long():
-                backward_transport = new_expo.parallel_transport(last_transported_mom,
-                                                        is_ortho=is_ortho)
-                last_transported_mom = backward_transport[-1]
-            else:
-                backward_transport = [last_transported_mom]
             
-            # Second backward transport
-            if start_time > self.t0:
-                backward_transport_ = self.bw_exponential.parallel_transport(last_transported_mom,
-                                                                              is_ortho=is_ortho)
-            
-            transport = backward_transport + backward_transport_[1:]
-            transport = transport[::-1]
+        if start_time == self.t0:
+            return self.transport(momenta_to_transport, target_time, is_ortho)
         
+        transport = [momenta_to_transport]
+        
+        backward = (start_time > target_time)
+        
+        # Prepare first Transport-------------------------------------------------------------------------------
+        cp = self.get_cp_t(start_time)
+        momenta = self.get_momenta_t(start_time)
+        new_expo = self.new_exponential()
+
+        # Only one bwd (/ fwd) transport along bwd (/fwd) exponential --------------------------------------------------------------------------
+        if (backward and start_time < self.t0) or (not backward and start_time > self.t0):
+            logger.info("Only one transport from {} to {}".format(start_time, target_time))
+            length = abs(start_time - target_time)
+            new_expo.prepare_and_update(cp, momenta * length, length = self.nb_of_tp(length), 
+                                        device = self.best_device())
+            transport = new_expo.transport(momenta_to_transport, is_ortho)
+
+            return reverse_if(transport, backward)
+
+        length = abs(start_time - self.t0)
+
+        if backward:
+            # First backward transport along fw exponential --------------------------------------------------------------------------            
+            logger.info("First transport from {} to {}".format(start_time, self.t0))
+            new_expo.prepare_and_update(cp, -momenta * length, length = self.nb_of_tp(length), 
+                                        device = self.best_device())
+            transport = new_expo.transport(momenta_to_transport, is_ortho)
+            last_transported_mom = transport[-1] 
+            
+            # Second Backward Transport ------------------------------------------------------------------------------------------------
+            if self.bw_exponential.is_long():
+                logger.info("<- <- Backward transport from {} to {}".format(self.t0, target_time))
+                transport += self.bw_exponential.transport(last_transported_mom, is_ortho)[1:]
         else:
-            # Forward transport
-            if start_time > self.t0:
-                length = self.tmax - start_time
-            else:
-                length = self.t0 - start_time
-                momenta_at_start_time = -1 * momenta_at_start_time
-                
-            new_expo.n_time_points = self.nb_of_tp(length)
-            new_expo.set_initial_momenta(momenta_at_start_time * length)
-            new_expo.set_initial_cp(self.cp_t0)
-            new_expo.move_data_to_(device = self.best_device())
-            new_expo.update()
+            # First Forward Transport along bw exponential --------------------------------------------------------------------------            
+            logger.info("First transport from {} to {}".format(start_time, self.t0))
+            new_expo.prepare_and_update(cp, -momenta * length, length = self.nb_of_tp(length), 
+                                        device = self.best_device())
+            transport = new_expo.transport(last_transported_mom, is_ortho)
+            last_transported_mom = transport[-1]
 
-            # Transport momenta to self.tR[l-1]
-            last_transported_mom = momenta_to_transport_t0
-            if new_expo.is_long():
-                forward_transport = new_expo.parallel_transport(last_transported_mom, is_ortho=is_ortho)
-                last_transported_mom = forward_transport[-1]
-            else:
-                forward_transport = [last_transported_mom]
-            
-            # Second forward transport
-            if start_time < self.t0:
-                forward_transport_ = self.fw_exponential.parallel_transport(last_transported_mom,
-                                                                              is_ortho=is_ortho)
-            transport = forward_transport + forward_transport_[1:]
+            # Second Forward Transport ------------------------------------------------------------------------------------------------
+            if self.fw_exponential.is_long():
+                logger.info("-> -> Forward transport from {} to {}".format(self.t0, target_time))
+                transport += self.fw_exponential.transport(last_transported_mom, is_ortho)[1:]
+
+        return reverse_if(transport, backward)
 
     def get_times(self):
-        times_backward = [self.t0]
-        if self.bw_exponential.is_long():
-            times_backward = np.linspace(
-                self.t0, self.tmin, num=self.bw_exponential.n_time_points).tolist()
+        times_backward = np.linspace(self.t0, self.tmin, 
+                                        num=self.bw_exponential.n_time_points).tolist()\
+                        if self.bw_exponential.is_long() else [self.t0]
 
-        times_forward = [self.t0]
-        if self.fw_exponential.is_long():
-            times_forward = np.linspace(self.t0, self.tmax, 
-                                        num=self.fw_exponential.n_time_points).tolist()
+        times_forward = np.linspace(self.t0, self.tmax, 
+                                        num=self.fw_exponential.n_time_points).tolist()\
+                        if self.fw_exponential.is_long() else [self.t0]
 
-        return times_backward[::-1] + times_forward[1:]
+        return concatenate(times_backward, times_forward)
+    
+    def get_time_index(self, time = None):
+        # Deal with the special case of a geodesic reduced to a single point.
+        if time is None or len(self.get_times()) == 1:
+            return None
+
+        # Standard case.
+        for j, t in enumerate(self.get_times()):
+            if time <= t:
+                return j
 
     def get_cp_trajectory(self):
         if self.shoot_is_modified:
             warnings.warn("Trying to get cp trajectory in a non updated geodesic.")
 
-        backward_cp_t = [self.bw_exponential.get_initial_cp()]
-        if self.bw_exponential.is_long():
-            backward_cp_t = self.bw_exponential.cp_t
+        backward_cp_t = self.bw_exponential.cp_t if self.bw_exponential.is_long()\
+                        else [self.bw_exponential.initial_cp]
 
-        forward_cp_t = [self.fw_exponential.get_initial_cp()]
-        if self.fw_exponential.is_long():
-            forward_cp_t = self.fw_exponential.cp_t
+        forward_cp_t = self.fw_exponential.cp_t if self.fw_exponential.is_long()\
+                        else [self.fw_exponential.initial_cp]
 
-        return backward_cp_t[::-1] + forward_cp_t[1:]
+        return concatenate(backward_cp_t, forward_cp_t)
 
     def get_momenta_trajectory(self):
         if self.shoot_is_modified:
@@ -432,16 +375,14 @@ class Geodesic:
         backward_momenta_t = [self.momenta_t0]
         if self.bw_exponential.is_long():
             backward_length = self.tmin - self.t0
-            backward_momenta_t = self.bw_exponential.momenta_t
-            backward_momenta_t = [elt / backward_length for elt in backward_momenta_t]
+            backward_momenta_t = [elt / backward_length for elt in self.bw_exponential.momenta_t]
 
         forward_momenta_t = [self.momenta_t0]
         if self.fw_exponential.is_long():
             forward_length = self.tmax - self.t0
-            forward_momenta_t = self.fw_exponential.momenta_t
-            forward_momenta_t = [elt / forward_length for elt in forward_momenta_t]
+            forward_momenta_t = [elt / forward_length for elt in self.fw_exponential.momenta_t]
 
-        return backward_momenta_t[::-1] + forward_momenta_t[1:]
+        return concatenate(backward_momenta_t, forward_momenta_t)
 
     def get_template_points_trajectory(self):
         """
@@ -453,15 +394,15 @@ class Geodesic:
         template_t = {}
         for key in self.template_points_t0.keys():
 
-            backward_template_t = [self.bw_exponential.get_initial_template_points()[key]]
-            if self.bw_exponential.is_long():
-                backward_template_t = self.bw_exponential.template_points_t[key]
+            backward_template_t = self.bw_exponential.template_points_t[key]\
+                                    if self.bw_exponential.is_long()\
+                                    else [self.bw_exponential.get_initial_template_points()[key]]
 
-            forward_template_t = [self.fw_exponential.get_initial_template_points()[key]]
-            if self.fw_exponential.is_long():
-                forward_template_t = self.fw_exponential.template_points_t[key]
+            forward_template_t = self.fw_exponential.template_points_t[key]\
+                                    if self.fw_exponential.is_long()\
+                                    else [self.fw_exponential.get_initial_template_points()[key]]
 
-            template_t[key] = backward_template_t[::-1] + forward_template_t[1:]
+            template_t[key] = concatenate(backward_template_t, forward_template_t)
 
         return template_t
 
@@ -469,54 +410,42 @@ class Geodesic:
     ### Writing methods:
     ####################################################################################################################
 
-    def output_path(self, root_name, objects_extension, output_dir, write_all = False):
+    def output_path(self, output_dir, write_all = False):
         self.flow_path = {}
         self.momenta_flow_path = {}
 
-        # Core loop ----------------------------------------------------------------------------------------------------
-        times = self.get_times()
-
-        if self.concentration_of_time_points > 2:
-            step = self.concentration_of_time_points
+        if self.time_concentration > 2:
+            step = self.time_concentration
         
-        for t, time in enumerate(times):
-            names = ['{}__GeodesicFlow__tp_{}__age_{}{}'.format(root_name, t, time, ext)\
-                    for ext in objects_extension]
+        for t, time in enumerate(self.get_times()):
+            name = flow_name(self.root_name, t, time, self.extensions[0])
             
             if write_all and  t % step == 0:
-                self.flow_path[time] = op.join(output_dir, names[0])
+                self.flow_path[time] = op.join(output_dir, name)
             
-            self.momenta_flow_path[time] = op.join(output_dir, 
-                                            '{}__GeodesicFlow__Momenta__tp_{}__age_{}.txt'.format(root_name, t, time))
+            self.momenta_flow_path[time] = op.join(output_dir, momenta_name(self.root_name, time, age))
         
         if not write_all:
-            self.flow_path[time] = op.join(output_dir, names[0])
+            self.flow_path[time] = op.join(output_dir, name)
 
-    def write(self, root_name, objects_extension, template, template_data, output_dir,
-              write_adjoint_parameters=False, write_all = True):
+    def write(self, template, template_data, output_dir, write_adjoint_parameters=False, write_all = True):
 
         # Core loop ----------------------------------------------------------------------------------------------------
         if write_all:
-            times = self.get_times()
-            step = self.concentration_of_time_points if self.concentration_of_time_points > 1 else 0.5
+            step = self.time_concentration if self.time_concentration > 1 else 0.5
             
-            for t, time in enumerate(times):
-                names = ['{}__GeodesicFlow__tp_{}__age_{}{}'.format(root_name, t, round(time,1), ext)\
-                        for ext in objects_extension]
+            for t, time in enumerate(self.get_times()):
+                names = [flow_name(self.root_name, t, time, ext) for ext in self.extensions]
                 deformed_points = self.get_template_points(time)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)
 
                 if t % step == 0:
-                    template.write(output_dir, names,
-                                {key: detach(value) for key, value in deformed_data.items()})
+                    template.write(output_dir, names, deformed_data)
 
         # Optional writing of the control points and momenta -----------------------------------------------------------
         if write_adjoint_parameters:
-            cp_t = [detach(elt) for elt in self.get_cp_trajectory()]
-            momenta_t = [detach(elt) for elt in self.get_momenta_trajectory()]
-            for t, (time, cp, momenta) in enumerate(zip(times, cp_t, momenta_t)):
-                write_2D_array(momenta, output_dir, root_name + '__GeodesicFlow__Momenta__tp_' + str(t)
-                               + ('__age_%.2f' % time) + '.txt')
-                               
-                concatenate_for_paraview(momenta, cp, output_dir, 
-                            "{}__EstimatedParameters__Fusion_CP_Momenta_iter.vtk".format(root_name))
+            for t, (time, cp, momenta) in enumerate(zip(self.get_times(), self.get_cp_trajectory(), 
+                                                        self.get_momenta_trajectory())):
+                write_momenta(momenta, output_dir, self.root_name, time = t, age = time)
+
+                concatenate_for_paraview(momenta, cp, output_dir, self.root_name)

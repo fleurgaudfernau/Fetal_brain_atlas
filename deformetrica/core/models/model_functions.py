@@ -14,11 +14,11 @@ def residuals_change(avg_residuals):
     return (avg_residuals[-2] - avg_residuals[-1])/avg_residuals[-2]
 
 
-def initialize_control_points(initial_control_points, template, deformation_kernel_width,
-                              new_bounding_box = None):
-    if initial_control_points is not None:
-        control_points = read_2D_array(initial_control_points)
-        logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_control_points))
+def initialize_cp(initial_cp, template, deformation_kernel_width, new_bounding_box = None):
+    
+    if initial_cp is not None:
+        control_points = read_2D_array(initial_cp)
+        logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_cp))
 
     else:
         bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
@@ -44,7 +44,7 @@ def initialize_momenta(initial_momenta, number_of_control_points, dimension,
                 logger.info('>> Momenta initialized to zero.')
         else:
             momenta = np.zeros((number_of_subjects, number_of_control_points, dimension))
-            logger.info('>> Momenta initialized to zero, for %d subjects.' % number_of_subjects)
+            logger.info('>> Momenta initialized to zero for %d subjects (or components).' % number_of_subjects)
 
     return momenta
 

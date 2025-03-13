@@ -24,8 +24,8 @@ template_specifications = {}
 deformation_kernel_width = 1.0
 deformation_kernel_device = 'auto'
 
-number_of_time_points = 11
-concentration_of_time_points = 10
+n_time_points = 11
+time_concentration = 10
 number_of_sources = None
 use_rk2_for_shoot = False
 use_rk2_for_flow = False
@@ -33,7 +33,7 @@ t0 = None
 tmin = float('inf')
 tmax = - float('inf')
 dimension = None
-covariance_momenta_prior_normalized_dof = 0.001
+covariance_momenta_prior_norm_dof = 0.001
 
 dataset_filenames = []
 visit_ages = []
@@ -50,7 +50,7 @@ initial_step_size = None
 line_search_shrink = 0.5
 line_search_expand = 1.5
 convergence_tolerance = 1e-4
-noise_variance_prior_normalized_dof = 0.01
+noise_variance_prior_norm_dof = 0.01
 memory_length = 10
 downsampling_factor = 1
 
@@ -72,9 +72,9 @@ freeze_rupture_time = True
 # For metric learning atlas
 freeze_p0 = False
 freeze_v0 = False
-initial_control_points = None
+initial_cp = None
 initial_momenta = None
-initial_control_points_to_transport = None
+initial_cp_to_transport = None
 initial_momenta_to_transport = None
 initial_modulation_matrix = None
 initial_sources = None
@@ -83,12 +83,6 @@ initial_sources_std = None
 
 momenta_proposal_std = 0.01
 sources_proposal_std = 0.01
-
-#modify fleur
-#momenta_proposal_std = 1
-#sources_proposal_std = 1
-
-kernel_regression = False
 
 verbose = 1
 

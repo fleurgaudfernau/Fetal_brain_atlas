@@ -4,10 +4,10 @@ from ...support.kernels import factory
 from ...core import default
 from ...core.model_tools.deformations.piecewise_geodesic import PiecewiseGeodesic
 from ...core.models.abstract_statistical_model import AbstractStatisticalModel
-from ...core.models.model_functions import initialize_control_points, initialize_momenta
+from ...core.models.model_functions import initialize_cp, initialize_momenta
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
-from ...in_out.dataset_functions import create_template_metadata
+from ...in_out.dataset_functions import template_metadata
 from ...support.utilities import get_best_device, move_data, detach
 
 logger = logging.getLogger(__name__)
@@ -23,19 +23,13 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
                  deformation_kernel_width=default.deformation_kernel_width,
-
-                 concentration_of_time_points=default.concentration_of_time_points, 
+                 time_concentration=default.time_concentration, 
                  t0=default.t0, tR=[], t1 = default.tmax,
-
                  freeze_template=default.freeze_template,
-
-                 initial_control_points=default.initial_control_points,
-                 initial_momenta=default.initial_momenta,
+                 initial_cp=None, initial_momenta=None,
                  freeze_rupture_time = default.freeze_rupture_time,
                  freeze_t0 = default.freeze_rupture_time, # ajout fg
-
-                 num_component = 2,
-                 new_bounding_box = None, # ajout fg
+                 num_component = 2, new_bounding_box = None, # ajout fg
                  **kwargs):
 
         AbstractStatisticalModel.__init__(self, name='GeodesicRegression')
@@ -50,11 +44,11 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.freeze_momenta = False
         self.freeze_rupture_time = freeze_rupture_time
        
-        self.device, _ = get_best_device()
+        self.device = get_best_device()
 
         # Template TODO? several templates
-        (object_list, self.objects_extension, self.objects_noise_variance, self.attachment) = \
-                                                    create_template_metadata(template_specifications)
+        object_list, self.extensions, self.objects_noise_variance, self.attachment = \
+                                                template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
 
@@ -70,11 +64,11 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Make the template bouding box wider in order to array dim x 2 (max and min)
         # Control points and Momenta.
-        self.control_points = initialize_control_points(initial_control_points, self.template, 
+        self.cp = initialize_cp(initial_cp, self.template, 
                                                 deformation_kernel_width, new_bounding_box = new_bounding_box)
 
         self.fixed_effects['momenta']= initialize_momenta(
-            initial_momenta, len(self.control_points), self.dimension, number_of_subjects = self.nb_components)
+            initial_momenta, len(self.cp), self.dimension, number_of_subjects = self.nb_components)
                 
         # Rupture times: FIXED at regular intervals
         self.fixed_effects['rupture_time'] = np.zeros((self.nb_components - 1))
@@ -92,12 +86,13 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Deformation.
         self.geodesic = PiecewiseGeodesic(t0 = t0, nb_components = self.nb_components, template_tR=None,
                                         kernel=factory(kernel_width=deformation_kernel_width),
-                                        concentration_of_time_points=concentration_of_time_points)
+                                        time_concentration=time_concentration, extensions = self.extensions,
+                                        root_name = self.name)
         self.geodesic.set_tR(self.tR)
         #self.geodesic.set_t0(self.t0)
 
-        control_points = move_data(self.control_points, device = self.device)
-        self.geodesic.set_cp_tR(control_points) # a list
+        cp = move_data(self.cp, device = self.device)
+        self.geodesic.set_cp_tR(cp) # a list
     
         self.current_residuals = None
     
@@ -241,8 +236,8 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         for time, obj in zip(target_times, target_objects):
             deformed_points = self.geodesic.get_template_points(time)
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-            att = self.attachment.compute_weighted_distance(
-                            deformed_data, self.template, obj, self.objects_noise_variance)
+            att = self.attachment.compute_weighted_distance(deformed_data, self.template, 
+                                                            obj, self.objects_noise_variance)
             attachment -= att
             self.current_residuals.append(att.cpu())
         
@@ -284,21 +279,11 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
                                         momenta, rupture_time, self.points, with_grad=with_grad)
         
     def mini_batches(self, dataset, number_of_batches):
-        batch_size = len(dataset.deformable_objects[0]) // number_of_batches
-
         targets = list(zip(dataset.times[0], dataset.deformable_objects[0]))
-        targets_copy = targets.copy()
-        np.random.shuffle(targets_copy)
+        np.random.shuffle(targets)
 
-        mini_batches = []
-        n_minibatches = len(targets_copy) // batch_size    
-
-        for i in range(0, n_minibatches):
-            mini_batch = targets_copy[i * batch_size:(i + 1) * batch_size]
-            mini_batches.append(mini_batch)
-        if len(targets_copy) % batch_size != 0:
-            mini_batch = targets_copy[i * batch_size:len(targets_copy)]
-            mini_batches.append(mini_batch)
+        batch_size = len(targets) // number_of_batches
+        mini_batches = [targets[i:i + batch_size] for i in range(0, len(targets), batch_size)]
         
         return mini_batches
     
@@ -343,7 +328,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         if j is None:
             data = self.template.get_data()
             for i, obj1 in enumerate(self.template.object_list):
-                obj1.polydata.points = data['landmark_points'][0:obj1.get_number_of_points()]
+                obj1.polydata.points = data['landmark_points'][0:obj1.n_points()]
                 obj1.curvature_metrics(curvature)
             
                 return self.template
@@ -357,7 +342,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         
         for i, obj1 in enumerate(self.template.object_list):
-            obj1.polydata.points = deformed_data['landmark_points'][0:obj1.get_number_of_points()].cpu().numpy()
+            obj1.polydata.points = deformed_data['landmark_points'][0:obj1.n_points()].cpu().numpy()
             obj1.curvature_metrics(curvature)
         
         return self.template
@@ -425,7 +410,6 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
             
         return residuals
 
-
     def write(self, dataset, individual_RER, output_dir, iteration, write_all = True): 
         self._write_model_predictions(output_dir, dataset, write_all)
         self._write_model_parameters(output_dir, iteration, write_all)
@@ -437,51 +421,41 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Write --------------------------------------------------------------------------------------------------------
         # Geodesic flow.
-        self.geodesic.write(self.name, self.objects_extension, self.template, template_data,
-                            output_dir, write_all = write_all)
+        self.geodesic.write(self.template, template_data, output_dir, write_all = write_all)
 
         # Model predictions.
         if dataset is not None and not write_all:
             for j, time in enumerate(target_times):
-                names = ['{}__Reconstruction____tp_{}__age_{}'.format(self.name, j, time, ext)\
-                        for ext in self.objects_extension]
+                names = [reconstruction_name(self.name, j, time, ext = ext) for ext in self.extensions]
                 deformed_points = self.geodesic.get_template_points(time)
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-                self.template.write(output_dir, names,
-                                    {key: value.data.cpu().numpy() for key, value in deformed_data.items()})
+                self.template.write(output_dir, names, deformed_data)
 
     def output_path(self, output_dir, dataset):
-        self.cp_path = op.join(output_dir, "{}__ControlPoints.txt".format(self.name))
-        self.momenta_path = op.join(output_dir, "{}__Estimated__Momenta.txt".format(self.name))
+        self.cp_path = op.join(output_dir, cp_name(name))
+        self.momenta_path = op.join(output_dir, momenta_name(name))
 
         if self.geodesic.exponential[0].n_time_points is None:
             self.prepare_geodesic(dataset)
 
-        self.geodesic.output_path(self.name, self.objects_extension, output_dir)
+        self.geodesic.output_path(output_dir)
         
     def _write_model_parameters(self, output_dir, iteration, write_all = True):
+                
         if write_all:
             template_names = []
-            for ext in self.objects_extension:
-                tp = 0
-                l= 0
-                while self.geodesic.tR[l] < self.t0:
-                    l += 1
-                    tp += self.geodesic.exponential[l].n_time_points
-
-                if not self.freeze_template:   
-                    aux = '{}__Estimated__Template__tp_{}__age_{}{}'.format(self.name, tp, self.t0, ext)
-                else:
-                    aux = '{}__Fixed__Template__tp_{}__age_{}{}'.format(self.name, tp, self.t0, ext)
-                template_names.append(aux)
+            for ext in self.extensions:
+                time_points = sum([self.geodesic.exponential[l].n_time_points \
+                                for l in range(self.geodesic.template_index()) ])
+                template_names.append(template_name(self.name, time = time_points, t0 = self.t0, 
+                                        ext = ext, freeze_template = self.freeze_template))
             self.template.write(output_dir, template_names)
             
             #Control points.
-            write_2D_array(self.control_points, output_dir, "{}___ControlPoints.txt".format(self.name))
-            write_3D_array(self.get_momenta(), output_dir, self.name + "__Estimated__Momenta.txt")
+            write_cp(self.cp, output_dir, self.name)
+            write_momenta(self.get_momenta(), output_dir, self.name)
 
             for c in range(self.nb_components):
                 if self.dimension == 3:
-                    concatenate_for_paraview(self.get_momenta()[c], self.control_points, output_dir, 
-                                    self.name + "__Estimated__Fusion_CP_Momenta__component_{}_iter_.vtk".format(c, iteration))
+                    concatenate_for_paraview(self.get_momenta()[c], self.cp, output_dir, self.name, iteration, c)
     

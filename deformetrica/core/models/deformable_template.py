@@ -16,10 +16,10 @@ from ...support.kernels import factory
 from ...core import default
 from ...core.model_tools.deformations.exponential import Exponential
 from ...core.models.abstract_statistical_model import AbstractStatisticalModel
-from ...core.models.model_functions import initialize_control_points, initialize_momenta, gaussian_kernel
+from ...core.models.model_functions import initialize_cp, initialize_momenta, gaussian_kernel
 from ...core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ...in_out.array_readers_and_writers import *
-from ...in_out.dataset_functions import create_template_metadata
+from ...in_out.dataset_functions import template_metadata
 from ...support.utilities import get_best_device, move_data, detach, assert_same_device
 
 warnings.filterwarnings("ignore") #fg
@@ -35,29 +35,22 @@ class DeformableTemplate(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications, number_of_subjects,
-
                  deformation_kernel_width=default.deformation_kernel_width,
 
-                 number_of_time_points=default.number_of_time_points,
+                 n_time_points=default.n_time_points,
 
+                 initial_cp=None, initial_momenta=None,
+                 freeze_momenta=default.freeze_momenta,
                  freeze_template=default.freeze_template,
 
-                 initial_control_points=default.initial_control_points,
-
-                 initial_momenta=default.initial_momenta,
-                 freeze_momenta=default.freeze_momenta,
-
-                 kernel_regression = default.kernel_regression,
-                 visit_ages = None,
-                 time = None,
+                 kernel_regression = False,
+                 visit_ages = None, time = None,
 
                  **kwargs):
 
         AbstractStatisticalModel.__init__(self, name='DeformableTemplate')
         
         # Global-like attributes.
-        
-
         # Declare model structure.
         self.fixed_effects['template_data'] = None
         self.fixed_effects['momenta'] = None
@@ -65,12 +58,12 @@ class DeformableTemplate(AbstractStatisticalModel):
         self.freeze_template = freeze_template
         self.freeze_momenta = freeze_momenta
 
-        self.device, _ = get_best_device()
+        self.device = get_best_device()
         self.deformation_kernel_width = deformation_kernel_width
 
         # Template.
-        (object_list, self.objects_extension, self.objects_noise_variance, self.attachment) = \
-                                                create_template_metadata(template_specifications)
+        (object_list, self.extensions, self.objects_noise_variance, self.attachment) = \
+                                                template_metadata(template_specifications)
 
         self.template = DeformableMultiObject(object_list)
         self.number_of_objects = len(object_list)
@@ -78,22 +71,21 @@ class DeformableTemplate(AbstractStatisticalModel):
         
         # Deformation.
         self.exponential = Exponential(kernel=factory(kernel_width=deformation_kernel_width),
-                                                    number_of_time_points=number_of_time_points,)
+                                        n_time_points=n_time_points)
 
         # Template data.
         self.fixed_effects['template_data'] = self.template.get_data()
         self.points = self.get_points() # image_intensities or landmark_points
 
         # Control points.
-        self.control_points = initialize_control_points(initial_control_points, 
-                                                    self.template, deformation_kernel_width)
+        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width)
 
-        control_points = move_data(self.control_points, device=self.device)                
-        self.exponential.set_initial_control_points(control_points)
+        cp = move_data(self.cp, device=self.device)                
+        self.exponential.set_initial_cp(cp)
 
         # Momenta.
-        self.fixed_effects['momenta'] = initialize_momenta(
-                initial_momenta, len(self.control_points), self.dimension, number_of_subjects)
+        self.fixed_effects['momenta'] = initialize_momenta(initial_momenta, len(self.cp), 
+                                                            self.dimension, number_of_subjects)
         self.number_of_subjects = number_of_subjects
             
         self.kernel_regression = kernel_regression
@@ -307,18 +299,13 @@ class DeformableTemplate(AbstractStatisticalModel):
         targets_copy = targets.copy()
         np.random.shuffle(targets_copy)
 
-        mini_batches = []
         n_minibatches = len(targets_copy) // batch_size    
 
-        for i in range(n_minibatches):
-            mini_batch = targets_copy[i * batch_size:(i + 1) * batch_size]
-            mini_batches.append(mini_batch)
-        if len(targets_copy) % batch_size != 0:
-            mini_batch = targets_copy[i * batch_size:len(targets_copy)]
-            if len(mini_batches) > batch_size / 2: #if last batch big enough
-                mini_batches.append(mini_batch)
-            else:
-                mini_batches[-1] += mini_batch
+        mini_batches = [targets_copy[i:i + batch_size]\
+                        for i in range(0, len(targets_copy), batch_size)]
+    
+        if len(mini_batches) > 1 and len(mini_batches[-1]) < batch_size / 2:
+            mini_batches[-2].extend(mini_batches.pop())
         
         return mini_batches
     
@@ -340,27 +327,22 @@ class DeformableTemplate(AbstractStatisticalModel):
 
         # template curvature
         if j is None:
-            obj = self.template
             data = self.template.get_data()
-            for i, obj1 in enumerate(obj.object_list):
-                obj1.polydata.points = data[self.points][0:obj1.get_number_of_points()]
+            for i, obj1 in enumerate(self.template.object_list):
+                obj1.polydata.points = data[self.points][0:obj1.n_points()]
                 obj1.curvature_metrics(curvature)
-            
-                return obj
+                return self.template
 
-        self.exponential.set_initial_template_points(template_points)
-        self.exponential.set_initial_momenta(momenta[j])
-        self.exponential.move_data_to_(device=self.device)
-        self.exponential.update() 
+        self.exponential.prepare_and_update(self.cp, momenta[j], template_points, device = self.device)
         deformed_points = self.exponential.get_template_points()
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         
         # Compute deformed template curvature
         obj = dataset.deformable_objects[j][0] if iter == 0 else self.template 
 
-        for i, obj1 in enumerate(obj.object_list):
+        for i, obj1 in enumerate(self.template.object_list):
             if iter != 0:
-                obj1.polydata.points = deformed_data[self.points][0:obj1.get_number_of_points()].cpu().numpy()
+                obj1.polydata.points = deformed_data[self.points][0:obj1.n_points()].cpu().numpy()
 
             obj1.curvature_metrics(curvature)
         
@@ -376,10 +358,8 @@ class DeformableTemplate(AbstractStatisticalModel):
             # Compute attachment
             deformed_points = self.exponential.get_template_points() #template points
             deformed_data = self.template.get_deformed_data(deformed_points, template_data) #template intensities after deformation
-
             att = self.attachment.compute_weighted_distance(deformed_data, self.template, target[0],
                                                             self.objects_noise_variance)
-            
             residuals.append(att)
         
         return residuals
@@ -434,7 +414,6 @@ class DeformableTemplate(AbstractStatisticalModel):
     ####################################################################################################################
 
     def write(self, dataset, individual_RER, output_dir, current_iteration, write_residuals=True, write_all = True):
-
         # Write the model predictions, and compute the residuals at the same time.
         self._write_model_predictions(dataset, individual_RER, output_dir, current_iteration,
                                     compute_residuals=write_residuals)
@@ -450,86 +429,44 @@ class DeformableTemplate(AbstractStatisticalModel):
         # Deform, write reconstructions and compute residuals.
         self.exponential.set_initial_template_points(template_points)
 
-        residuals = []  # List of torch 1D tensors. Individuals, objects.
         for i, subject_id in enumerate(dataset.subject_ids):
             self.exponential.set_initial_momenta(momenta[i])
             self.exponential.update()
-
-            # Writing the whole flow. -> modif fg
-            names = []
-            for k in range(self.number_of_objects):
-                name = self.name + '__flow____subject_' + subject_id
-                names.append(name)
             
             deformed_points = self.exponential.get_template_points()
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
-            names = []
-            for k, object_extension in enumerate(self.objects_extension):
-                
-                if self.kernel_regression:
-                    name = self.name + '__Reconstruction__subject_' + subject_id + "_age_" + str(self.visit_ages[i][0]) + object_extension
-                else:
-                    name = '{}__Reconstruction__subject_{}{}'.format(self.name, subject_id, object_extension)
-                names.append(name)
+            names = [ reconstruction_name(self.name, subject_id, age = self.visit_ages[i][0], 
+                                            ext = ext) if self.kernel_regression\
+                        else reconstruction_name(self.name, subject_id, ext = ext) \
+                        for ext in self.extensions]
 
-            self.template.write(output_dir, names,
-                                {key: value.data.cpu().numpy() for key, value in deformed_data.items()})
+            self.template.write(output_dir, names, deformed_data)
             
-        return residuals
+        return []
 
     def output_path(self, output_dir, dataset):
-        self.cp_path = op.join(output_dir, "{}__EstimatedParameters__ControlPoints.txt".format(self.name))
-        self.momenta_path = op.join(output_dir, "{}__EstimatedParameters__Momenta.txt".format(self.name))
+        self.cp_path = op.join(output_dir, cp_name(self.name))
+        self.momenta_path = op.join(output_dir, momenta_name(self.name))
 
         if not self.freeze_template:
-            for ext in self.objects_extension:
-                self.template_path = op.join(output_dir, "{}__EstimatedParameters__Template_{}".format(self.name, ext))
+            for ext in self.extensions:
+                self.template_path = op.join(output_dir, template_name(self.name, ext=ext))
 
     def _write_model_parameters(self, output_dir, current_iteration):
 
         template_names = None
         if self.kernel_regression:
-            template_names = ["{}__EstimatedParameters__Template_time_{}{}".format(self.name, self.time, ext)\
-                                for ext in self.objects_extension]
-
-        elif not self.freeze_template:
-            template_names = ["{}__EstimatedParameters__Template_{}{}".format(self.name, current_iteration, ext)\
-                                for ext in self.objects_extension]
-        self.template.write(output_dir, template_names)
-
-        # template_names = ["{}__EstimatedParameters__Template{}".format(self.name, ext)\
-        #                 for ext in self.objects_extension]
-        # self.template.write(output_dir, template_names)
+            template_names = [template_name(self.name, self.time, ext=ext) for ext in self.extensions]
+        else:
+            template_names = [template_name(self.name, ext=ext) for ext in self.extensions]
+            self.template.write(output_dir, template_names)
         
-        write_2D_array(self.control_points, output_dir, op.join(output_dir, "{}__EstimatedParameters__ControlPoints.txt".format(self.name)))
+        # Momenta and cp.
+        write_cp(self.cp, output_dir, self.name)
+        write_momenta(self.get_momenta(), output_dir, self.name)
         
-        # Momenta.
-        write_3D_array(self.get_momenta(), output_dir, self.name + "__EstimatedParameters__Momenta.txt")#.format(current_iteration))
-        
-        concatenate_for_paraview(self.get_momenta(), self.control_points, output_dir, 
-                             "{}__EstimatedParameters__Fusion_CP_Momenta_{}.vtk".format(self.name, current_iteration))
-
-        # #ajout fg: write zones
-        # if self.multiscale_momenta and not self.naive:
-        #     array = np.zeros((5000, 3))
-        #     j = 0
-        #     for scale in range(self.coarser_scale, max(self.current_scale -1, 0), -1):
-        #         nombre_zones = len(self.zones[scale])
-        #         if scale in self.silent_haar_coef_momenta.keys():
-        #             nombre_zones_silencees = len(self.silent_haar_coef_momenta[scale])
-        #             array[j] = scale, nombre_zones, nombre_zones_silencees
-        #             for silent_zone in self.silent_haar_coef_momenta[scale]:
-        #                 j += 1
-        #                 array[j, 0] = silent_zone
-        #             j += 2
-        #     write_3D_array(array, output_dir, self.name + "_silenced_zones.txt")
-    
-        
-    
-
-    
-
+        concatenate_for_paraview(self.get_momenta(), self.cp, output_dir, self.name, current_iteration)
     
     
     

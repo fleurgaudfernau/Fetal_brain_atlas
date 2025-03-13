@@ -230,6 +230,9 @@ class Image:
         if intensities is None:
             intensities = self.get_intensities()
 
+        if isinstance(intensities, torch.Tensor):
+            intensities = intensities.cpu().numpy() 
+        
         intensities_rescaled = rescale_image_intensities(intensities, self.intensities_dtype)
 
         if name.find(".png") > 0:

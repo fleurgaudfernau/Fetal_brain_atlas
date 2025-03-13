@@ -7,15 +7,17 @@ import os
 import sys
 import deformetrica as dfca
 
+import torch
 logger = logging.getLogger(__name__)
 
 def main():
     # common options
+    print("torch.cuda.is_available", torch.cuda.is_available())
     common_parser = argparse.ArgumentParser()
     common_parser.add_argument('--parameters', '-p', type=str, help='parameters xml file')
     common_parser.add_argument('--output', '-o', type=str, help='output folder')
     common_parser.add_argument('--age', "-a", type=int)
-    common_parser.add_argument('--verbosity', '-v', type=str, default='WARNING',
+    common_parser.add_argument('--verbosity', '-v', type=str, default='INFO',
                                choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                                help='set output verbosity')
     
@@ -48,7 +50,6 @@ def main():
     try:
         logger.setLevel(args.verbosity)
     except ValueError:
-        logger.warning('Logging level was not recognized. Using INFO.')
         logger.setLevel(logging.INFO)
 
     """
@@ -61,7 +62,7 @@ def main():
                 output_dir = dfca.default.output_dir
             else:
                 output_dir = dfca.default.preprocessing_dir
-            logger.info('No output directory defined, using default: ' + output_dir)
+            logger.info('Setting output directory to: ' + output_dir)
             os.makedirs(output_dir)
         else:
             logger.info('Setting output directory to: ' + args.output)
@@ -82,45 +83,48 @@ def main():
     model_options = dfca.io.get_model_options(xml)
 
     logger.info("*******************************************************************")
-    logger.info(">>> Dataset informations: ")
+    logger.info(">>> Launching Model {} ".format(xml.model_type))
+    logger.info("*******************************************************************")
+    logger.info(">>> Dataset information: ")
     logger.info("       Number of subjects: {}".format(dataset_spec["n_subjects"]))
     logger.info("       Total number of observations: {}".format(dataset_spec["n_observations"]))
     logger.info("       Number of objects: {}".format(dataset_spec["n_objects"]))
+    logger.info("*******************************************************************")
     
     if xml.model_type in ['Registration'.lower(), 'DeformableTemplate'.lower(), 'Regression'.lower(),
                         'PiecewiseRegression'.lower(), 'KernelRegression'.lower(),
                         'InitializedBayesianGeodesicRegression'.lower()]:
 
         assert args.command == 'estimate', \
-            'The estimation of a registration model should be launched with the command: ' \
-            '"deformetrica estimate" (and not {}.'.format(args.command)
+            'The estimation should be launched with the command deformetrica estimate '
 
     if xml.model_type == 'Registration'.lower():
-        deformetrica.estimate_registration(xml.template_specifications, dataset_spec,
+        deformetrica.registration(xml.template_specifications, dataset_spec,
                                             model_options, estimator_options)
         
     elif xml.model_type == 'DeformableTemplate'.lower():
-        deformetrica.estimate_deformable_template(xml.template_specifications, dataset_spec,
+        deformetrica.deformable_template(xml.template_specifications, dataset_spec,
                                                     model_options, estimator_options)        	
 
     elif xml.model_type == 'Regression'.lower():
-        deformetrica.estimate_geodesic_regression(xml.template_specifications, dataset_spec,
+        deformetrica.geodesic_regression(xml.template_specifications, dataset_spec,
                                                     model_options, estimator_options)
     
     elif xml.model_type == 'KernelRegression'.lower(): # ajout fg
-        deformetrica.estimate_kernel_regression(age, xml.template_specifications, dataset_spec,
+        assert args.age is not None, "An age must be submitted with --age or -a"
+        deformetrica.kernel_regression(age, xml.template_specifications, dataset_spec,
                                                 model_options, estimator_options)
     
     elif xml.model_type == 'PiecewiseRegression'.lower(): #ajout fg
-        deformetrica.estimate_piecewise_geodesic_regression(xml.template_specifications, dataset_spec,
+        deformetrica.piecewise_geodesic_regression(xml.template_specifications, dataset_spec,
                                                             model_options, estimator_options)
     
     elif xml.model_type == 'BayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not {}.'.format(args.command)
+            '"deformetrica estimate" (and not {}).'.format(args.command)
         if args.command == 'estimate':
-            deformetrica.estimate_piecewise_bayesian_geodesic_regression(
+            deformetrica.piecewise_bayesian_geodesic_regression(
                 xml.template_specifications, dataset_spec,  model_options, estimator_options)
         elif args.command == 'initialize':
             dfca.initialize_piecewise_geodesic_regression_with_space_shift(
@@ -129,34 +133,38 @@ def main():
     elif xml.model_type == 'InitializeBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate', 'initialize'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not {}.'.format(args.command)
+            '"deformetrica estimate" (and not {}).'.format(args.command)
         deformetrica.initialize_piecewise_bayesian_geodesic_regression(
                             xml.template_specifications, dataset_spec,  model_options, estimator_options)
     
     elif xml.model_type == 'InitializedBayesianGeodesicRegression'.lower(): #ajout fg
         assert args.command in ['estimate'],\
             'The estimation of a regression model should be launched with the command: ' \
-            '"deformetrica estimate" (and not {}.'.format(args.command)
+            '"deformetrica estimate" (and not {}).'.format(args.command)
         deformetrica.initialized_piecewise_bayesian_geodesic_regression(
                             xml.template_specifications, dataset_spec, model_options, estimator_options)
                         
     elif xml.model_type == 'Shooting'.lower():
         assert args.command == 'compute', \
             'The computation of a shooting task should be launched with the command: ' \
-            '"deformetrica compute" (and not {}.'.format(args.command)
+            '"deformetrica compute" (and not {}).'.format(args.command)
         deformetrica.compute_shooting(xml.template_specifications, model_options)
 
     elif xml.model_type == 'ParallelTransport'.lower():
         assert args.command == 'compute', \
             'The computation of a parallel transport task should be launched with the command: ' \
-            '"deformetrica compute" (and not {}.'.format(args.command)
+            '"deformetrica compute" (and not {}).'.format(args.command)
         deformetrica.compute_parallel_transport(xml.template_specifications, model_options)
+    
+    elif xml.model_type == 'PiecewiseParallelTransport'.lower():
+        assert args.command == 'compute', \
+            'The computation of a parallel transport task should be launched with the command: ' \
+            '"deformetrica compute" (and not {}).'.format(args.command)
+        deformetrica.compute_piecewise_parallel_transport(xml.template_specifications, model_options)
 
     else:
-        raise RuntimeError(
-            'Unrecognized model-type: "' + xml.model_type + '". Check the corresponding field in the model.xml input file.')
+        raise RuntimeError('Unrecognized model-type: {}'.format(xml.model_type))
         
-
 if __name__ == "__main__":
     main()
     sys.exit(0)

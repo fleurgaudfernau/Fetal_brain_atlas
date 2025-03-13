@@ -19,16 +19,18 @@ class LongitudinalDataset:
 
         self.subject_ids = subject_ids
         self.times = times
-        self.tmin = math.trunc(min(min(t) for t in times)) # arrondi à entier inf
-        self.tmax = math.ceil(max(max(t) for t in times)) # entier sup
+        self.tmin, self.tmax = None, None            
         self.deformable_objects = deformable_objects
+        print(deformable_objects)
         self.dimension = deformable_objects[0][0].dimension
 
         self.number_of_subjects = len(subject_ids)
 
         # Total number of observations.
-        if times is not None:
+        if times and times != [[]]:
             self.total_number_of_observations = sum(len(times) for times in self.times)
+            self.tmin = math.trunc(min(min(t) for t in times)) # arrondi à entier inf
+            self.tmax = math.ceil(max(max(t) for t in times)) # entier sup
 
         elif deformable_objects is not None:
             self.total_number_of_observations = sum(len(objets) for objets in self.deformable_objects)

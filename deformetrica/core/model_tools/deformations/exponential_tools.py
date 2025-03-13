@@ -6,18 +6,14 @@ from ....core.model_tools.deformations.exponential import Exponential
 from ....support import kernels as kernel_factory
 
 def scalar_product(cp, momenta, momenta2, deformation_kernel_width):
-    device, _ = get_best_device()
+    device = get_best_device()
     cp = move_data(cp, device=device)
     momenta = move_data(momenta, device=device)
     momenta_ = move_data(momenta2, device=device)
     
     deformation_kernel = kernel_factory.factory(kernel_width=deformation_kernel_width)
     
-    exponential = Exponential(kernel=deformation_kernel,
-                            n_time_points=default.number_of_time_points,
-                            use_rk2_for_shoot=default.use_rk2_for_shoot, 
-                            use_rk2_for_flow=default.use_rk2_for_flow,
-                            transport_cp = False) 
+    exponential = Exponential(kernel=deformation_kernel, n_time_points=default.n_time_points) 
     
     sp = exponential.scalar_product(cp, momenta, momenta_)
 

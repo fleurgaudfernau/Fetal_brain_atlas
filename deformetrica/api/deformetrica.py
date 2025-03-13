@@ -18,8 +18,7 @@ from ..core.models import DeformableTemplate, GeodesicRegression, PiecewiseGeode
                         BayesianPiecewiseGeodesicRegression
 from ..in_out.dataset_functions import create_dataset, filter_dataset, make_dataset_timeseries,\
                                         age, id, dataset_for_registration, maxi, mini, ages_histogram
-from ..in_out.deformable_object_reader import DeformableObjectReader
-from ..launch.compute_parallel_transport import compute_parallel_transport, compute_piecewise_parallel_transport, \
+from ..launch.compute_parallel_transport import launch_parallel_transport, launch_piecewise_parallel_transport, \
                                                 compute_distance_to_flow
 from ..in_out.array_readers_and_writers import read_3D_array, write_3D_array
 from ..launch.compute_shooting import compute_shooting
@@ -28,12 +27,10 @@ from ..support import utilities
 from ..support.utilities.vtk_tools import screenshot_vtk
 from ..support.utilities.tools import gaussian_kernel
 from ..support.probability_distributions.multi_scalar_normal_distribution import MultiScalarNormalDistribution
-
 from ..support.probability_distributions.uniform_distribution import UniformDistribution
-from ..core.models.model_functions import initialize_control_points
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 
-#ajout fg
+
 from ..core.estimators.stochastic_gradient_ascent import StochasticGradientAscent
 from .piecewise_rg_tools import make_dir, complete, PlotResiduals, options_for_registration
 
@@ -125,52 +122,52 @@ class Deformetrica:
 
         return new_bounding_box
 
-    def estimate_registration(self, template_specifications, dataset_spec,
-                              model_options={}, estimator_options={}, write_output=True):
+    def registration(self, template_spec, dataset_spec, model_options={}, estimator_options={}, 
+                            write_output=True):
         """ Estimates the best possible deformation between two sets of objects.
-        Note: A registration is a particular case of the deformable template application, 
-            with a fixed template object.
+        Note: Particular case of the deformable template application with a fixed template object.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                        'Registration', model_options, dataset_spec, estimator_options)
+        print("dataset_spec", dataset_spec)
+        model_options, estimator_options = self.further_initialization('Registration', 
+                                            model_options, dataset_spec, estimator_options)
 
+        print("dataset_spec 1", dataset_spec)
         # Instantiate dataset.
         dataset = create_dataset(**dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
         
         # Instantiate model.
-        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
+        model = DeformableTemplate(template_spec, dataset.number_of_subjects, **model_options)
+        model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
 
-    def estimate_deformable_template(self, template_specifications, dataset_spec,
-                                     model_options={}, estimator_options={}, write_output=True):
+    def deformable_template(self, template_spec, dataset_spec, model_options={}, 
+                        estimator_options={}, write_output=True):
         """ Estimate deformable template model.
-        Given a family of objects, the atlas model proposes to learn a template shape which corresponds to a mean of the objects,
-        as well as to compute a low number of coordinates for each object from this template shape.
+        Given a family of objects, the atlas model learns a template shape (mean of the objects),
+        + a low number of coordinates for each object from this template shape.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
@@ -182,70 +179,71 @@ class Deformetrica:
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
         # Instantiate model.
-        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
+        model = DeformableTemplate(template_spec, dataset.number_of_subjects, **model_options)
+        model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
 
-    def estimate_bayesian_atlas(self, template_specifications, dataset_spec,
+    def bayesian_atlas(self, template_spec, dataset_spec,
                                 model_options={}, estimator_options={}, write_output=True):
         """ Estimate bayesian atlas.
-        Bayesian version of the deformable template. In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
+        Bayesian version of the deformable template. 
+        In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                        'BayesianAtlas', model_options, dataset_spec, estimator_options)
+        model_options, estimator_options = self.further_initialization('BayesianAtlas', 
+                                                    model_options, dataset_spec, estimator_options)
 
         # Instantiate dataset.
         dataset = create_dataset( **dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
         # Instantiate model.
-        statistical_model = BayesianAtlas(template_specifications, **model_options)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
+        model = BayesianAtlas(template_spec, **model_options)
+        individual_RER = model.initialize_random_effects_realization(dataset.number_of_subjects,
                                                                                 **model_options)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
+        model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model, estimator.individual_RER
+        return model, estimator.individual_RER
 
-    def estimate_geodesic_regression(self, template_specifications, dataset_spec,
+    def geodesic_regression(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description+ some hyper-parameters for the objects 
+                            and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                            'Regression', model_options, dataset_spec, estimator_options)
+        model_options, estimator_options = self.further_initialization('Regression', 
+                                            model_options, dataset_spec, estimator_options)
 
         # Instantiate dataset.
         dataset = create_dataset(**dataset_spec)
@@ -256,28 +254,29 @@ class Deformetrica:
         new_bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        statistical_model = GeodesicRegression(template_specifications, **model_options, new_bounding_box=new_bounding_box)
-        statistical_model.initialize_noise_variance(dataset)
+        model = GeodesicRegression(template_spec, **model_options, new_bounding_box=new_bounding_box)
+        model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
     
-    def estimate_piecewise_geodesic_regression(self, template_specifications, dataset_spec,
+    def piecewise_geodesic_regression(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
-        """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
+        """ Construct a shape trajectory that is as close as possible to the given targets 
+            at the given times.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
@@ -287,39 +286,39 @@ class Deformetrica:
         # Instantiate dataset.
         dataset = create_dataset(**dataset_spec)
         
-        assert (dataset.is_time_series()), "Cannot estimate a piecewise geodesic regression from a non-time-series dataset."
+        assert (dataset.is_time_series()), "Cannot estimate a geodesic regression from a non-time-series dataset."
 
         # Handle the case where template has smaller bounding box than the subjects
         new_bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        statistical_model = PiecewiseGeodesicRegression(template_specifications, **model_options, new_bounding_box = new_bounding_box)
-        statistical_model.initialize_noise_variance(dataset)
+        model = PiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
     
-    def estimate_piecewise_bayesian_geodesic_regression(self, template_specifications, dataset_spec,
+    def piecewise_bayesian_geodesic_regression(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                    'BayesianGeodesicRegression', model_options, dataset_spec, estimator_options)
+        model_options, estimator_options = self.further_initialization('BayesianGeodesicRegression', 
+                                                        model_options, dataset_spec, estimator_options)
         # Instantiate dataset.
         dataset = create_dataset(**dataset_spec)
 
@@ -331,37 +330,38 @@ class Deformetrica:
         new_bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        statistical_model = BayesianPiecewiseGeodesicRegression(template_specifications, **model_options, new_bounding_box = new_bounding_box)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
+        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        individual_RER = model.initialize_random_effects_realization(dataset.number_of_subjects,
                                                                                  **model_options)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
+        model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
     
-    def atlas_at_t0_for_initialisation(self, template_specifications, dataset_spec,
+    def atlas_at_t0_for_initialisation(self, template_spec, dataset_spec,
                                      model_options, estimator_options, write_output):
         estimator_options_ = copy.deepcopy(estimator_options)
 
         t0 = model_options["t0"]
 
-        new_dataset_spec = {k : [] for k in dataset_spec.keys()}
-
         # Select subjects around t0
-        for i in range(dataset_spec['n_subjects']):
-            if age(dataset_spec, i) > t0 - 3 and age(dataset_spec, i) < t0 + 3:
-                new_dataset_spec['subject_ids'].append(dataset_spec['subject_ids'][i])
-                new_dataset_spec['dataset_filenames'].append([dataset_spec['dataset_filenames'][i][0]])
-                new_dataset_spec['visit_ages'].append([age(dataset_spec, i)])
-
+        new_dataset_spec = { 
+            'subject_ids': [dataset_spec['subject_ids'][i]\
+                    for i in range(dataset_spec['n_subjects']) if t0 - 3 < age(dataset_spec, i) < t0 + 3],
+            'filenames': [[dataset_spec['filenames'][i][0]]\
+                    for i in range(dataset_spec['n_subjects']) if t0 - 3 < age(dataset_spec, i) < t0 + 3],
+            'visit_ages': [[age(dataset_spec, i)]\
+                    for i in range(dataset_spec['n_subjects']) if t0 - 3 < age(dataset_spec, i) < t0 + 3],
+                            }
+        
         logger.info("\n >>>> 0_Atlas estimation >>>> \n")
         
         # Check and completes the input parameters.
@@ -379,21 +379,21 @@ class Deformetrica:
         dataset = create_dataset(**new_dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
-        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
+        model = DeformableTemplate(template_spec, dataset.number_of_subjects, **model_options)
+        model.initialize_noise_variance(dataset)
 
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options_)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            template = statistical_model.template_path
-            object_name = statistical_model.objects_name[0]
-            statistical_model.cleanup()
+            template = model.template_path
+            object_name = model.objects_name[0]
+            model.cleanup()
 
         return template, object_name
 
-    def piecewise_regression_for_initialisation(self, template_specifications, dataset_spec,
+    def piecewise_regression_for_initialisation(self, template_spec, dataset_spec,
                                      model_options, estimator_options, write_output):
         estimator_options_ = copy.deepcopy(estimator_options)
 
@@ -412,22 +412,22 @@ class Deformetrica:
 
         model_options["freeze_template"] = True # important
 
-        statistical_model = PiecewiseGeodesicRegression(template_specifications, **model_options, new_bounding_box = new_bounding_box)
-        statistical_model.initialize_noise_variance(dataset)
+        model = PiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        model.initialize_noise_variance(dataset)
 
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options_)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options_)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            initial_cp_path = statistical_model.cp_path
-            initial_momenta_path = statistical_model.momenta_path
-            flow_path = statistical_model.geodesic.flow_path
-            statistical_model.cleanup()
+            initial_cp_path = model.cp_path
+            initial_momenta_path = model.momenta_path
+            flow_path = model.geodesic.flow_path
+            model.cleanup()
         
         return initial_cp_path, initial_momenta_path, flow_path
     
-    def parallel_transport_subject(self, i, template_specifications, dataset_spec,
+    def parallel_transport_subject(self, i, template_spec, dataset_spec,
                                     model_options, estimator_options, main_output_dir3, 
                                     flow_path, object_name, initial_cp_path, initial_momenta_path, 
                                     registration_model, start_time, target_time):
@@ -439,7 +439,7 @@ class Deformetrica:
                             "tmax" : maxi(dataset_spec), 
                             "start_time" : int(start_time), "target_time" : target_time,
                             'initial_momenta_to_transport' : registration_model.momenta_path,
-                            "initial_control_points" : initial_cp_path,
+                            "initial_cp" : initial_cp_path,
                             "initial_momenta_tR" : initial_momenta_path,
                             "perform_shooting" : False}
         
@@ -448,7 +448,7 @@ class Deformetrica:
         print("start_time", start_time)
         print("target_time", target_time)
         
-        template_specifications[object_name]['filename'] = flow_path[model_options_["t0"]]
+        template_spec[object_name]['filename'] = flow_path[model_options_["t0"]]
 
         if target_time != model_options["t0"]:
             self.output_dir = op.join(main_output_dir3, "Subject_{}_age_{}_to_{}".format(i, age(dataset_spec, i), target_time))
@@ -458,32 +458,30 @@ class Deformetrica:
         make_dir(self.output_dir)
 
 
-        model_options_, _ = self.further_initialization('ParallelTransport', 
-                                                        template_specifications, model_options_)
+        model_options_, _ = self.further_initialization('ParallelTransport', model_options_)
 
-        trajectory = compute_piecewise_parallel_transport(template_specifications, 
-                                                            output_dir=self.output_dir, 
-                                                            overwrite = estimator_options["overwrite"],
-                                                            **model_options_)        
-        # residuals = compute_distance_to_flow(template_specifications, output_dir=self.output_dir, 
+        trajectory = launch_piecewise_parallel_transport(template_spec, output_dir=self.output_dir, 
+                                                        overwrite = estimator_options["overwrite"],
+                                                        **model_options_)        
+        # residuals = compute_distance_to_flow(template_spec, output_dir=self.output_dir, 
         #                               flow_path = flow_path, **model_options_)
         # #print("\n residuals", residuals)
         # r.plot(residuals, i, time, age(dataset_spec, i))
 
         return trajectory
 
-    def registration_and_transport_for_initialization(self, template_specifications, dataset_spec,
+    def registration_and_transport_for_initialization(self, template_spec, dataset_spec,
                                                     model_options, estimator_options, main_output_dir2,
                                                     main_output_dir3, flow_path, object_name, initial_cp_path, 
                                                     initial_momenta_path, target_times = []):
         
-        accepted_difference = (1/model_options["concentration_of_time_points"]) / 2 + 0.01
+        accepted_difference = (1/model_options["time_concentration"]) / 2 + 0.01
 
         transported_momenta_path = {t: [] for t in target_times}
 
         r = PlotResiduals(main_output_dir3)
 
-        for i, subject in enumerate(dataset_spec['dataset_filenames']):
+        for i, subject in enumerate(dataset_spec['filenames']):
 
             self.output_dir = op.join(main_output_dir2, "Subject_{}_age_{}".format(i, age(dataset_spec, i)))
             make_dir(self.output_dir)
@@ -493,24 +491,24 @@ class Deformetrica:
             
             for start_time, template in flow_path.items():
                 if np.abs(start_time - age(dataset_spec, i)) <= accepted_difference:
-                    template_specifications[object_name]['filename'] = template
+                    template_spec[object_name]['filename'] = template
                     break
                 
             logger.info("\n >>>> Registration for subject {}".format(id(dataset_spec, i)))
 
             model_options_ = copy.deepcopy(model_options)
-            model_options_["initial_control_points"] = initial_cp_path
+            model_options_["initial_cp"] = initial_cp_path
             model_options_["kernel_regression"] = False
             
             estimator_options_ = options_for_registration(estimator_options)
 
-            model = self.estimate_registration(template_specifications, new_dataset_spec,
+            model = self.registration(template_spec, new_dataset_spec,
                                             model_options_, estimator_options_, write_output=True)
             
             trajectory = dict()
             for target_time in target_times:
                 if target_time not in trajectory.keys():
-                    trajectory = self.parallel_transport_subject(i, template_specifications, 
+                    trajectory = self.parallel_transport_subject(i, template_spec, 
                                                             dataset_spec,
                                                             model_options, estimator_options, 
                                                             main_output_dir3, flow_path, object_name, initial_cp_path, 
@@ -523,15 +521,15 @@ class Deformetrica:
 
         return transported_momenta_path, model_options_
 
-    def initialize_piecewise_bayesian_geodesic_regression(self, template_specifications, dataset_spec,
+    def initialize_piecewise_bayesian_geodesic_regression(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         """ Construct a shape trajectory that is as close as possible to the given targets at the given times.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict dataset_spec: Dictionary containing the paths to the input objects from which a statistical model will be estimated.
-        :dict model_options: Dictionary containing details about the model that is to be run.
-        :dict estimator_options: Dictionary containing details about the optimization method. This will be passed to the optimizer's constructor.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict dataset_spec: Paths to input objects from which a model will be estimated.
+        :dict model_options: Details about the model .
+        :dict estimator_options: Details about the optimization method. 
         :bool write_output: Boolean that defines is output files will be written to disk.
         """
         main_output_dir = self.output_dir  
@@ -549,21 +547,21 @@ class Deformetrica:
         ## 0 - estimate initial template shape
         estimator_options["overwrite"] = False
 
-        # template, object_name = self.atlas_at_t0_for_initialisation(template_specifications, dataset_spec,
+        # template, object_name = self.atlas_at_t0_for_initialisation(template_spec, dataset_spec,
         #                                             model_options, estimator_options, write_output)
 
         object_name = "img"
-        #template_specifications[object_name]['filename'] = template
+        #template_spec[object_name]['filename'] = template
 
         ## 1 - estimate piecewise regression
         self.output_dir = main_output_dir1
 
         initial_cp_path, initial_momenta_path, flow_path = \
-        self.piecewise_regression_for_initialisation(template_specifications, dataset_spec,
+        self.piecewise_regression_for_initialisation(template_spec, dataset_spec,
                                                     model_options, estimator_options, write_output)
 
         ## 2 - Register the mean trajectory to each observation at t_i
-        transported_momenta_path, model_options_ = self.registration_and_transport_for_initialization(template_specifications, 
+        transported_momenta_path, model_options_ = self.registration_and_transport_for_initialization(template_spec, 
                                                                                                 dataset_spec,
                                      model_options, estimator_options, main_output_dir2,
                                      main_output_dir3, flow_path, object_name, initial_cp_path, 
@@ -591,12 +589,12 @@ class Deformetrica:
             model_options_ = complete(model_options, model_options_)
             model_options_["initial_momenta"] = initial_momenta_path
             model_options_["initial_momenta_tR"] = initial_momenta_path
-            plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_spec,
+            plot_ica(path_to_sources, path_to_mm, template_spec, dataset_spec,
                     output_dir=self.output_dir, overwrite = estimator_options["overwrite"],
                     nb_components = model_options_["num_component"], target_time = target_time,
                     **model_options_)
         
-    def initialized_piecewise_bayesian_geodesic_regression(self, template_specifications, dataset_spec,
+    def initialized_piecewise_bayesian_geodesic_regression(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         
         main_output_dir = self.output_dir      
@@ -610,7 +608,7 @@ class Deformetrica:
         # Get average trajectory initialization
         self.output_dir = op.join(main_output_dir, "1_piecewise_regression")
         initial_cp_path, initial_momenta_path, _, _ = \
-        self.piecewise_regression_for_initialisation(template_specifications, dataset_spec,
+        self.piecewise_regression_for_initialisation(template_spec, dataset_spec,
                                                     model_options, estimator_options, write_output)
         
         # Get ICA output
@@ -623,7 +621,7 @@ class Deformetrica:
         model_options["initial_sources"] = path_to_sources
         model_options["initial_modulation_matrix"] = path_to_mm
         model_options["initial_momenta"] = initial_momenta_path
-        model_options["initial_control_points"] = initial_cp_path
+        model_options["initial_cp"] = initial_cp_path
 
         ############## Final Model ##############
 
@@ -646,30 +644,30 @@ class Deformetrica:
         new_bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        statistical_model = BayesianPiecewiseGeodesicRegression(template_specifications, **model_options, new_bounding_box = new_bounding_box)
-        individual_RER = statistical_model.initialize_random_effects_realization(dataset.number_of_subjects,
+        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        individual_RER = model.initialize_random_effects_realization(dataset.number_of_subjects,
                                                                                  **model_options)
-        statistical_model.initialize_noise_variance(dataset, individual_RER)
+        model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
         estimator_options['individual_RER'] = individual_RER
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
-        return statistical_model
+        return model
     
-    def estimate_kernel_regression(self, time, template_specifications, dataset_spec,
+    def kernel_regression(self, time, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                        'KernelRegression', model_options, dataset_spec, estimator_options)
-        
+        model_options, estimator_options = self.further_initialization('KernelRegression', 
+                                            model_options, dataset_spec, estimator_options)
+
         visit_ages = [d[0] for d in dataset_spec['visit_ages']]
-        original_template_spec = template_specifications['img']["filename"]
+        original_template_spec = template_spec["Object_1"]
         
         time = int(time)
         model_options['time'] = time
@@ -678,30 +676,25 @@ class Deformetrica:
             os.makedirs(self.output_dir)
 
         # Select the subjects that contribute to the atlas
-        selection, weights = [], []
+        visit_ages = dataset_spec['visit_ages']
         total_weights = np.sum([gaussian_kernel(time, age[0]) for age in dataset_spec['visit_ages']])
-        for i, age in enumerate(dataset_spec['visit_ages']):
-            weight = gaussian_kernel(time, age[0])
-            if weight > 0.01:
-                selection.append(i)
-                weights.append(weight)
+        weights = [gaussian_kernel(time, age[0]) for age in visit_ages]
+        selection = [i for i, w in enumerate(weights) if w > 0.01]
         
         # Adaptative kernel
         
         # Update the dataset accordingly
-        new_dataset_spec = copy.deepcopy(dataset_spec)
-        new_dataset_spec['visit_ages'] = [[age] for i, age in enumerate(visit_ages) if i in selection]
-        new_dataset_spec['subject_ids'] = [id for i, id in enumerate(dataset_spec['subject_ids'])\
-                                                    if i in selection]
-        new_dataset_spec['dataset_filenames'] = [name for i, name in enumerate(dataset_spec['dataset_filenames'])\
-                                                        if i in selection]
+        new_dataset_spec = copy.deepcopy(dataset_spec)        
+        new_dataset_spec['visit_ages'] = [[visit_ages[i][0]] for i in selection]
+        new_dataset_spec['subject_ids'] = [dataset_spec['subject_ids'][i] for i in selection]
+        new_dataset_spec['filenames'] = [dataset_spec['filenames'][i] for i in selection]
         model_options['visit_ages'] = new_dataset_spec['visit_ages']
 
         dataset = create_dataset(**new_dataset_spec)
         
         # Compute a mean image
-        # if ".nii" in new_dataset_spec['dataset_filenames'][0][0]["img"]:
-        #     data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['dataset_filenames']]
+        # if ".nii" in new_dataset_spec['filenames'][0][0]["img"]:
+        #     data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['filenames']]
         #     mean = np.zeros((data_list[0].get_fdata().shape))
         #     for i, f in enumerate(data_list):
         #         mean += f.get_fdata() * (weights[i]/total_weights)
@@ -710,38 +703,37 @@ class Deformetrica:
         #     nib.save(image_new, output_image)
         # else:            
         #     i = weights.index(max(weights))
-        #     name = new_dataset_spec['dataset_filenames'][i][0]["img"]
+        #     name = new_dataset_spec['filenames'][i][0]["img"]
         #     name = "/home/fleur.gaudfernau/Necker_atlas_SPT/Inner_cortical_surface_bayesian_piecewise_regression_60_subjects_with_init_/Kernel_regression/template_smooth_2000.vtk"
-        #template_specifications['img']["filename"] = name
+        #template_spec['img']["filename"] = name
         
         # Instantiate model.
-        print("Number of subjects", len(new_dataset_spec['dataset_filenames']), "at age", time)
-        statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-        statistical_model.initialize_noise_variance(dataset)
+        print("Number of subjects:", len(new_dataset_spec['filenames']), "at age", time)
+        model = DeformableTemplate(template_spec, dataset.number_of_subjects, **model_options)
+        model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
-        estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+        estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
         try:
             self.__launch_estimator(estimator, write_output)
         finally:
-            statistical_model.cleanup()
+            model.cleanup()
 
         return 
 
-    def kernel_regression_2(self, template_specifications, dataset_spec,
+    def kernel_regression_2(self, template_spec, dataset_spec,
                                      model_options={}, estimator_options={}, write_output=True):
         """ Estimate a deterministic atlas
         """
-        
         # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization(
-                                        'KernelRegression', model_options, dataset_spec, estimator_options)
+        model_options, estimator_options = self.further_initialization('KernelRegression', 
+                                            model_options, dataset_spec, estimator_options)
         
         visit_ages = [d[0] for d in dataset_spec['visit_ages']]
         tmin = int(min(visit_ages))
         tmax = int(max(visit_ages))
-        original_template_spec = template_specifications['img']["filename"]
+        original_template_spec = template_spec['img']["filename"]
         root_output_dir = self.output_dir
         
         for time in range(tmin, tmax):
@@ -766,66 +758,72 @@ class Deformetrica:
             new_dataset_spec['visit_ages'] = [[age] for i, age in enumerate(visit_ages) if i in selection]
             new_dataset_spec['subject_ids'] = [id for i, id in enumerate(dataset_spec['subject_ids'])\
                                                         if i in selection]
-            new_dataset_spec['dataset_filenames'] = [name for i, name in enumerate(dataset_spec['dataset_filenames'])\
+            new_dataset_spec['filenames'] = [name for i, name in enumerate(dataset_spec['filenames'])\
                                                             if i in selection]
             model_options['visit_ages'] = new_dataset_spec['visit_ages']
 
             dataset = create_dataset(**new_dataset_spec)
             
             # Compute a mean image
-            data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['dataset_filenames']]
+            data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['filenames']]
             mean = np.zeros((data_list[0].get_fdata().shape))
             for i, f in enumerate(data_list):
                 mean += f.get_fdata() * (weights[i]/total_weights)
             image_new = nib.nifti1.Nifti1Image(mean, data_list[0].affine, data_list[0].header)
             output_image = original_template_spec.replace("mean", "mean_age_{}".format(time))
             nib.save(image_new, output_image)
-            template_specifications['img']["filename"] = output_image
+            template_spec['img']["filename"] = output_image
             
             # Instantiate model.
-            statistical_model = DeformableTemplate(template_specifications, dataset.number_of_subjects, **model_options)
-            statistical_model.initialize_noise_variance(dataset)
+            model = DeformableTemplate(template_spec, dataset.number_of_subjects, **model_options)
+            model.initialize_noise_variance(dataset)
 
             # Instantiate estimator.
-            estimator = self.__instantiate_estimator(statistical_model, dataset, estimator_options)
+            estimator = self.__instantiate_estimator(model, dataset, estimator_options)
 
             try:
                 self.__launch_estimator(estimator, write_output)
             finally:
-                statistical_model.cleanup()
+                model.cleanup()
 
         return 
 
-
-    def compute_parallel_transport(self, template_specifications, model_options={}):
+    def compute_parallel_transport(self, template_spec, model_options={}):
         """ Given a known progression of shapes, to transport this progression onto a new shape.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict template_spec: Task description  
+        :dict model_options: Details about the model .
         """
-
         # Check and completes the input parameters.
-        model_options, _ = self.further_initialization(
-            'ParallelTransport', template_specifications, model_options)
+        model_options, _ = self.further_initialization('ParallelTransport', model_options)
 
-        # Launch.
-        compute_parallel_transport(template_specifications, output_dir=self.output_dir, **model_options)
+        launch_parallel_transport(template_spec, output_dir=self.output_dir, **model_options)
+    
+    def compute_piecewise_parallel_transport(self, template_spec, model_options={}):
+        """ Given a known progression of shapes, to transport this progression onto a new shape.
 
-    def compute_shooting(self, template_specifications, model_options={}):
+        :dict template_spec: Task description  
+        :dict model_options: Details about the model .
+        """
+        # Check and completes the input parameters.
+        model_options, _ = self.further_initialization('ParallelTransport', model_options)
+
+        launch_piecewise_parallel_transport(template_spec, output_dir=self.output_dir, **model_options)
+
+    def compute_shooting(self, template_spec, model_options={}):
         """ If control points and momenta corresponding to a deformation have been obtained, 
         it is possible to shoot the corresponding deformation of obtain the flow of a shape under this deformation.
 
-        :dict template_specifications: Dictionary containing the description of the task that is to be performed (such as estimating a registration, an atlas, ...)
-                as well as some hyper-parameters for the objects and the deformations used.
-        :dict model_options: Dictionary containing details about the model that is to be run.
+        :dict template_spec: Task description  
+                              + some hyper-parameters for the objects and the deformations used.
+        :dict model_options: Details about the model .
         """
 
         # Check and completes the input parameters.
-        model_options, _ = self.further_initialization('ParallelTransport', template_specifications, model_options)
+        model_options, _ = self.further_initialization('ParallelTransport', model_options)
 
         # Launch.
-        compute_shooting(template_specifications, output_dir=self.output_dir, **model_options)
+        compute_shooting(template_spec, output_dir=self.output_dir, **model_options)
 
     ####################################################################################################################
     # Auxiliary methods.
@@ -851,19 +849,19 @@ class Deformetrica:
             print("Final writing")
             estimator.write()
 
-        if duration > 60 * 60 * 24:
-            logger.info('>> Estimation took: %s' %
-                        strftime("%d days, %H hours, %M minutes and %S seconds", gmtime(duration)))
-        elif duration > 60 * 60:
-            logger.info('>> Estimation took: %s' %
-                        strftime("%H hours, %M minutes and %S seconds", gmtime(duration)))
-        elif duration > 60:
-            logger.info('>> Estimation took: %s' %
-                        strftime("%M minutes and %S seconds", gmtime(duration)))
+        if duration > 86400: 
+            fmt = "%d days, %H hours, %M minutes and %S seconds"
+        elif duration > 3600:  
+            fmt = "%H hours, %M minutes and %S seconds"
+        elif duration > 60: 
+            fmt = "%M minutes and %S seconds"
         else:
-            logger.info('>> Estimation took: %s' % strftime("%S seconds", gmtime(duration)))
+            fmt = "%S seconds"
+    
+        logger.info(f">> Estimation took: {strftime(fmt, gmtime(duration))}")
+
         
-    def __instantiate_estimator(self, statistical_model, dataset, estimator_options):
+    def __instantiate_estimator(self, model, dataset, estimator_options):
         optimization_method = estimator_options['optimization_method'].lower()
         
         if optimization_method == 'GradientAscent'.lower():
@@ -889,39 +887,36 @@ class Deformetrica:
             estimator = default
 
         logger.debug(estimator_options)
-        return estimator(statistical_model, dataset, output_dir=self.output_dir, **estimator_options)
+        return estimator(model, dataset, output_dir=self.output_dir, **estimator_options)
 
-    def further_initialization(self, model_type, model_options, dataset_spec=None, 
-                                estimator_options=None, time = None):
+    def further_initialization(self, model_type, model_options, dataset_spec = None, 
+                                estimator_options = None, time = None):
         model_type = model_type.lower()
 
         if dataset_spec is None or estimator_options is None:
             assert model_type in ['Shooting'.lower(), 'ParallelTransport'.lower()], \
-                'Only the "shooting" and "parallel transport" can run without a dataset and an estimator.'
+            'Only shooting and parallel transport can run without dataset and estimator.'
 
         if estimator_options is not None:
             if 'state_file' not in estimator_options:
                 estimator_options['state_file'] = default.state_file
             if 'load_state_file' not in estimator_options:
                 estimator_options['load_state_file'] = default.load_state_file
-            
-            if 'multiscale_momenta' not in estimator_options: #ajout fg
+            if 'multiscale_momenta' not in estimator_options: 
                 estimator_options['multiscale_momenta'] = default.multiscale_momenta
-            if 'multiscale_images' not in estimator_options: #ajout fg
+            if 'multiscale_images' not in estimator_options: 
                 estimator_options['multiscale_images'] = default.multiscale_images
-            if 'multiscale_meshes' not in estimator_options: #ajout fg
+            if 'multiscale_meshes' not in estimator_options: 
                 estimator_options['multiscale_meshes'] = default.multiscale_meshes
-            if "start_scale" not in estimator_options:
-                estimator_options['start_scale'] = None
-            if 'multiscale_strategy' not in estimator_options: #ajout fg
+            if 'multiscale_strategy' not in estimator_options: 
                 estimator_options['multiscale_strategy'] = default.multiscale_strategy
 
-        if 'perform_shooting' not in model_options: #ajout fg
+        if 'perform_shooting' not in model_options: 
             model_options['perform_shooting'] = default.perform_shooting
         if 'freeze_template' not in model_options:
             model_options['freeze_template'] = default.freeze_template
-        if 'initial_control_points' not in model_options:
-            model_options['initial_control_points'] = default.initial_control_points
+        if 'initial_cp' not in model_options:
+            model_options['initial_cp'] = default.initial_cp
         if 'deformation_kernel_width' not in model_options:
             model_options['deformation_kernel_width'] = default.deformation_kernel_width
         if 't0' not in model_options:
@@ -929,26 +924,22 @@ class Deformetrica:
         if 'tR' not in model_options:
             model_options['tR'] = []
         if 't1' not in model_options:
-            model_options['t1'] = default.t0 #ajout fg
+            model_options['t1'] = default.t0 
         if 'initial_modulation_matrix' not in model_options:
             model_options['initial_modulation_matrix'] = default.initial_modulation_matrix
         if 'number_of_sources' not in model_options:
             model_options['number_of_sources'] = default.number_of_sources
         if 'downsampling_factor' not in model_options:
             model_options['downsampling_factor'] = default.downsampling_factor
-        if 'interpolation' not in model_options: #ajout fg
+        if 'interpolation' not in model_options: 
             model_options['interpolation'] = default.interpolation
         if "kernel_regression" not in model_options:
-            model_options['kernel_regression'] = default.kernel_regression
-
-        #
-        # Check and completes the user-given parameters.
-        #
+            model_options['kernel_regression'] = False
 
         # try and automatically set best number of thread per spawned process if not overridden by uer
         if 'OMP_NUM_THREADS' not in os.environ:
             hyperthreading = utilities.has_hyperthreading()
-            omp_num_threads = math.floor(os.cpu_count() / 1) #model_options['number_of_processes'])
+            omp_num_threads = math.floor(os.cpu_count() / 1)
 
             if hyperthreading:
                 omp_num_threads = math.ceil(omp_num_threads / 2)
@@ -985,7 +976,7 @@ class Deformetrica:
         if estimator_options is not None:
             if estimator_options['state_file'] is None:
                 path_to_state_file = op.join(self.output_dir, "deformetrica-state.p")
-                logger.info('>> By default, Deformetrica state will by saved in file: %s.' % path_to_state_file)
+                logger.info('>> By default, Deformetrica state is saved in: %s.' % path_to_state_file)
                 if op.isfile(path_to_state_file):
                     os.remove(path_to_state_file)
                 estimator_options['state_file'] = path_to_state_file
@@ -1009,7 +1000,7 @@ class Deformetrica:
 
             if model_options['initial_modulation_matrix'] is None and model_options['number_of_sources'] is None:
                 model_options['number_of_sources'] = 4
-                logger.info('>> No initial modulation matrix given, neither a number of sources. '
+                logger.info('>> No initial modulation matrix neither number of sources. '
                             'The latter will be ARBITRARILY defaulted to %d.' % model_options['number_of_sources'])
         
             if 'sources_proposal_std' not in estimator_options:
@@ -1017,5 +1008,7 @@ class Deformetrica:
 
                 estimator_options['individual_proposal_distributions'] = {
                     'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
+
+        logger.info("Downsampling factor set to: {}".format(model_options['downsampling_factor']))
 
         return model_options, estimator_options

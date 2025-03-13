@@ -7,7 +7,8 @@ from ...core import GpuMode
 import logging
 logger = logging.getLogger(__name__)
 
-#assert_same_size(**kwargs):
+def n_time_points(length, time_concentration):
+    return max(1, int(length * time_concentration + 1.5))
 
 def reverse_if(array, condition):
     return array[::(-1 if condition else 1)]
@@ -22,7 +23,13 @@ def assert_same_device(**kwargs):
                              "\n".join(f"- '{name}': {tensor.device}"
                                        for name, tensor in kwargs.items()))
 def detach(array):
-    return array.detach().cpu().numpy()
+    if isinstance(array, torch.Tensor):
+        if array.requires_grad:
+            array = array.detach().cpu().numpy()
+        else:
+            array = array.cpu().numpy()
+
+    return array
 
 def get_torch_scalar_type(dtype):
     return {'float16': torch.HalfTensor, 'torch.float16': torch.HalfTensor,
@@ -78,8 +85,10 @@ def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = N
     #dtype = get_torch_dtype(data.dtype)
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data).type(dtype)
-    elif isinstance(data, list):
+    elif isinstance(data, list) and not isinstance(data[0], torch.Tensor):
         data = torch.tensor(data, dtype=dtype, device=device) #dtype: torch.tensorType
+    elif isinstance(data, list) and isinstance(data[0], torch.Tensor):
+        data = torch.tensor(data, dtype = data[0].dtype, device=device)
     elif isinstance(data, (np.float64, np.float32, float)): #ajout fg
         data = torch.from_numpy(np.array([data])).type(dtype) #ajout fg
         #data = torch.tensor([data], dtype=dtype, device=device)
@@ -179,7 +188,7 @@ def get_best_device(gpu_mode=GpuMode.FULL):
         device_id = process_id % torch.cuda.device_count()
         device = 'cuda:' + str(device_id)
 
-    return device, device_id
+    return device
 
 def longitudinal_extract_from_file_name(file_name):
     import re
