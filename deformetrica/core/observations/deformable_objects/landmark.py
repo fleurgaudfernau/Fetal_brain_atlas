@@ -2,6 +2,9 @@ import os.path as op
 import numpy as np
 import pyvista as pv
 import torch
+from ....support.utilities import detach
+from ....support.utilities.plot_tools import plot_vtk_png
+
 
 import logging
 logger = logging.getLogger(__name__)
@@ -31,6 +34,11 @@ class Landmark:
         self.points = points
         self.connectivity = None
         self.object_filename = object_filename
+        
+        if self.object_filename is not None:
+            for extension in ['.pny', '.vtk', '.stl']:
+                if self.object_filename.endswith(extension):
+                    self.extension = extension
 
         self.update_bounding_box()
 
@@ -68,42 +76,40 @@ class Landmark:
             self.bounding_box[d, 1] = np.max(self.points[:, d])
 
     def write(self, output_dir, name, points=None, momenta = None, cp = None, kernel = None):
-        connec_names = {2: 'LINES', 3: 'POLYGONS'}
-        if points is None:
-            points = self.points
         
-        if isinstance(points, torch.Tensor):
-            points = points.cpu().numpy() 
+        name = name + self.extension
 
+        # Write the VTK polydata
+        connec_names = {2: 'LINES', 3: 'POLYGONS'}
+        points = detach(self.points) if points is None else detach(points)
+        
         with open(op.join(output_dir, name), 'w', encoding='utf-8') as f:
             s = '# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET POLYDATA\nPOINTS {} float\n'.format(len(self.points))
             f.write(s)
-            for p in points:
-                str_p = [str(elt) for elt in p]
-                if len(p) == 2:
-                    str_p.append(str(0.))
-                s = ' '.join(str_p) + '\n'
-                f.write(s)
 
+            # Formats points as strings, ensuring each point has 3 coordinates
+            for p in points:
+                f.write(' '.join(map(str, list(p) + ([0.0] if len(p) == 2 else []))) + '\n')
+            
             if self.connectivity is not None:
-                connec = self.connectivity
-                if isinstance(connec, torch.Tensor):
-                    connec = connec.detach().cpu().numpy()
-                a, connec_degree = connec.shape
-                s = connec_names[connec_degree] + ' {} {}\n'.format(a, a * (connec_degree+1))
+                connec = detach(self.connectivity)
+                a, degree = connec.shape
+                s = connec_names[degree] + ' {} {}\n'.format(a, a * (degree + 1))
                 f.write(s)
                 for face in connec:
-                    s = str(connec_degree) + ' ' + ' '.join([str(elt) for elt in face]) + '\n'
-                    f.write(s)
+                    f.write(f"{degree} {' '.join(map(str, face))}\n")
 
+        # Save as png image 
+        plot_vtk_png(op.join(output_dir, name))
+
+        # Write the VTK polydata with norm of the vector fields convolved at polydata points
         if momenta is not None:
-            # convolve momenta norm at polydata points 
             points = torch.tensor(points, dtype=torch.float32, device='cuda:0')
             if not isinstance(cp, torch.Tensor):
                 cp = torch.tensor(cp, dtype=torch.float32, device='cuda:0')
                 momenta = torch.tensor(momenta, dtype=torch.float32, device='cuda:0')
-            momenta_to_points = kernel.convolve(points, cp, momenta)            
-            polydata = pv.PolyData(op.join(output_dir, name))
-            polydata.point_data["momenta_to_mesh"] = momenta_to_points.cpu().numpy()
+            momenta_to_points = kernel.convolve(points, cp, momenta) 
+
+            polydata.point_data["momenta_to_mesh"] = detach(momenta_to_points)
             polydata.save(op.join(output_dir, name))
 

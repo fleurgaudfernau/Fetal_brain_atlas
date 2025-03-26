@@ -74,7 +74,7 @@ class LongitudinalAtlasInitializer():
         #global_dataset_filenames:list of lists: 1 list per subject of dict (1 dic = 1 obs)
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
-        self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
+        self.global_ids = self.xml_parameters.ids #list of ids
         self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
        
@@ -82,8 +82,8 @@ class LongitudinalAtlasInitializer():
                                     dimension=self.dimension, 
                                     visit_ages=copy.deepcopy(self.global_visit_ages), #to avoid modification
                                     dataset_filenames=self.global_dataset_filenames, 
-                                    subject_ids=self.global_subject_ids)
-        self.deformable_objects_dataset = self.dataset.deformable_objects #List of DeformableMultiObjects
+                                    ids=self.global_ids)
+        self.objects_dataset = self.dataset.objects #List of DeformableMultiObjects
         self.global_subjects_nb = len(self.global_dataset_filenames)
         self.global_observations_nb = sum([len(elt) for elt in self.global_visit_ages])
 
@@ -129,14 +129,14 @@ class LongitudinalAtlasInitializer():
         self.longitudinal_atlas_output = join(self.output_dir, '_longitudinal_atlas_with_gradient_ascent')
 
         self.longitudinal_shooted_subjects_paths = [join(self.longitudinal_shooting_output, 
-                                                    'Shooting__subject_'+ self.global_subject_ids[i])
+                                                    'Shooting__subject_'+ self.global_ids[i])
                                                     for i in self.longitudinal_subjects_ind]
         self.single_registration_subjects_paths = [join(self.single_registration_output, 
-                                                'Registration__subject_'+ self.global_subject_ids[i])
+                                                'Registration__subject_'+ self.global_ids[i])
                                                 for i in self.single_subjects_ind]
 
         self.single_shooted_subjects_paths = [join(self.single_shooting_output, 
-                                                'Shooting__subject_'+ self.global_subject_ids[i])
+                                                'Shooting__subject_'+ self.global_ids[i])
                                                 for i in self.single_subjects_ind]
         
         for path in [self.atlas_output_path, self.atlas_trajectory_output, self.atlas_trajectory_output_2, self.regressions_output,
@@ -195,10 +195,10 @@ class LongitudinalAtlasInitializer():
     def define_regression_outputs(self):
         gr = 'GeodesicRegression__'
         self.regression_momenta_path = [join(self.regressions_output, 
-                                        '%ssubject_%s_EstimatedParameters__Momenta.txt'%(gr, self.global_subject_ids[i]))\
+                                        '%ssubject_%s_EstimatedParameters__Momenta.txt'%(gr, self.global_ids[i]))\
                                         for i in self.longitudinal_subjects_ind]
         self.regression_cp_path = [join(self.atlas_output_path, 
-                                    '%ssubject_%s_EstimatedParameters__ControlPoints.txt'%(gr, self.global_subject_ids[i]))\
+                                    '%ssubject_%s_EstimatedParameters__ControlPoints.txt'%(gr, self.global_ids[i]))\
                                     for i in self.longitudinal_subjects_ind]
     
     def get_regression_outputs(self):
@@ -237,11 +237,11 @@ class LongitudinalAtlasInitializer():
             
             # Where to copy output files
             self.shooted_momenta_for_atlas.append(join(self.atlas_trajectory_output, "{}_{}__tp_{}__age_{}.txt"\
-                                                .format(m, self.global_subject_ids[ind], time, self.global_t0)))
+                                                .format(m, self.global_ids[ind], time, self.global_t0)))
             self.shooted_subjects_for_atlas.append([join(self.atlas_output_path, "{}{}_{}__tp_{}__age_{}{}"\
-                                    .format(a, self.global_subject_ids[ind], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
+                                    .format(a, self.global_ids[ind], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
             self.shooted_subjects_for_atlas_2.append([join(self.atlas_output_path_2, "{}{}_{}__tp_{}__age_{}{}"\
-                                    .format(a, self.global_subject_ids[ind], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
+                                    .format(a, self.global_ids[ind], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
 
     def compute_longitudinal_geodesic_regressions(self):
         """
@@ -257,19 +257,19 @@ class LongitudinalAtlasInitializer():
         xml_parameters.time_concentration = 1
     
         for i, ind in enumerate(self.longitudinal_subjects_ind):
-            logger.info('\n Geodesic regression for subject ' + self.global_subject_ids[ind] + '\n')
+            logger.info('\n Geodesic regression for subject ' + self.global_ids[ind] + '\n')
             
             xml_parameters.template_specifications["img"]['filename'] = self.global_dataset_filenames[ind][0]["img"]
             
             self.regression_control_points, regression_momenta = estimate_subject_geodesic_regression(
                 ind, self.global_deformetrica, xml_parameters, self.regressions_output,
-                self.global_dataset_filenames, self.global_visit_ages, self.global_subject_ids,
+                self.global_dataset_filenames, self.global_visit_ages, self.global_ids,
                 t0 = self.global_visit_ages[ind][0])
                                 
             np.savetxt(self.regression_momenta_path[i], regression_momenta)
             np.savetxt(self.regression_cp_path[i], self.regression_control_points) 
 
-            logger.info('\nShoot subject {} from {} to {}'.format(self.global_subject_ids[ind], self.global_visit_ages[ind][0], self.global_t0))  
+            logger.info('\nShoot subject {} from {} to {}'.format(self.global_ids[ind], self.global_visit_ages[ind][0], self.global_t0))  
 
             compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
                             deformation_kernel_width=self.global_kernel_width,
@@ -331,7 +331,7 @@ class LongitudinalAtlasInitializer():
         xml_parameters.dataset_filenames = [[{self.objects_name[0]:obj_list[0]}]\
                                              for obj_list in self.shooted_subjects_for_atlas]
         xml_parameters.visit_ages = [[self.global_t0]] * self.nb_of_longitudinal_subjects
-        xml_parameters.subject_ids = [self.global_subject_ids[i] for i in self.longitudinal_subjects_ind]
+        xml_parameters.ids = [self.global_ids[i] for i in self.longitudinal_subjects_ind]
         
         # Set the template image
         self.mean_img(xml_parameters.dataset_filenames)
@@ -361,8 +361,8 @@ class LongitudinalAtlasInitializer():
     def define_momenta_output(self):
         gr = 'GeodesicRegression__'
         self.transported_regression_momenta_path = [join(self.atlas_trajectory_output, 
-                                                '%ssubject_%sEstimatedParameters__TransportedMomenta.txt'%(gr, self.global_subject_ids[i]))\
-                                                for i in range(len(self.global_subject_ids))]
+                                                '%ssubject_%sEstimatedParameters__TransportedMomenta.txt'%(gr, self.global_ids[i]))\
+                                                for i in range(len(self.global_ids))]
         self.global_initial_momenta_for_atlas = join(self.atlas_trajectory_output, "Global_average_momenta.txt")
                                          
         # Path to where we will store the initialized parameters/variables
@@ -383,7 +383,7 @@ class LongitudinalAtlasInitializer():
         self.global_initial_momenta = np.zeros((self.global_initial_cp.shape))
         
         for j, i in enumerate(self.longitudinal_subjects_ind):
-            logger.info('\nParallel transport regression momenta of subject {} to atlas space\n'.format(self.global_subject_ids[i]))
+            logger.info('\nParallel transport regression momenta of subject {} to atlas space\n'.format(self.global_ids[i]))
 
             regression_momenta = read_3D_array(self.shooted_subjects_regression_momenta[j])
             registration_to_atlas_momenta = self.global_atlas_momenta[j]
@@ -482,7 +482,7 @@ class LongitudinalAtlasInitializer():
             # Set the target (subject) and the source (template at subject age)
             xml_parameters.dataset_filenames = [self.global_dataset_filenames[ind]]
             xml_parameters.visit_ages = [self.global_visit_ages[ind]]
-            xml_parameters.subject_ids = [self.global_subject_ids[ind]]
+            xml_parameters.ids = [self.global_ids[ind]]
             xml_parameters.template_specifications["img"]['filename'] = self.template_shot_to_subjects[i][0]
 
             self.global_deformetrica.output_dir = self.single_registration_subjects_paths[i]
@@ -522,7 +522,7 @@ class LongitudinalAtlasInitializer():
                                     "{}{}__tp_{}__age_{}{}".format(gs, self.objects_name[0], time, t0, self.objects_ext[0]))])
             self.single_shooted_subjects_for_atlas_2.append([join(self.atlas_output_path_2, 
                                     "{}{}_{}__tp_{}__age_{}{}"\
-                                    .format(a, self.global_subject_ids[i], self.objects_name[0], time, t0, self.objects_ext[0]))])
+                                    .format(a, self.global_ids[i], self.objects_name[0], time, t0, self.objects_ext[0]))])
             
     def shoot_single_subjects_to_t0(self):
         logger.info('\Compute cross sectional subjects trajectories\n')
@@ -532,7 +532,7 @@ class LongitudinalAtlasInitializer():
         control_points_t0 = self.to_torch_tensor(self.global_initial_cp)
         
         for i in self.single_subjects_ind:
-            logger.info('\Compute trajectory of subject {}\n'.format(self.global_subject_ids[i]))
+            logger.info('\Compute trajectory of subject {}\n'.format(self.global_ids[i]))
             
             # Instantiate a geodesic.
             geodesic = Geodesic(self.kernel, t0=self.global_tmin, 
@@ -542,7 +542,7 @@ class LongitudinalAtlasInitializer():
             geodesic.set_tmax(max([self.global_t0, self.global_visit_ages[i][0]]))
 
             # Set the template, control points and momenta and update.
-            subject_objects_t0 = self.deformable_objects_dataset[i][0] #subject i obs 0 
+            subject_objects_t0 = self.objects_dataset[i][0] #subject i obs 0 
             subjects_points_t0 = subject_objects_t0.get_points()
             subjects_points_t0 = {k: self.to_torch_tensor(v) for k, v in subjects_points_t0.items()}
             

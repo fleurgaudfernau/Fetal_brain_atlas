@@ -15,16 +15,16 @@ class LongitudinalDataset:
     ### Constructor:
     ################################################################################
 
-    def __init__(self, subject_ids, times=None, deformable_objects=None):
+    def __init__(self, ids, times=None, objects=None):
 
-        self.subject_ids = subject_ids
+        self.ids = ids
         self.times = times
         self.tmin, self.tmax = None, None            
-        self.deformable_objects = deformable_objects
-        print(deformable_objects)
-        self.dimension = deformable_objects[0][0].dimension
+        self.objects = objects
+        self.dimension = objects[0][0].dimension
 
-        self.number_of_subjects = len(subject_ids)
+        self.n_subjects = len(ids)
+        self.n_obs = len(sum(self.objects, []))
 
         # Total number of observations.
         if times and times != [[]]:
@@ -32,11 +32,11 @@ class LongitudinalDataset:
             self.tmin = math.trunc(min(min(t) for t in times)) # arrondi à entier inf
             self.tmax = math.ceil(max(max(t) for t in times)) # entier sup
 
-        elif deformable_objects is not None:
-            self.total_number_of_observations = sum(len(objets) for objets in self.deformable_objects)
+        elif objects is not None:
+            self.total_number_of_observations = sum(len(objets) for objets in self.objects)
 
         # Order the observations.
-        if times is not None and len(times) > 0 and len(times[0]) > 0 and deformable_objects is not None:
+        if times is not None and len(times) > 0 and len(times[0]) > 0 and objects is not None:
             self.order_observations()
 
     ################################################################################
@@ -48,22 +48,22 @@ class LongitudinalDataset:
         Checks whether there is a single visit per subject
         """
         b = True
-        for elt in self.deformable_objects: b = (b and len(elt) == 1)
+        for elt in self.objects: b = (b and len(elt) == 1)
         return b
 
     def is_time_series(self):
         """
         Checks whether there is only one subject, with several visits
         """
-        return len(self.deformable_objects) == 1 and len(self.deformable_objects[0]) > 1 and \
-               len(self.times) == 1 and len(self.deformable_objects[0]) == len(self.times[0])
+        return len(self.objects) == 1 and len(self.objects[0]) > 1 and \
+               len(self.times) == 1 and len(self.objects[0]) == len(self.times[0])
 
     def check_image_shapes(self):
         """
         In the case of non deformable objects, checks the dimension of the images are the same.
         """
-        shape = self.deformable_objects[0][0].get_points().shape
-        for subj in self.deformable_objects:
+        shape = self.objects[0][0].get_points().shape
+        for subj in self.objects:
             for img in subj:
                 assert img.get_points().shape == shape, "Different images dimensions detected."
 
@@ -72,5 +72,5 @@ class LongitudinalDataset:
         for i in range(len(self.times)):
             
             self.times[i] = np.sort(self.times[i])
-            self.deformable_objects[i] = [self.deformable_objects[i][j] \
+            self.objects[i] = [self.objects[i][j] \
                                             for j in np.argsort(self.times[i])]

@@ -5,7 +5,8 @@ from copy import deepcopy
 from scipy.spatial import KDTree
 import numpy as np
 import vtk
-from ....support.utilities import move_data, get_best_device, get_torch_scalar_type, get_torch_integer_type
+from ....support.utilities import (move_data, to_same_device, get_best_device, \
+                                get_torch_scalar_type, get_torch_integer_type)
 from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import mean_squared_error
 
@@ -174,10 +175,7 @@ class MultiObjectAttachment:
             assert points_1.device == points_2.device == normals_1.device == normals_2.device, 'tensors must be on the same device'
             
             product = torch.zeros((normals_1.size()), device = points_1.device, dtype = normals_1.dtype)
-            # normals_1 = values of normals at points_1 = n_centers_1 x 3
 
-            # ~ We get the values of normals 2 convolved at points_1
-            # = n_centers_1 x 3
             normals_2_convolve = kernel.convolve(points_1, points_2, normals_2)#.view(-1)
 
             for i in range(normals_1.size()[0]): # from 0 to n points
@@ -196,9 +194,6 @@ class MultiObjectAttachment:
                     product[i][j] = normals_2_convolve[i][j] * normals_2_convolve[i][j]
 
             return product
-
-        # return point_current_scalar_product(c1, c1, n1, n1) + norm_convolved_to_source(c1, c2, n2) \
-        #     - 2 * point_current_scalar_product(c1, c2, n1, n2)
         
         norm_1 = point_current_scalar_product(c1, c1, n1, n1)
         norm_2_to_1 = norm_convolved_to_source(c1, c2, n2)
@@ -260,9 +255,11 @@ class MultiObjectAttachment:
         Returns the varifold distance between the 3D meshes
         """
         def varifold_scalar_product(x, y, n1_norm, n2_norm, nalpha, nbeta):
+
+            conv = kernel.convolve((x, nalpha), (y, nbeta), n2_norm.view(-1, 1), mode='varifold')
+            (n1_norm, conv) = to_same_device(n1_norm, conv)
             
-            return torch.dot(n1_norm.view(-1), kernel.convolve((x, nalpha), (y, nbeta), 
-                            n2_norm.view(-1, 1), mode='varifold').view(-1))
+            return torch.dot(n1_norm.view(-1), conv.view(-1))
         
         device = get_best_device()
         c1, n1, c2, n2 = MultiObjectAttachment.__get_source_and_target_centers_and_normals(points, source, target, residuals, device=device)

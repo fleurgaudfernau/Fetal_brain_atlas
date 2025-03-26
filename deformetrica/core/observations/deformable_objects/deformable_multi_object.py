@@ -160,9 +160,7 @@ class DeformableMultiObject:
         Save the list of objects with the given names
         """
         if names is None: return
-        
-        data = detach(data)
-            
+    
         assert len(names) == len(self.object_list), "Give as many names as objects to save multi-object"
         pos = 0
         for elt, name in zip(self.object_list, names):
@@ -170,6 +168,8 @@ class DeformableMultiObject:
                 elt.write(output_dir, name)
 
             else:
+                data = detach(data)
+
                 if elt.type.lower() in ['surfacemesh', 'landmark']:
                     elt.write(output_dir, name, data['landmark_points'][pos:pos + elt.n_points()], 
                                 momenta, cp, kernel)

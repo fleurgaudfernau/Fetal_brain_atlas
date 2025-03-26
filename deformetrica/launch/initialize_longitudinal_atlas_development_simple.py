@@ -66,7 +66,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         #global_dataset_filenames:list of lists: 1 list per subject of dict (1 dic = 1 obs)
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
-        self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
+        self.global_ids = self.xml_parameters.ids #list of ids
         self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
        
@@ -74,8 +74,8 @@ class CrossSectionalLongitudinalAtlasInitializer():
                                     dimension=self.dimension, 
                                     visit_ages=copy.deepcopy(self.global_visit_ages), #to avoid modification
                                     dataset_filenames=self.global_dataset_filenames, 
-                                    subject_ids=self.global_subject_ids)
-        self.deformable_objects_dataset = self.dataset.deformable_objects #List of DeformableMultiObjects
+                                    ids=self.global_ids)
+        self.objects_dataset = self.dataset.objects #List of DeformableMultiObjects
         self.global_subjects_nb = len(self.global_dataset_filenames)
         self.global_observations_nb = sum([len(elt) for elt in self.global_visit_ages])
 
@@ -113,13 +113,13 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.registration_output = join(self.output_dir, '3_atlas_registration_to_subjects')
         
         self.registration_subjects_paths = [join(self.registration_output, 
-                                            'Registration__subject_'+ self.global_subject_ids[i])
+                                            'Registration__subject_'+ self.global_ids[i])
                                             for i in range(len(self.global_dataset_filenames))]
 
         self.shooting_output = join(self.output_dir, '4_subjects_shootings_to_t0')
 
         self.shooted_subjects_paths = [join(self.shooting_output, 
-                                        'Shooting__subject_'+ self.global_subject_ids[i])
+                                        'Shooting__subject_'+ self.global_ids[i])
                                         for i in range(len(self.global_dataset_filenames))]
         
         self.atlas_output_path_2 = join(self.output_dir, '5_bayesian_atlas_all_subjects')
@@ -127,7 +127,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.age_error_output = join(self.output_dir, '6_age_correction')
         
         self.age_error_output_subjects = [join(self.age_error_output, 
-                                            'Registrations__subject_'+ self.global_subject_ids[i])
+                                            'Registrations__subject_'+ self.global_ids[i])
                                             for i in range(len(self.global_dataset_filenames))]
         self.longitudinal_atlas_output_path = join(self.output_dir,'7_longitudinal_atlas_with_gradient_ascent')
 
@@ -231,23 +231,23 @@ class CrossSectionalLongitudinalAtlasInitializer():
             xml_parameters.optimization_method_type = 'StochasticGradientAscent'.lower()
             estimate_atlas = estimate_deformable_template
             xml_parameters.dataset_filenames = []
-            xml_parameters.subject_ids = []
+            xml_parameters.ids = []
             xml_parameters.visit_ages = []
 
             if not all:
                 for i in range(self.global_subjects_nb):    
                     if np.abs(self.global_t0 - self.global_visit_ages[i][0]) < 3:
                         xml_parameters.dataset_filenames.append(self.global_dataset_filenames[i])
-                        xml_parameters.subject_ids.append(self.global_subject_ids[i])
+                        xml_parameters.ids.append(self.global_ids[i])
                         xml_parameters.visit_ages.append([self.global_t0])
             else:
                 xml_parameters.dataset_filenames = [[{self.objects_name[0] : sujet[0]}] for sujet in self.shooted_subjects_for_atlas]
                 xml_parameters.visit_ages = [[self.global_t0]] * self.global_subjects_nb
-                xml_parameters.subject_ids = self.global_subject_ids
+                xml_parameters.ids = self.global_ids
         else:
             xml_parameters.optimization_method_type = 'GradientAscent'.lower()
             xml_parameters.visit_ages = [[self.global_t0]] * self.global_subjects_nb
-            xml_parameters.subject_ids = self.global_subject_ids
+            xml_parameters.ids = self.global_ids
             xml_parameters.dataset_filenames = self.global_dataset_filenames
             estimate_atlas = estimate_bayesian_atlas
         
@@ -365,7 +365,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
             #join filenames as if from a single subject = [[{obs 1}] [{obs2}]] -> [[{obs 1} {obs2}]]
             xml_parameters.dataset_filenames = [sum(self.global_dataset_filenames, [])]
             xml_parameters.visit_ages = [sum(self.global_visit_ages, [])]
-            xml_parameters.subject_ids = [self.global_subject_ids[0]]
+            xml_parameters.ids = [self.global_ids[0]]
             xml_parameters.t0 = self.global_t0   
 
             if self.global_subjects_nb > 30:
@@ -389,7 +389,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         templates = [f for f in os.listdir(self.regression_output) if self.objects_ext[0] in f and "Flow" in f]
 
         accepted_difference = (1/self.concentration_of_tp)/2+0.01
-        for i in range(len(self.global_subject_ids)):
+        for i in range(len(self.global_ids)):
             self.registration_momenta.append(join(self.registration_subjects_paths[i],"DeformableTemplate__EstimatedParameters__Momenta.txt")) 
             age = round(self.global_visit_ages[i][0], 2)
             # Get the template closest to subject age
@@ -414,25 +414,25 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.shooted_subjects_files = []
         self.shooted_subjects_for_atlas = []
 
-        for i in range(len(self.global_subject_ids)):
+        for i in range(len(self.global_ids)):
             time = max(0, round((self.global_t0 - self.global_visit_ages[i][0]) * self.concentration_of_tp)) #self.concentration_of_tp)
             
             # Output files
             self.transported_regression_momenta_path.append(join(self.registration_subjects_paths[i], 
                                                              'Transported_Momenta_tp_5__age_1.00.txt'))
             #self.transported_regression_momenta_path.append(join(self.shooted_subjects_paths[i], 
-            #                                                 '%ssubject_%sEstimatedParameters__TransportedMomenta.txt'%(gr, self.global_subject_ids[i])))
+            #                                                 '%ssubject_%sEstimatedParameters__TransportedMomenta.txt'%(gr, self.global_ids[i])))
             self.shooted_subjects_files.append([join(self.shooted_subjects_paths[i], 
                                     "{}{}__tp_{}__age_{}{}".format(gs, self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
             
             # Where to copy output files
             self.shooted_subjects_for_atlas.append([join(self.atlas_output_path_2, "{}{}_{}__tp_{}__age_{}{}"\
-                                    .format(a, self.global_subject_ids[i], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
+                                    .format(a, self.global_ids[i], self.objects_name[0], time, self.global_t0, self.objects_ext[0]))])
     
     def set_registration_xml(self, i, xml_parameters):
         xml_parameters.dataset_filenames = [self.global_dataset_filenames[i]]
         xml_parameters.visit_ages = [self.global_visit_ages[i]]
-        xml_parameters.subject_ids = [self.global_subject_ids[i]]
+        xml_parameters.ids = [self.global_ids[i]]
         xml_parameters.template_specifications["img"]['filename'] = self.template_shot_to_subjects[i]
         xml_parameters.print_every_n_iters = 50
         self.global_deformetrica.output_dir = self.registration_subjects_paths[i]
@@ -448,9 +448,9 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.define_shooting_outputs()
         xml_parameters = copy.deepcopy(self.xml_parameters)
 
-        for i in range(len(self.global_subject_ids)):
+        for i in range(len(self.global_ids)):
             if not op.exists(self.shooted_subjects_for_atlas[i][0]):
-                logger.info('\nRegister shooted template to subject {} of age {}'.format(self.global_subject_ids[i], self.global_visit_ages[i][0]))
+                logger.info('\nRegister shooted template to subject {} of age {}'.format(self.global_ids[i], self.global_visit_ages[i][0]))
 
                 # Set the target (subject) and the source (template at subject age)
                 xml_parameters = self.set_registration_xml(i, xml_parameters)
@@ -472,7 +472,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
                                             n_time_points=self.global_nb_of_tp,
                                             output_dir=self.registration_subjects_paths[i], perform_shooting = False)
                 
-                logger.info("Shoot subject{} to t0".format(self.global_subject_ids[i]))
+                logger.info("Shoot subject{} to t0".format(self.global_ids[i]))
                 xml_parameters.template_specifications["img"]['filename'] = self.global_dataset_filenames[i][0]["img"]
 
                 compute_shooting(xml_parameters.template_specifications, dimension=self.dimension,
@@ -497,7 +497,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.neighboring_templates = []
         templates = [f for f in os.listdir(self.regression_output) if self.objects_ext[0] in f and "Flow" in f]
 
-        for i in range(len(self.global_subject_ids)):            
+        for i in range(len(self.global_ids)):            
             age = round(self.global_visit_ages[i][0], 1)
             age_moins_1 = age - 0.5
             age_plus_1 = age + 0.5
@@ -519,7 +519,7 @@ class CrossSectionalLongitudinalAtlasInitializer():
         self.global_visit_ages_corrected = []
 
         if not op.exists(self.ages_corrected_path):
-            for i in range(len(self.global_subject_ids)):                
+            for i in range(len(self.global_ids)):                
                 subject_array = nib.load(self.global_dataset_filenames[i][0]["img"]).get_fdata()
                 ssd = []
                 for template in self.neighboring_templates[i]:

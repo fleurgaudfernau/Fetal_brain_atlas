@@ -63,7 +63,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         self.device = get_best_device()
 
         # Template.
-        (object_list, self.extensions, objects_noise_variance, self.multi_object_attachment) = \
+        (object_list, objects_noise_variance, self.multi_object_attachment) = \
                                                     template_metadata(template_specifications)
 
         self.template = DeformableMultiObject(object_list)
@@ -97,27 +97,27 @@ class BayesianAtlas(AbstractStatisticalModel):
             self.fixed_effects['covariance_momenta_inverse'])
 
         # Ajouts fg
-        self.number_of_subjects = 1
+        self.n_subjects = 1
 
-    def initialize_random_effects_realization(self, number_of_subjects,
+    def initialize_random_effects_realization(self, n_subjects,
                 initial_momenta=default.initial_momenta,
                 covariance_momenta_prior_norm_dof=default.covariance_momenta_prior_norm_dof,
                 **kwargs):
 
         # Initialize the random effects realization.
         individual_RER = {'momenta': initialize_momenta(initial_momenta, self.number_of_cp, 
-                                                        self.dimension, number_of_subjects)}
+                                                        self.dimension, n_subjects)}
 
         # Initialize the corresponding priors.
         self.priors['covariance_momenta'].dof = \
-            number_of_subjects * covariance_momenta_prior_norm_dof
+            n_subjects * covariance_momenta_prior_norm_dof
 
         return individual_RER
 
     def initialize_noise_variance(self, dataset, individual_RER):
         # Prior on the noise variance (inverse Wishart: degrees of freedom parameter).
         for k, norm_dof in enumerate(self.objects_noise_variance_prior_norm_dof):
-            dof = dataset.number_of_subjects * norm_dof * self.objects_noise_dimension[k]
+            dof = dataset.n_subjects * norm_dof * self.objects_noise_dimension[k]
             self.priors['noise_variance'].dof.append(dof)
 
         # Prior on the noise variance (inverse Wishart: scale scalars parameters).
@@ -308,7 +308,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         Compute the model sufficient statistics.
         """
-        targets = [[i,target[0]] for i, target in enumerate(dataset.deformable_objects)]
+        targets = [[i,target[0]] for i, target in enumerate(dataset.objects)]
 
         return self.compute_sufficient_statistics_batch(targets, individual_RER, residuals=None, model_terms=None)
     
@@ -349,7 +349,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         prior_scale_matrix = self.priors['covariance_momenta'].scale_matrix
         prior_dof = self.priors['covariance_momenta'].dof
         covariance_momenta = (sufficient_statistics['S1'] + prior_dof * np.transpose(prior_scale_matrix)) \
-                             / (dataset.number_of_subjects + prior_dof)
+                             / (dataset.n_subjects + prior_dof)
         self.set_covariance_momenta(covariance_momenta)
 
         # Variance of the residual noise update.
@@ -358,7 +358,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         prior_dofs = self.priors['noise_variance'].dof
         for k in range(self.number_of_objects):
             noise_variance[k] = (sufficient_statistics['S2'][k] + prior_scale_scalars[k] * prior_dofs[k]) \
-                                / float(dataset.number_of_subjects * self.objects_noise_dimension[k] + prior_dofs[k])
+                                / float(dataset.n_subjects * self.objects_noise_dimension[k] + prior_dofs[k])
         self.set_noise_variance(noise_variance)
 
     def initialize_template_attributes(self, template_specifications):
@@ -367,12 +367,11 @@ class BayesianAtlas(AbstractStatisticalModel):
         TemplateObjectsNormKernelType and TemplateObjectsNormKernelWidth attributes.
         """
 
-        t_list, t_name, t_name_extension, t_noise_variance, t_multi_object_attachment = \
+        t_list, t_name, t_noise_variance, t_multi_object_attachment = \
             template_metadata(template_specifications)
 
         self.template.object_list = t_list
         self.objects_name = t_name
-        self.extensions = t_name_extension
         self.multi_object_attachment = t_multi_object_attachment
 
         self.template.update(self.dimension)
@@ -383,9 +382,9 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         Split randomly the dataset into batches of size batch_size
         """
-        batch_size = len(dataset.deformable_objects)//number_of_batches
+        batch_size = len(dataset.objects) // number_of_batches
         print("batch_size", batch_size)
-        targets = [[i,target[0]] for i, target in enumerate(dataset.deformable_objects)]
+        targets = [[i,target[0]] for i, target in enumerate(dataset.objects)]
         targets_copy = targets.copy()
         np.random.shuffle(targets_copy)
 
@@ -418,9 +417,9 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         Fully torch.
         """
-        number_of_subjects = len(residuals)
-        attachments = torch.zeros((number_of_subjects,)).type(default.tensor_scalar_type)
-        for i in range(number_of_subjects):
+        n_subjects = len(residuals)
+        attachments = torch.zeros((n_subjects,)).type(default.tensor_scalar_type)
+        for i in range(n_subjects):
             attachments[i] = - 0.5 * torch.sum(residuals[i] / move_data(
                             self.fixed_effects['noise_variance'], device=self.device))
         return attachments
@@ -437,7 +436,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         """
         Fully torch.
         """
-        number_of_subjects = len(targets)
+        n_subjects = len(targets)
         regularity = 0.0
 
         # Momenta random effect.
@@ -447,7 +446,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
         # Noise random effect.
         for k in range(self.number_of_objects):
-            regularity -= 0.5 * self.objects_noise_dimension[k] * number_of_subjects \
+            regularity -= 0.5 * self.objects_noise_dimension[k] * n_subjects \
                           * math.log(self.fixed_effects['noise_variance'][k])
 
         return regularity
@@ -485,7 +484,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         return regularity
 
     def _compute_residuals(self, dataset, template_data, template_points, cp, momenta):
-        targets = [[i, target[0]] for i, target in enumerate(dataset.deformable_objects)]
+        targets = [[i, target[0]] for i, target in enumerate(dataset.objects)]
 
         return self._compute_batch_residuals(targets, template_data, template_points, cp, momenta)
     
@@ -583,7 +582,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         self.exponential.set_initial_cp(cp)
 
         residuals = []  # List of torch 1D tensors. Individuals, objects.
-        for i, subject_id in enumerate(dataset.subject_ids):
+        for i, subject_id in enumerate(dataset.ids):
             self.exponential.set_initial_momenta(momenta[i])
             self.exponential.move_data_to_(device=self.device)
             self.exponential.update()
@@ -593,7 +592,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
             if compute_residuals:
                 residuals.append(self.multi_object_attachment.compute_distances(
-                    deformed_data, self.template, dataset.deformable_objects[i][0]))
+                    deformed_data, self.template, dataset.objects[i][0]))
 
             if write:
                 names = []
@@ -607,7 +606,7 @@ class BayesianAtlas(AbstractStatisticalModel):
 
     def _write_model_parameters(self, individual_RER, output_dir):
         # Template.
-        template_names = [ template_name(self.name, ext = ext) for ext in self.extensions]
+        template_names = [ template_name(self.name) ]
         self.template.write(output_dir, template_names)
 
         # Control points.
@@ -638,7 +637,7 @@ class BayesianAtlas(AbstractStatisticalModel):
         deformed_template = self.template.get_deformed_data(deformed_points, template_data) #dict containing tensor
         
         #get object intensities
-        objet = dataset.deformable_objects[subject][0]
+        objet = dataset.objects[subject][0]
         objet_intensities = objet.get_data()["image_intensities"]
         target_intensities = move_data(objet_intensities, device=self.device, 
                                     dtype = next(iter(template_data.values())).dtype) #tensor not dict 
@@ -659,9 +658,9 @@ class BayesianAtlas(AbstractStatisticalModel):
         residuals_by_point = torch.zeros((template_data['image_intensities'].shape), 
                                         device=self.device, dtype=next(iter(template_data.values())).dtype)   #tensor not dict             
 
-        for i, _ in enumerate(dataset.subject_ids):
+        for i, _ in enumerate(dataset.ids):
             subject_residuals, _ = self.subject_residuals(i, dataset, template_data, momenta, cp)
-            residuals_by_point += (1/dataset.number_of_subjects) * subject_residuals
+            residuals_by_point += (1/dataset.n_subjects) * subject_residuals
                 
         if current_iteration == 0:
             print("First residuals computed")

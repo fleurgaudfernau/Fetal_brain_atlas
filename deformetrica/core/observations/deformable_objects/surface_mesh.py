@@ -10,11 +10,14 @@ from itertools import product
 from pyvista import _vtk
 from ....core import default
 from ....core.observations.deformable_objects.landmark import Landmark
-from ....support.utilities import move_data
+from ....support.utilities import move_data, detach
 from vtk.util import numpy_support as nps
 from scipy.spatial import KDTree
 from scipy.spatial import ConvexHull
 from ....support import kernels as kernel_factory
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 import logging
 logger = logging.getLogger(__name__)
@@ -38,6 +41,11 @@ class SurfaceMesh(Landmark):
         
         self.connectivity = triangles
         self.object_filename = object_filename
+
+        # Extension 
+        for extension in ['.pny', '.vtk', '.stl']:
+            if self.object_filename.endswith(extension):
+                self.extension = extension
 
         self.original_points = deepcopy(points)
 
@@ -69,8 +77,8 @@ class SurfaceMesh(Landmark):
         self.centers, self.normals = SurfaceMesh._get_centers_and_normals(
                                     torch.from_numpy(points), torch.from_numpy(triangles))
         self.original_normals = self.normals.clone()
-        self.update_polydata_(self.centers.detach().clone().cpu().numpy(), 
-                              self.normals.detach().clone().cpu().numpy())
+        self.update_polydata_(detach(self.centers.detach().clone()), 
+                              detach(self.normals.detach().clone()))
         
         # ajout fg to avoid norm recomputation (useless)
         self.filtered = False
@@ -79,7 +87,7 @@ class SurfaceMesh(Landmark):
     ### Polydata tools (ajout fg):
     ####################################################################################################################
     def save(self, output_dir, name):
-        self.centers_polydata.save(op.join(output_dir, name), binary=False)
+        self.centers_polydata.save(op.join(output_dir, name) + self.extension, binary=False)
     
     def update_polydata_(self, centers = None, normals = None):
         """
@@ -91,7 +99,7 @@ class SurfaceMesh(Landmark):
             self.centers_polydata = pv.PolyData(centers)
             # else:
             #     self.centers_polydata.points = centers
-            self.centers_polydata.point_data["Normals"] = normals#.detach().clone().cpu().numpy()
+            self.centers_polydata.point_data["Normals"] = normals
 
     def set_centers_point_data(self, key, value, indices = None):
         if indices is None:
@@ -211,7 +219,7 @@ class SurfaceMesh(Landmark):
         _, normals = self._get_centers_and_normals(points, connectivity, device=points.device)
 
         normals_normalized = normals / torch.norm(normals, 2, 1).unsqueeze(1)
-        self.polydata.cell_data["Normals_normalized"] = normals_normalized.cpu().numpy()    
+        self.polydata.cell_data["Normals_normalized"] = detach(normals_normalized)    
     
     @staticmethod
     def _get_centers_and_normals(points, triangles, device='cpu'):

@@ -50,55 +50,57 @@ def paraview_name(name, iteration = "", comp = ""):
     else:
         return name
 
-def reconstruction_name(name, subject_id = "", time = "", age = "", ext = ""):
+def reconstruction_name(name, subject_id = "", time = "", age = "", iteration = ""):
     if name == "KernelRegression":
-        return "{}__Reconstruction__subject_{}_age_{}".format(name, subject_id, age, ext)
+        return "{}__Reconstruction__subject_{}_age_".format(name, subject_id, age)
 
+    elif name == "DeformableTemplate" and not iteration:
+        return '{}__Reconstruction__subject_{}'.format(name, subject_id)
+    
     elif name == "DeformableTemplate":
-        return '{}__Reconstruction__subject_{}{}'.format(name, subject_id, ext)
+        return '{}__Reconstruction__subject_{}_iter_{}'.format(name, subject_id, iteration)
 
     elif name == "GeodesicRegression":
-        return '{}__Reconstruction____tp_{}__age_{}'.format(name, time, age, ext)
+        return '{}__Reconstruction____tp_{}__age_'.format(name, time, age)
     
     elif name == "BayesianGeodesicRegression":
-        return '{}__Reconstruction__subject__{}__tp_{}__age_{}{}'.format(name, subject_id, time, age, ext)
+        return '{}__Reconstruction__subject__{}__tp_{}__age_{}'.format(name, subject_id, time, age)
 
-def template_name(name, time = "", age = "", t0 = "", iteration = "", 
-                ext = "", freeze_template = False):
+def template_name(name, time = "", age = "", t0 = "", iteration = "", freeze_template = False):
     if name == "KernelRegression":
-        return "{}__Estimated__Template_time_{}{}".format(name, time, ext)
+        return "{}__Estimated__Template_time_{}".format(name, time)
     
     elif name in ["DeformableTemplate", "BayesianAtlas"]:
         if not freeze_template and len(iteration) > 0:
-            return "{}__Estimated__Template_{}{}".format(name, iteration, ext)
+            return "{}__Estimated__Template_{}".format(name, iteration)
         else:
-            return "{}__Estimated__Template_{}".format(name, ext)
+            return "{}__Estimated__Template".format(name)
 
     elif name == "GeodesicRegression":
         if not freeze_template:   
-            return '{}__Estimated__Template__tp_{}__age_{}{}'.format(name, time, t0, ext)
+            return '{}__Estimated__Template__tp_{}__age_{}'.format(name, time, t0)
         else:
-            return '{}__Fixed__Template__tp_{}__age_{}{}'.format(name, time, t0, ext)
+            return '{}__Fixed__Template__tp_{}__age_{}'.format(name, time, t0)
 
     elif name == "BayesianGeodesicRegression":
         if not freeze_template:
-            return '{}__Estimated__Template___tp_{}__age_{}{}'.format(name, time, age, ext)
+            return '{}__Estimated__Template___tp_{}__age_{}'.format(name, time, age)
         else:
-            return '{}__Fixed__Template___tp_{}__age_{}{}'.format(name, time, age, ext)
+            return '{}__Fixed__Template___tp_{}__age_{}'.format(name, time, age)
 
-def flow_name(name, t, time, comp = "", ext = ""):
+def flow_name(name, t, time, comp = ""):
     if len(str(comp)) > 0:
-        return '{}component_{}_tp_{}__age_{:.2f}{}'.format(name, comp, t, time, ext)
+        return '{}component_{}_tp_{}__age_{:.2f}'.format(name, comp, t, time)
     
-    return '{}tp_{}__age_{}{}'.format(name, t, time, ext)
+    return '{}tp_{}__age_{}'.format(name, t, time)
 
-def space_shift_name(name, source, t, time, ext, backward = False):
+def space_shift_name(name, source, t, time, backward = False):
     if backward:
-        return "{}__IndependentComponent_{}__tp_{}__age_{}__BackwardExponentialFlow{}"\
-            .format(name, source, t, time, ext)
+        return "{}__IndependentComponent_{}__tp_{}__age_{}__BackwardExponentialFlow"\
+            .format(name, source, t, time)
         
-    return "{}__IndependentComponent_{}__tp_{}__age_{}__ForwardExponentialFlow{}"\
-            .format(name, source, t, time, ext)
+    return "{}__IndependentComponent_{}__tp_{}__age_{}__ForwardExponentialFlow"\
+            .format(name, source, t, time)
 
 def write_cp(cp, output_dir, name, time = "", age = ""):
     write_2D_array(cp, output_dir, cp_name(name, time, age))
@@ -136,21 +138,6 @@ def write_3D_array(array, output_dir, name):
     """
     array = detach(array)
 
-    # s = array.shape
-    # if len(s) == 2:
-    #     array = np.array([array])
-    # save_name = op.join(output_dir, name)
-    # with open(save_name, "w") as f:
-    #     try:
-    #         f.write(str(len(array)) + " " + str(len(array[0])) + " " + str(len(array[0, 0])) + "\n")
-    #     except:
-    #         pass
-    #     for elt in array:
-    #         f.write("\n")
-    #         for elt1 in elt:
-    #             for elt2 in elt1:
-    #                 f.write(str(elt2) + " ")
-    #             f.write("\n")
     array = np.atleast_3d(array)  # Ensure array has at least 3 dimensions
     shape = array.shape 
     save_name = op.join(output_dir, name)
@@ -210,7 +197,6 @@ def read_2D_list(path):
         output_list = [[float(x) for x in line.split()] for line in f]
     return output_list
 
-
 def write_2D_list(input_list, output_dir, name):
     """
     Saving a list of list.
@@ -238,20 +224,6 @@ def read_3D_list(path):
     return [[[float(x) for x in line.split()] for line in subject.splitlines()] 
             for subject in data]
 
-
-    # with open(path, "r") as f:
-    #     output_list = []
-    #     subject_list = []
-    #     for line in f:
-    #         if not line == '\n':
-    #             subject_list.append([float(x) for x in line.split()])
-    #         else:
-    #             output_list.append(subject_list)
-    #             subject_list = []
-    #     if not line == '\n':
-    #         output_list.append(subject_list)
-    #     return output_list
-
 def write_3D_list(list, output_dir, name):
     """
     Saving a list of list of list.
@@ -267,12 +239,6 @@ def write_3D_list(list, output_dir, name):
             f.write("\n\n")
     
     save_name = op.join(output_dir, name)
-
-    # with open(save_name, "w") as f:
-    #     for sublist2 in list3d:
-    #         for sublist1 in sublist2:
-    #             f.write(" ".join(map(str, sublist1)) + "\n")
-    #         f.write("\n\n") 
 
 def flatten_3D_list(list3):
     return [elt for list2 in list3 for list1 in list2 for elt in list1]

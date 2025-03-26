@@ -13,9 +13,8 @@ from ...support import kernels as kernel_factory
 logger = logging.getLogger(__name__)
 
 class MultiscaleMomenta():
-    def __init__(self, multiscale, multiscale_images, multiscale_meshes, model, 
-                ctf_interval, ctf_max_interval,
-                points_per_axis):
+    def __init__(self, multiscale, multiscale_objects, model, 
+                ctf_interval, ctf_max_interval, points_per_axis):
                 
         self.model = model
         self.model_name = model.name
@@ -26,14 +25,13 @@ class MultiscaleMomenta():
         # Model options
         self.freeze_template = model.freeze_template
         
-        self.initial_convergence_threshold = 0.001
-        self.convergence_threshold = 0.001
+        self.initial_threshold = 0.001
+        self.threshold = 0.001
         self.ctf_interval = ctf_interval
         self.ctf_max_interval = ctf_max_interval
 
         self.multiscale = multiscale
-        self.multiscale_images = multiscale_images
-        self.multiscale_meshes = multiscale_meshes
+        self.multiscale_objects = multiscale_objects
         self.iter = [0] if multiscale else []
         self.zones = dict()
         self.silent_haar_coef_momenta_subjects = dict()
@@ -91,10 +89,8 @@ class MultiscaleMomenta():
         Authorizes coarse to fine if more than 2 iterations after previous CTF (or beginning of algo)
         and if residuals diminution is low
         """
-        if self.multiscale_images: return False # dual multiscale handled later
+        if self.multiscale_objects: return False # dual multiscale handled later
         
-        if self.multiscale_meshes: return False
-
         if not self.multiscale: return False
 
         if self.scale == 1: self.scale = 0
@@ -105,7 +101,7 @@ class MultiscaleMomenta():
                 
         if self.too_much(iteration): return True
             
-        if self.enough(iteration): return residuals_change(avg_residuals) < self.convergence_threshold
+        if self.enough(iteration): return residuals_change(avg_residuals) < self.threshold
         
         return False
 

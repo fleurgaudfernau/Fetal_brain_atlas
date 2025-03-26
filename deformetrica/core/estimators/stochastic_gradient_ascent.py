@@ -39,8 +39,7 @@ class StochasticGradientAscent(AbstractEstimator):
                  last_residuals = None, initial_residuals = None, #ajouts fg
 
                  multiscale_momenta = default.multiscale_momenta, #ajout fg
-                 multiscale_images = default.multiscale_images, #ajout fg
-                 multiscale_meshes = default.multiscale_meshes,
+                 multiscale_objects = default.multiscale_objects, #ajout fg
                  multiscale_strategy = default.multiscale_strategy,
                  number_of_batches = 9,
                  overwrite = True,
@@ -75,7 +74,7 @@ class StochasticGradientAscent(AbstractEstimator):
         self.overwrite = overwrite
         
         # Multiscale
-        self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, multiscale_strategy,
+        self.multiscale = Multiscale(multiscale_momenta, multiscale_objects, multiscale_strategy,
                                     self.statistical_model, self.initial_step_size, self.output_dir, self.dataset)
         self.multiscale.initialize()
 
@@ -88,7 +87,7 @@ class StochasticGradientAscent(AbstractEstimator):
         self._set_parameters(self.current_parameters)
 
         if self.statistical_model.name == "GeodesicRegression" \
-            and not multiscale_momenta and not multiscale_images:
+            and not multiscale_momenta and not multiscale_objects:
             self.line_search_expand = 1.01
         elif self.statistical_model.name == "GeodesicRegression":
             self.line_search_expand = 1.3
@@ -96,15 +95,15 @@ class StochasticGradientAscent(AbstractEstimator):
         # If the load_state_file flag is active, restore context.
         if load_state_file:
             self.current_parameters, self.current_iteration, \
-            image_scale, momenta_scale, iter_multiscale_images, iter_multiscale_momenta, order \
+            object_scale, momenta_scale, iter_multiscale_objects, iter_multiscale_momenta, order \
             = self._load_state_file()
-            if multiscale_images:
-                self.multiscale.image_scale = image_scale
-                self.multiscale.iter_multiscale_images = iter_multiscale_images
+            if multiscale_objects:
+                self.multiscale.object_scale = object_scale
+                self.multiscale.iter_multiscale_objects = iter_multiscale_objects
             if multiscale_momenta:
                 self.multiscale.momenta_scale = momenta_scale
                 self.multiscale.iter_multiscale_momenta = iter_multiscale_momenta
-            if multiscale_momenta and multiscale_images:
+            if multiscale_momenta and multiscale_objects:
                 self.multiscale.order = order
 
             self._set_parameters(self.current_parameters)
@@ -320,11 +319,7 @@ class StochasticGradientAscent(AbstractEstimator):
                         remaining_keys.append(key)
                     else:
                         step[key] = 1.0 / gradient_norm
-                        
-                        # template step << momenta step
-                        # if key in ['template_data', "image_intensities"]:
-                        #     step[key] = step[key] * 1e-1
-                
+                                        
             if len(remaining_keys) > 0:
                 if len(list(step.values())) > 0:
                     default_step = min(list(step.values()))
@@ -388,8 +383,8 @@ class StochasticGradientAscent(AbstractEstimator):
     def _load_state_file(self):
         with open(self.state_file, 'rb') as f:
             d = pickle.load(f)
-            return d['current_parameters'], d['current_iteration'], d["image_scale"], d["momenta_scale"],\
-                    d["iter_multiscale_images"], d["iter_multiscale_momenta"], d["order"]
+            return d['current_parameters'], d['current_iteration'], d["object_scale"], d["momenta_scale"],\
+                    d["iter_multiscale_objects"], d["iter_multiscale_momenta"], d["order"]
 
     def _dump_state_file(self):
         d = {'current_parameters': self.current_parameters, 'current_iteration': self.current_iteration}

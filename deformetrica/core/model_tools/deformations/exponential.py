@@ -3,7 +3,7 @@ from copy import deepcopy
 import torch
 from ....core import default
 from ....in_out.array_readers_and_writers import *
-from ....support.utilities import move_data, detach, assert_same_device
+from ....support.utilities import move_data, detach, assert_same_device, to_same_device
 from ....support.kernels import factory
 
 import logging
@@ -23,10 +23,8 @@ class Exponential:
     ####################################################################################################################
     ### Constructor:
     ####################################################################################################################
-    def __init__(self, 
-                 kernel=default.deformation_kernel, n_time_points=None,
-                 initial_cp=None, cp_t=None,
-                 initial_momenta=None, momenta_t=None,
+    def __init__(self, kernel=None, n_time_points=None,
+                 initial_cp=None, cp_t=None, initial_momenta=None, momenta_t=None,
                  initial_template_points=None, template_points_t=None,
                  shoot_is_modified=True, flow_is_modified=True, use_rk2_for_shoot=False):
 
@@ -125,7 +123,10 @@ class Exponential:
         """
         returns the scalar product 'mom1 K(cp) mom 2'
         """
-        return torch.sum(mom1 * self.kernel.convolve(cp, cp, mom2))
+        conv = self.kernel.convolve(cp, cp, mom2)
+        (mom1, conv) = to_same_device(mom1, conv)
+
+        return torch.sum(mom1 * conv)
 
     def norm(self, cp, mom):
         return self.scalar_product(cp, mom, mom)
@@ -162,8 +163,7 @@ class Exponential:
     ### Main methods:
     ####################################################################################################################
     
-    def prepare_and_update(self, cp, momenta, template = None, 
-                            length = None, device = None):
+    def prepare_and_update(self, cp, momenta, template = None, length = None, device = None):
         
         if momenta is not None:
             self.set_initial_momenta(momenta)
@@ -238,11 +238,12 @@ class Exponential:
 
             for i in range(self.n_time_points - 1):
                 d_pos = self.kernel.convolve(landmark_points[i], self.cp_t[i], self.momenta_t[i])
-                landmark_points.append(landmark_points[i] + dt * d_pos)
+                points_i, d_pos = to_same_device(landmark_points[i], d_pos)
+                landmark_points.append(points_i + dt * d_pos)
 
                 # In this case improved euler (= Heun's method)
                 if i < self.n_time_points - 2:
-                    landmark_points[-1] = landmark_points[i] + dt / 2 * \
+                    landmark_points[-1] = points_i + dt / 2 * \
                                         (self.kernel.convolve(landmark_points[i + 1],
                                         self.cp_t[i + 1], self.momenta_t[i + 1]) + d_pos)
 
@@ -415,10 +416,12 @@ class Exponential:
         """
         simple euler step of length h, with cp and mom. It always returns mom.
         """
-        assert_same_device(cp = cp, mom = mom)
 
-        return cp + h * kernel.convolve(cp, cp, mom), \
-               mom - h * kernel.convolve_gradient(mom, cp)
+        conv = kernel.convolve(cp, cp, mom)
+        conv_ = kernel.convolve_gradient(mom, cp)
+        (cp, mom, conv, conv_) = to_same_device(cp, mom, conv, conv_)
+
+        return cp + h * conv, mom - h * conv_
 
     @staticmethod
     def _rk2_step(kernel, cp, mom, h, return_mom=True):
@@ -505,14 +508,14 @@ class Exponential:
     ### Writing methods:
     ####################################################################################################################
 
-    def write_flow(self, extensions, template, template_data, output_dir,
+    def write_flow(self, template, template_data, output_dir,
                    write_adjoint_parameters=False, write_only_last = False):
         assert not self.flow_is_modified, "You are trying to write flow data, but it has been modified."
 
         for j in range(self.n_time_points):
 
             if (not write_only_last) or (write_only_last and j == self.n_time_points -1):
-                names = ["Template_flow__tp_{}{}".format(j, ext) for ext in extensions]
+                names = ["Template_flow__tp_{}".format(j)]
 
                 deformed_points = self.get_template_points(j)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)

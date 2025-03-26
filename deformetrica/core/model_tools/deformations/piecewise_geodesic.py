@@ -32,11 +32,10 @@ class PiecewiseGeodesic:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, kernel=default.deformation_kernel, t0=default.t0, 
+    def __init__(self, kernel=None, t0=default.t0, 
                 time_concentration=default.time_concentration, nb_components=2, 
-                num_components = None, template_tR=None, extensions = None, root_name = ''):
+                num_components = None, template_tR=None, root_name = ''):
 
-        self.extensions = extensions
         self.root_name = '{}__GeodesicFlow__'.format(root_name)
         # usual t0 replaced by tR
         self.time_concentration = time_concentration
@@ -64,9 +63,6 @@ class PiecewiseGeodesic:
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
-    def set_file_extensions(self, ext):
-        self.extension = ext
-
     def best_device(self):
         return get_best_device(self.exponential[0].kernel.gpu_mode)
 
@@ -496,7 +492,7 @@ class PiecewiseGeodesic:
         for t, time in enumerate(self.get_times()):
             component = self.get_component(time)
 
-            names = [flow_name(self.root_name, t, time, component, ext = ext) for ext in self.extensions]
+            names = [flow_name(self.root_name, t, time, component)]
             
             if (t % step == 0) or time == self.tR[component + 1]:
                 self.flow_path[time] = op.join(output_dir, names[0])
@@ -512,7 +508,7 @@ class PiecewiseGeodesic:
                 component = self.get_component(time)
                 
                 if (t % step == 0) or time == self.tR[component + 1]:
-                    names = [ flow_name(self.root_name, t, time, component, ext = ext) for ext in self.extensions]
+                    names = [ flow_name(self.root_name, t, time, component)]
                     deformed_points = self.get_template_points(time)
                     deformed_data = template.get_deformed_data(deformed_points, template_data)
 

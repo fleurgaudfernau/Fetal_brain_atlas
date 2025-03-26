@@ -12,7 +12,6 @@ def orthogonal_projection(cp, momenta_to_project, momenta):
 
     return orthogonal_momenta
 
-
 def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
     K = np.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
     for i in range(global_cp_nb):

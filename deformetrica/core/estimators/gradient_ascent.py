@@ -41,8 +41,7 @@ class GradientAscent(AbstractEstimator):
                  state_file=default.state_file,
 
                  multiscale_momenta = default.multiscale_momenta, #ajout fg
-                 multiscale_images = default.multiscale_images, #ajout fg
-                 multiscale_meshes = default.multiscale_meshes,
+                 multiscale_objects = default.multiscale_objects, #ajout fg
                  multiscale_strategy = default.multiscale_strategy,
                  overwrite = True,
 
@@ -71,21 +70,21 @@ class GradientAscent(AbstractEstimator):
         self.max_line_search_iterations = max_line_search_iterations
         self.current_iteration = 0
 
-        self.multiscale = Multiscale(multiscale_momenta, multiscale_images, multiscale_meshes, 
+        self.multiscale = Multiscale(multiscale_momenta, multiscale_objects, 
                                     multiscale_strategy, self.statistical_model, self.initial_step_size, 
                                     self.output_dir, self.dataset)
         
         if load_state_file:
-            self.current_parameters, self.current_iteration, image_scale, momenta_scale, \
-            iter_images, iter_momenta, order = self._load_state_file()
+            self.current_parameters, self.current_iteration, object_scale, momenta_scale, \
+            iter_objects, iter_momenta, order = self._load_state_file()
             
-            if multiscale_images:
-                self.multiscale.image_scale = image_scale
-                self.multiscale.iter_images = iter_images
+            if multiscale_objects:
+                self.multiscale.object_scale = object_scale
+                self.multiscale.iter_objects = iter_objects
             if multiscale_momenta:
                 self.multiscale.momenta_scale = momenta_scale
                 self.multiscale.iter_momenta = iter_momenta
-            if multiscale_momenta and multiscale_images:
+            if multiscale_momenta and multiscale_objects:
                 self.multiscale.order = order
 
             self._set_parameters(self.current_parameters)
@@ -308,25 +307,17 @@ class GradientAscent(AbstractEstimator):
                     gradient_norm = math.sqrt(np.sum(value ** 2))
                     if gradient_norm < 1e-8:
                         remaining_keys.append(key)
-                    elif math.isinf(gradient_norm):
-                        step[key] = 1e-10
-                    else:
-                        step[key] = 1.0 / gradient_norm
-            if len(remaining_keys) > 0:
-                if len(list(step.values())) > 0:
-                    default_step = min(list(step.values()))
-                else:
-                    default_step = 1e-5
-                    msg = 'Warning: no initial non-zero gradient to guide to choice of the initial step size. ' \
-                            'Defaulting to the ARBITRARY initial value of %.2E.' % default_step
-                    warnings.warn(msg)
-                for key in remaining_keys:
-                    step[key] = default_step
 
-            if self.initial_step_size is None:
-                return step
-            else:
-                return {key: value * self.initial_step_size for key, value in step.items()}
+                    elif math.isinf(gradient_norm):
+                        step[key] = 1e-10 if math.isinf(gradient_norm) else 1.0 / gradient_norm
+
+            if len(remaining_keys) > 0:
+                for key in remaining_keys:
+                    step[key] = min(list(step.values())) if len(list(step.values())) > 0 else 1e-5
+
+            initial_step_size = 1 if self.initial_step_size is None else self.initial_step_size
+            
+            return {key: value * initial_step_size for key, value in step.items()}
 
         else:
             return self.step
@@ -354,8 +345,8 @@ class GradientAscent(AbstractEstimator):
         with open(self.state_file, 'rb') as f:
             d = pickle.load(f)
             return d['current_parameters'], d['current_iteration'], \
-                    d["image_scale"], d["momenta_scale"],\
-                    d["iter_multiscale_images"], d["iter_multiscale_momenta"], d["order"]
+                    d["object_scale"], d["momenta_scale"],\
+                    d["iter_multiscale_objects"], d["iter_multiscale_momenta"], d["order"]
 
     def _dump_state_file(self):
         d = {'current_parameters': self.current_parameters, 
@@ -365,48 +356,3 @@ class GradientAscent(AbstractEstimator):
         if self.state_file:
             with open(self.state_file, 'wb') as f:
                 pickle.dump(d, f)
-
-    def _check_model_gradient(self):
-        attachment, regularity, gradient = self._evaluate_model_fit(self.current_parameters, with_grad=True)
-        parameters = copy.deepcopy(self.current_parameters)
-
-        epsilon = 1e-3
-
-        for key in gradient.keys():
-            if key in ['image_intensities', 'landmark_points', 'modulation_matrix', 'sources']: continue
-
-            logger.info('Checking gradient of ' + key + ' variable')
-            parameter_shape = gradient[key].shape
-
-            # To limit the cost if too many parameters of the same kind.
-            nb_to_check = 100
-            for index, _ in np.ndenumerate(gradient[key]):
-                if nb_to_check > 0:
-                    nb_to_check -= 1
-                    perturbation = np.zeros(parameter_shape)
-                    perturbation[index] = epsilon
-
-                    # Perturb in +epsilon direction
-                    new_parameters_plus = copy.deepcopy(parameters)
-                    new_parameters_plus[key] += perturbation
-                    new_attachment_plus, new_regularity_plus = self._evaluate_model_fit(new_parameters_plus)
-                    total_plus = new_attachment_plus + new_regularity_plus
-
-                    # Perturb in -epsilon direction
-                    new_parameters_minus = copy.deepcopy(parameters)
-                    new_parameters_minus[key] -= perturbation
-                    new_attachment_minus, new_regularity_minus = self._evaluate_model_fit(new_parameters_minus)
-                    total_minus = new_attachment_minus + new_regularity_minus
-
-                    # Numerical gradient:
-                    numerical_gradient = (total_plus - total_minus) / (2 * epsilon)
-                    if gradient[key][index] ** 2 < 1e-5:
-                        relative_error = 0
-                    else:
-                        relative_error = abs((numerical_gradient - gradient[key][index]) / gradient[key][index])
-                    # assert relative_error < 1e-6 or np.isnan(relative_error), \
-                    #     "Incorrect gradient for variable {} {}".format(key, relative_error)
-                    # Extra printing
-                    logger.info("Relative error for index " + str(index) + ': ' + str(relative_error)
-                          + '\t[ numerical gradient: ' + str(numerical_gradient)
-                          + '\tvs. torch gradient: ' + str(gradient[key][index]) + ' ].')

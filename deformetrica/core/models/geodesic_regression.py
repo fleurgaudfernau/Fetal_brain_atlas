@@ -41,7 +41,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.t0 = t0
        
         # Template.
-        (object_list, self.extensions, self.objects_noise_variance, self.attachment) = \
+        (object_list, self.objects_noise_variance, self.attachment) = \
                                                 template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
@@ -50,7 +50,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.number_of_objects = len(self.template.object_list)
 
         self.deformation_kernel_width = deformation_kernel_width
-        self.number_of_subjects = 1
+        self.n_subjects = 1
         
         # Template data.
         self.set_template_data(self.template.get_data())
@@ -69,8 +69,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.device = get_best_device()
 
         self.geodesic = Geodesic(kernel=factory(kernel_width=deformation_kernel_width), t0=t0, 
-                                time_concentration=time_concentration, extensions = self.extensions,
-                                root_name = self.name)
+                                time_concentration=time_concentration, root_name = self.name)
         
         cp = move_data(self.cp, device=self.device)
         self.geodesic.set_cp_t0(cp)
@@ -148,10 +147,10 @@ class GeodesicRegression(AbstractStatisticalModel):
             # Convert the gradient back to numpy.
             gradient = {key: value.data.cpu().numpy() for key, value in gradient.items()}
 
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy(), gradient
+            return detach(attachment), detach(regularity), gradient
 
         else:
-            return attachment.detach().cpu().numpy(), regularity.detach().cpu().numpy()
+            return detach(attachment), detach(regularity)
 
     # Compute the functional. Numpy input/outputs.
     def compute_log_likelihood(self, dataset, individual_RER, mode='complete', with_grad=False):
@@ -215,7 +214,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         
         deformed_points = self.geodesic.get_template_points(dataset.times[0][j])
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-        obj = dataset.deformable_objects[0][j]
+        obj = dataset.objects[0][j]
         
         if dist in ["current", "varifold"]:
             return self.attachment.compute_vtk_distance(deformed_data, self.template, obj, dist)
@@ -234,7 +233,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         return self.template
 
     def compute_initial_curvature(self, dataset, j, curvature = "gaussian"):
-        obj = dataset.deformable_objects[0][j] 
+        obj = dataset.objects[0][j] 
         for obj1 in (obj.object_list):
             obj1.curvature_metrics(curvature)
         
@@ -272,7 +271,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         Core part of the ComputeLogLikelihood methods. Fully torch.
         """
         target_times = dataset.times[0]
-        target_objects = dataset.deformable_objects[0]
+        target_objects = dataset.objects[0]
 
         self.geodesic.set_tmin(min(dataset.tmin, self.t0))
         self.geodesic.set_tmax(dataset.tmax)
@@ -299,9 +298,9 @@ class GeodesicRegression(AbstractStatisticalModel):
                                         momenta, self.points, with_grad=with_grad)
 
     def mini_batches(self, dataset, number_of_batches):
-        batch_size = len(dataset.deformable_objects[0]) // number_of_batches
+        batch_size = len(dataset.objects[0]) // number_of_batches
 
-        targets = list(zip(dataset.times[0], dataset.deformable_objects[0]))
+        targets = list(zip(dataset.times[0], dataset.objects[0]))
         targets_copy = targets.copy()
         np.random.shuffle(targets_copy)
 
@@ -354,7 +353,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.geodesic.set_momenta_t0(momenta)
         self.geodesic.update()  
 
-        return template_data, dataset.times[0], dataset.deformable_objects[0]
+        return template_data, dataset.times[0], dataset.objects[0]
 
     def compute_residuals(self, dataset, individual_RER = None, option = None):
         """
@@ -393,7 +392,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         # Model predictions.
         if dataset is not None and not write_all:
             for j, time in enumerate(target_times):
-                names = [reconstruction_name(self.name, time = j, age = time, ext = ext) for ext in self.extensions]
+                names = [reconstruction_name(self.name, time = j, age = time)]
                 deformed_points = self.geodesic.get_template_points(time)
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
                 self.template.write(output_dir, names, deformed_data)
@@ -414,14 +413,11 @@ class GeodesicRegression(AbstractStatisticalModel):
         
         # Template.
         template_names = [template_name(self.name, time = self.geodesic.bw_exponential.n_time_points - 1, 
-                                        t0 = self.t0, ext = ext, freeze_template = self.freeze_template)\
-                         for ext in self.extensions]
+                                        t0 = self.t0, freeze_template = self.freeze_template) ]
 
         self.template.write(output_dir, template_names)
 
-        if self.extensions[0] != ".vtk":
-            write_cp(self.cp, output_dir, self.name)
-            write_momenta(self.get_momenta(), output_dir, self.name)
+        write_cp(self.cp, output_dir, self.name)
+        write_momenta(self.get_momenta(), output_dir, self.name)
 
-        else:
-            concatenate_for_paraview(self.get_momenta(), self.cp, output_dir, self.name, current_iteration)
+        concatenate_for_paraview(self.get_momenta(), self.cp, output_dir, self.name, current_iteration)

@@ -1,6 +1,7 @@
 import logging
 import warnings
 import torch
+from ..core import default
 from copy import deepcopy
 import os.path as op
 import numpy as np
@@ -10,16 +11,15 @@ from math import ceil, floor, trunc, prod
 from ..support.kernels import factory
 from ..support import kernels as kernel_factory 
 from ..core.model_tools.attachments.multi_object_attachment import MultiObjectAttachment
-from ..core import default
 from ..core.observations.datasets.longitudinal_dataset import LongitudinalDataset
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
 from ..in_out.deformable_object_reader import ObjectReader, object_type
-from ..support.utilities.general_settings import Settings
+# from ..support.utilities.general_settings import Settings
 
 logger = logging.getLogger(__name__)
 
-def create_dataset(visit_ages=None, filenames=None, subject_ids=None, interpolation = "", 
-                kernel_width = None, **kwargs):
+def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = "", 
+                    kernel_width = None, **kwargs):
     """
     Creates a longitudinal dataset object from xml parameters. 
 
@@ -38,7 +38,7 @@ def create_dataset(visit_ages=None, filenames=None, subject_ids=None, interpolat
 
             objects_dataset.append(subject_objects)
 
-    return LongitudinalDataset(subject_ids, visit_ages, objects_dataset)
+    return LongitudinalDataset(ids, visit_ages, objects_dataset)
 
 def make_dataset_timeseries(dataset_specifications):
     # visit ages [[1], [2] ...] -> [[1, 2]] / filenames : [[{'img':...}], [{'img':...}]] -> [[{'img':...}, {'img':...}]]
@@ -47,13 +47,13 @@ def make_dataset_timeseries(dataset_specifications):
     new_dataset_spec = deepcopy(dataset_specifications)
     new_dataset_spec["filenames"] = [sum(dataset_specifications["filenames"], [])]
     new_dataset_spec["visit_ages"] = [sum(dataset_specifications["visit_ages"], [])]
-    new_dataset_spec["subject_ids"] = [dataset_specifications["subject_ids"][0]]
+    new_dataset_spec["ids"] = [dataset_specifications["ids"][0]]
 
     return new_dataset_spec
 
 def filter_dataset(dataset_specifications, age_limit):
     new_dataset_spec = {k:[] for k in dataset_specifications.keys()}
-    new_dataset_spec["subject_ids"] = dataset_specifications["subject_ids"]
+    new_dataset_spec["ids"] = dataset_specifications["ids"]
 
     for age, name in zip(dataset_specifications["visit_ages"][0], 
                        dataset_specifications["filenames"][0]):
@@ -67,10 +67,10 @@ def filter_dataset(dataset_specifications, age_limit):
     return new_dataset_spec
 
 def id(dataset_specifications, i):
-    return dataset_specifications["subject_ids"][i]
+    return dataset_specifications["ids"][i]
 
 def dataset_for_registration(subject, age, id):
-    return {'filenames' :  [subject], "visit_ages" : [[age]], 'subject_ids': [id]}
+    return {'filenames' :  [subject], "visit_ages" : [[age]], 'ids': [id]}
 
 def age(dataset_specifications, i):
     return dataset_specifications['visit_ages'][i][0]
@@ -86,20 +86,6 @@ def maxi(dataset_specifications):
         return ceil(max(sum(dataset_specifications["visit_ages"], [])))
     
     return ceil(max(dataset_specifications["visit_ages"]))
-
-def extension(filename: str):
-    """
-    Extract file root name and extension form known extension list
-    :param filename:    filename to extract extension from
-    :return:    tuple containing filename root and extension
-    """
-    known_extensions = ['.png', '.nii', '.nii.gz', '.pny', '.vtk', '.stl']
-
-    for extension in known_extensions:
-        if filename.endswith(extension):
-            return extension
-
-    raise RuntimeError('Unknown extension for file %s' % (filename,))
 
 def ages_histogram(dataset_specifications, path):
 
@@ -134,8 +120,6 @@ def template_metadata(template_spec):
     objects_list = [ ObjectReader().create_object( obj['filename'], kernel_width=obj['kernel_width'] )
                     for obj in template_spec.values() ]
     
-    extensionss = [ extension(obj['filename']) for obj in template_spec.values() ]
-
     objects_norm = [ _get_object_norm(obj, object_type(obj['filename']).lower())\
                      for obj in template_spec.values() ]
 
@@ -147,7 +131,11 @@ def template_metadata(template_spec):
                             else kernel_factory.Type.NO_KERNEL\
                             for obj, object_norm in zip(template_spec.values(), objects_norm) ]
 
-    for obj in template_spec.values():
+    for i, obj in enumerate(template_spec.values()):
+        logger.info("Attachment function: {}".format(objects_norm[i]))
+        if objects_norm[i] in ['current', 'varifold']:
+            logger.info("Attachment kernel width: {}".format(obj['kernel_width']))
+
         obj_type = object_type(obj['filename']).lower()
 
         if obj_type == 'image' and 'downsampling_factor' in list(obj.keys()):
@@ -157,7 +145,7 @@ def template_metadata(template_spec):
 
     objects_attachment = MultiObjectAttachment(objects_norm, objects_norm_kernels)
 
-    return objects_list, extensionss, objects_noise_variance, objects_attachment
+    return objects_list, objects_noise_variance, objects_attachment
 
 def compute_noise_dimension(template, objects_attachment):
     """

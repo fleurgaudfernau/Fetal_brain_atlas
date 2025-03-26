@@ -2,11 +2,13 @@ from enum import Enum, auto
 
 
 class GpuMode(Enum):
+    """ Defines members of the GpuMode enumeration.
+    # auto() assigns a unique, automatically generated value to AUTO, FULL, NONE and KERNEL
+    """
     AUTO = auto()
-    FULL = auto()
+    FULL = auto() # all operations on GPU
     NONE = auto()
-    KERNEL = auto()
-
+    KERNEL = auto() # only kernel-intensive operations on GPU
 
 def get_best_gpu_mode(model):
     """ Returns the best gpu mode with respect to the model that is to be run, gpu resources, ...

@@ -5,7 +5,6 @@ import os
 import PIL.Image as pimg
 import nibabel as nib
 import numpy as np
-
 # Mesh readers
 from vtk import vtkPolyDataReader, vtkSTLReader
 from vtk.util import numpy_support as nps
@@ -39,8 +38,7 @@ class ObjectReader:
 
         if obj_type.lower() == 'SurfaceMesh'.lower():
             points, connectivity = ObjectReader.read_file(object_filename, extract_connectivity=True)
-            out_object = SurfaceMesh(points, connectivity, object_filename, 
-                                    kernel_width = kernel_width)
+            out_object = SurfaceMesh(points, connectivity, object_filename, kernel_width = kernel_width)
             out_object.remove_null_normals()
 
         elif obj_type.lower() == 'Image'.lower():

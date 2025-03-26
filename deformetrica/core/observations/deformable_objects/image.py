@@ -6,7 +6,8 @@ import torch
 from copy import deepcopy
 
 from ....in_out.image_functions import rescale_image_intensities
-from ....support import utilities
+from ....support.utilities import detach, move_data
+
 from ....core import default
 from cv2 import blur
 from scipy.ndimage import gaussian_filter, median_filter
@@ -40,6 +41,10 @@ class Image:
     def __init__(self, intensities, intensities_dtype, affine, interpolation=default.interpolation, 
                 object_filename = None):
         self.object_filename = object_filename
+
+        for extension in ['.nii', '.nii.gz', '.png']:
+            if self.object_filename.endswith(extension):
+                self.extension = extension
         
         self.interpolation = interpolation
 
@@ -124,7 +129,7 @@ class Image:
         assert isinstance(deformed_voxels, torch.Tensor)
         assert isinstance(intensities, torch.Tensor)
 
-        intensities = utilities.move_data(intensities, dtype=deformed_voxels.type(), device=deformed_voxels.device)
+        intensities = move_data(intensities, dtype=deformed_voxels.type(), device=deformed_voxels.device)
         assert deformed_voxels.device == intensities.device
 
         tensor_integer_type = {'cpu': 'torch.LongTensor','cuda': 'torch.cuda.LongTensor'}[deformed_voxels.device.type]
@@ -226,24 +231,23 @@ class Image:
             self.bounding_box[d, 0] = np.min(self.corner_points[:, d])
             self.bounding_box[d, 1] = np.max(self.corner_points[:, d])
 
-    def write(self, output_dir, name, intensities=None):
+    def write(self, output_dir, name, intensities = None):
         if intensities is None:
             intensities = self.get_intensities()
 
-        if isinstance(intensities, torch.Tensor):
-            intensities = intensities.cpu().numpy() 
+        intensities = detach(intensities)
         
         intensities_rescaled = rescale_image_intensities(intensities, self.intensities_dtype)
 
-        if name.find(".png") > 0:
-            pimg.fromarray(intensities_rescaled).save(op.join(output_dir, name))
-        elif name.find(".nii") > 0:
+        if self.extension == ".png":
+            pimg.fromarray(intensities_rescaled).save(op.join(output_dir, name) + self.extension)
+        elif self.extension == ".nii":
             if "/" in name:
                 name = name.split("/")[-1] #ajout fg
             img = nib.Nifti1Image(intensities_rescaled, self.affine)
-            nib.save(img, op.join(output_dir, name))
-        elif name.find(".npy") > 0:
-            np.save(op.join(output_dir, name), intensities_rescaled)
+            nib.save(img, op.join(output_dir, name) + self.extension)
+        elif self.extension == ".npy":
+            np.save(op.join(output_dir, name) + self.extension, intensities_rescaled)
         else:
             raise ValueError('Writing images with the given extension "%s" is not coded yet.' % name)
 
@@ -269,29 +273,6 @@ class Image:
             corner_points[5] = [umax, 0, wmax]
             corner_points[6] = [0, vmax, wmax]
             corner_points[7] = [umax, vmax, wmax]
-
-        #################################
-        # VERSION FOR IMAGE + MESH DATA #
-        #################################
-        # if self.dimension == 2:
-        #     corner_points = np.zeros((4, 2))
-        #     umax, vmax = np.subtract(self.intensities.shape, (1, 1))
-        #     corner_points[0] = np.dot(self.affine[0:2, 0:2], [0, 0]) + self.affine[0:2, 2]
-        #     corner_points[1] = np.dot(self.affine[0:2, 0:2], [umax, 0]) + self.affine[0:2, 2]
-        #     corner_points[2] = np.dot(self.affine[0:2, 0:2], [0, vmax]) + self.affine[0:2, 2]
-        #     corner_points[3] = np.dot(self.affine[0:2, 0:2], [umax, vmax]) + self.affine[0:2, 2]
-        #
-        # elif self.dimension == 3:
-        #     corner_points = np.zeros((8, 3))
-        #     umax, vmax, wmax = np.subtract(self.intensities.shape, (1, 1, 1))
-        #     corner_points[0] = np.dot(self.affine[0:3, 0:3], [0, 0, 0]) + self.affine[0:3, 3]
-        #     corner_points[1] = np.dot(self.affine[0:3, 0:3], [umax, 0, 0]) + self.affine[0:3, 3]
-        #     corner_points[2] = np.dot(self.affine[0:3, 0:3], [0, vmax, 0]) + self.affine[0:3, 3]
-        #     corner_points[3] = np.dot(self.affine[0:3, 0:3], [umax, vmax, 0]) + self.affine[0:3, 3]
-        #     corner_points[4] = np.dot(self.affine[0:3, 0:3], [0, 0, wmax]) + self.affine[0:3, 3]
-        #     corner_points[5] = np.dot(self.affine[0:3, 0:3], [umax, 0, wmax]) + self.affine[0:3, 3]
-        #     corner_points[6] = np.dot(self.affine[0:3, 0:3], [0, vmax, wmax]) + self.affine[0:3, 3]
-        #     corner_points[7] = np.dot(self.affine[0:3, 0:3], [umax, vmax, wmax]) + self.affine[0:3, 3]
 
         else:
             raise RuntimeError('Invalid dimension: %d' % self.dimension)

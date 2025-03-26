@@ -36,11 +36,9 @@ class Geodesic:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, kernel=default.deformation_kernel,
-                 t0=default.t0, time_concentration=default.time_concentration,
-                 extensions = None, root_name = ""):
+    def __init__(self, kernel=None, t0=default.t0, time_concentration=default.time_concentration,
+                 root_name = ""):
 
-        self.extensions = extensions
         self.root_name = '{}__GeodesicFlow__'.format(root_name)
         self.time_concentration = time_concentration
         self.t0 = t0
@@ -66,9 +64,6 @@ class Geodesic:
     ####################################################################################################################
     ### Encapsulation methods:
     ####################################################################################################################
-    def set_file_extensions(self, ext):
-        self.extension = ext
-
     def set_kernel(self, kernel):
         self.bw_exponential.kernel = kernel
         self.fw_exponential.kernel = kernel
@@ -418,7 +413,7 @@ class Geodesic:
             step = self.time_concentration
         
         for t, time in enumerate(self.get_times()):
-            name = flow_name(self.root_name, t, time, self.extensions[0])
+            name = flow_name(self.root_name, t, time)
             
             if write_all and  t % step == 0:
                 self.flow_path[time] = op.join(output_dir, name)
@@ -435,7 +430,7 @@ class Geodesic:
             step = self.time_concentration if self.time_concentration > 1 else 0.5
             
             for t, time in enumerate(self.get_times()):
-                names = [flow_name(self.root_name, t, time, ext) for ext in self.extensions]
+                names = [flow_name(self.root_name, t, time)]
                 deformed_points = self.get_template_points(time)
                 deformed_data = template.get_deformed_data(deformed_points, template_data)
 

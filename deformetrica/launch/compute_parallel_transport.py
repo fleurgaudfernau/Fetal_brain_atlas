@@ -244,9 +244,9 @@ class ParallelTransport():
 
                 # Create the geodesic flow object 
                 spec = {"dataset_filenames" : [[{"Object_1" : self.flow_path[time]}]], 
-                        "visit_ages" : [[0]], "subject_ids" : ["sub"]}
+                        "visit_ages" : [[0]], "ids" : ["sub"]}
                 dataset = create_dataset(self.template_specifications, **spec)
-                flow = dataset.deformable_objects[0][0]
+                flow = dataset.objects[0][0]
 
                 # Plot distance to geodesic flow
                 self.data["distance_to_flow"][time] = self.attachment.compute_distances(parallel_data, self.template, 

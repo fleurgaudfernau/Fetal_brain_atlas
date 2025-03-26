@@ -16,15 +16,14 @@ def floatif(tag, value, variable, level):
     return variable
 
 def get_dataset_specifications(xml_parameters):
-    print(len(xml_parameters.template_specifications))
 
     specifications = {}
     specifications['visit_ages'] = xml_parameters.visit_ages
     specifications['filenames'] = xml_parameters.dataset_filenames
-    specifications['subject_ids'] = xml_parameters.subject_ids
+    specifications['ids'] = xml_parameters.ids
     specifications['interpolation'] = xml_parameters.interpolation
     specifications['kernel_width'] = xml_parameters.template_specifications["Object_1"]["kernel_width"]
-    specifications['n_subjects'] = len(xml_parameters.subject_ids)
+    specifications['n_subjects'] = len(xml_parameters.ids)
     n_observations = sum(len(visit) for subject in xml_parameters.dataset_filenames for visit in subject)
     specifications['n_observations'] = n_observations
 
@@ -57,15 +56,14 @@ def get_estimator_options(xml_parameters):
     options['load_state_file'] = xml_parameters.load_state_file
 
     # Multiscale options
-    options['multiscale_momenta'] = xml_parameters.multiscale_momenta #ajout fg
-    options['multiscale_images'] = xml_parameters.multiscale_images
-    options['multiscale_meshes'] = xml_parameters.multiscale_meshes
-    options['multiscale_strategy'] =  xml_parameters.multiscale_strategy #ajout fg
+    options['multiscale_momenta'] = xml_parameters.multiscale_momenta 
+    options['multiscale_objects'] = xml_parameters.multiscale_objects
+    options['multiscale_strategy'] =  xml_parameters.multiscale_strategy 
 
     return options
 
 def get_model_options(xml_parameters):
-    options = { 'deformation_kernel_width': xml_parameters.deformation_kernel_width,
+    options = {'deformation_kernel_width': xml_parameters.deformation_kernel_width,
                 'n_time_points': xml_parameters.n_time_points,
                 'time_concentration': xml_parameters.time_concentration,
                 'freeze_template': xml_parameters.freeze_template,
@@ -74,57 +72,58 @@ def get_model_options(xml_parameters):
                 'initial_cp': xml_parameters.initial_cp,
                 'initial_momenta': xml_parameters.initial_momenta,
                 'downsampling_factor': xml_parameters.downsampling_factor,
-                'perform_shooting':xml_parameters.perform_shooting, #ajout fg
-                'interpolation':xml_parameters.interpolation,
-                "rambouilli": xml_parameters.number_of_sources }
+                'perform_shooting': xml_parameters.perform_shooting,
+                'interpolation': xml_parameters.interpolation }
 
     model_type = xml_parameters.model_type.lower()
-    if model_type in ['bayesiangeodesicregression']:
-        options['t0'] = xml_parameters.t0
-        options['tR'] = xml_parameters.tR
-        options['tmin'] = xml_parameters.tmin
-        options['tmax'] = xml_parameters.tmax
-        options['number_of_sources'] = xml_parameters.number_of_sources
-        options['initial_modulation_matrix'] = xml_parameters.initial_modulation_matrix
-        options['initial_sources'] = xml_parameters.initial_sources
-        options['freeze_modulation_matrix'] = xml_parameters.freeze_modulation_matrix
-        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
-        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
 
-    elif model_type in ['regression', 'kernelregression']:
-        options['t0'] = xml_parameters.t0
-        options['tmin'] = xml_parameters.tmin
-        options['tmax'] = xml_parameters.tmax
+    model_specific_options = {
+        'bayesiangeodesicregression': {
+            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax,
+            'tR': xml_parameters.tR,
+            'number_of_sources': xml_parameters.number_of_sources,
+            'initial_modulation_matrix': xml_parameters.initial_modulation_matrix,
+            'initial_sources': xml_parameters.initial_sources,
+            'freeze_modulation_matrix': xml_parameters.freeze_modulation_matrix,
+            'freeze_reference_time': xml_parameters.freeze_reference_time,
+            'freeze_rupture_time': xml_parameters.freeze_rupture_time },
 
-    elif model_type in ["piecewiseregression"]: #ajout fg
-        options['num_component'] = xml_parameters.num_component
-        options['t0'] = xml_parameters.t0
-        options['tR'] = xml_parameters.tR
-        options['t1'] = xml_parameters.t1
-        options['freeze_reference_time'] = xml_parameters.freeze_reference_time
-        options['freeze_rupture_time'] = xml_parameters.freeze_rupture_time
+        'regression': {
+            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax },
 
-    elif model_type == 'paralleltransport':
-        options['t0'] = xml_parameters.t0
-        options['t1'] = xml_parameters.t1 #ajout fg
-        options['start_time'] = xml_parameters.t1
-        options['tmin'] = xml_parameters.tmin
-        options['tmax'] = xml_parameters.tmax
-        options['initial_momenta_to_transport'] = xml_parameters.initial_momenta_to_transport
-        options['initial_cp_to_transport'] = xml_parameters.initial_cp_to_transport
-        options['perform_shooting'] = xml_parameters.perform_shooting
-    elif model_type == 'piecewiseparalleltransport':
-        options['num_component'] = xml_parameters.num_component
-        options['t0'] = xml_parameters.t0
-        options['tR'] = xml_parameters.tR
-        options['t1'] = xml_parameters.t1 #ajout fg
-        options['start_time'] = xml_parameters.t1
-        options['tmin'] = xml_parameters.tmin
-        options['tmax'] = xml_parameters.tmax
-        options['initial_momenta_to_transport'] = xml_parameters.initial_momenta_to_transport
-        options['initial_cp_to_transport'] = xml_parameters.initial_cp_to_transport
-        options['perform_shooting'] = xml_parameters.perform_shooting
-    
+        'kernelregression': {
+            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax },
+
+        'piecewiseregression': {
+            'num_component': xml_parameters.num_component,
+            't0': xml_parameters.t0, 'tR': xml_parameters.tR, 't1': xml_parameters.t1,
+            'freeze_reference_time': xml_parameters.freeze_reference_time,
+            'freeze_rupture_time': xml_parameters.freeze_rupture_time },
+
+        'paralleltransport': {
+            't0': xml_parameters.t0, 't1': xml_parameters.t1,
+            'start_time': xml_parameters.t1,
+            'tmin': xml_parameters.tmin,
+            'tmax': xml_parameters.tmax,
+            'initial_momenta_to_transport': xml_parameters.initial_momenta_to_transport,
+            'initial_cp_to_transport': xml_parameters.initial_cp_to_transport,
+            'perform_shooting': xml_parameters.perform_shooting },
+
+        'piecewiseparalleltransport': {
+            'num_component': xml_parameters.num_component,
+            't0': xml_parameters.t0,
+            'tR': xml_parameters.tR,
+            't1': xml_parameters.t1,
+            'start_time': xml_parameters.t1,
+            'tmin': xml_parameters.tmin,
+            'tmax': xml_parameters.tmax,
+            'initial_momenta_to_transport': xml_parameters.initial_momenta_to_transport,
+            'initial_cp_to_transport': xml_parameters.initial_cp_to_transport,
+            'perform_shooting': xml_parameters.perform_shooting } }
+
+    if model_type in model_specific_options:
+        options.update(model_specific_options[model_type])
+
     return options
 
 
@@ -140,23 +139,23 @@ class XmlParameters:
 
     def __init__(self):
         self.model_type = default.model_type
-        self.template_specifications = default.template_specifications
+        self.template_specifications = {}
         self.deformation_kernel_width = 0
         self.n_time_points = default.n_time_points
         self.time_concentration = default.time_concentration
         self.number_of_sources = default.number_of_sources
         self.t0 = None
         self.tR = [] # ajout fg
-        self.t1 = None #ajout fg
-        self.start_time = None #ajout fg
+        self.t1 = None 
+        self.start_time = None 
         self.num_component = None # ajout fg
         self.tmin = default.tmin
         self.tmax = default.tmax
         self.covariance_momenta_prior_norm_dof = default.covariance_momenta_prior_norm_dof
 
-        self.dataset_filenames = default.dataset_filenames
-        self.visit_ages = default.visit_ages
-        self.subject_ids = default.subject_ids
+        self.dataset_filenames = []
+        self.visit_ages = []
+        self.ids = []
 
         self.optimization_method = default.optimization_method
         self.optimized_log_likelihood = default.optimized_log_likelihood
@@ -168,21 +167,16 @@ class XmlParameters:
         self.initial_step_size = default.initial_step_size
         self.convergence_tolerance = default.convergence_tolerance
         self.downsampling_factor = default.downsampling_factor
-        self.interpolation = default.interpolation #ajout fg
-
-        #self.gpu_mode = default.gpu_mode
-        self._cuda_is_used = default._cuda_is_used  # true if at least one operation will use CUDA.
-        self._keops_is_used = default._keops_is_used  # true if at least one keops kernel operation will take place.
+        self.interpolation = default.interpolation 
 
         self.state_file = None
         self.load_state_file = False
 
         self.freeze_template = default.freeze_template
-        self.multiscale_momenta = default.multiscale_momenta #ajout fg
-        self.multiscale_images = default.multiscale_images #ajout fg
-        self.multiscale_meshes = default.multiscale_meshes
-        self.multiscale_strategy = default.multiscale_strategy #ajout fg
-        self.perform_shooting = default.perform_shooting #ajout fg
+        self.multiscale_momenta = default.multiscale_momenta 
+        self.multiscale_objects = default.multiscale_objects 
+        self.multiscale_strategy = default.multiscale_strategy 
+        self.perform_shooting = default.perform_shooting 
         self.freeze_momenta = default.freeze_momenta
         self.freeze_modulation_matrix = default.freeze_modulation_matrix
         self.freeze_reference_time = default.freeze_reference_time
@@ -191,6 +185,7 @@ class XmlParameters:
 
         self.initial_cp = default.initial_cp
         self.initial_momenta = default.initial_momenta
+        self.initial_momenta_to_transport = None
         self.initial_modulation_matrix = default.initial_modulation_matrix
         self.initial_sources = default.initial_sources
         self.initial_sources_mean = default.initial_sources_mean
@@ -295,8 +290,8 @@ class XmlParameters:
                     elif tag == 'tr':
                         self.tR.append(float(deformation.text))
                     elif tag == 't1':
-                        self.t1 = float(deformation.text) #ajout fg
-                    elif tag == 'perform-shooting': #ajout fg
+                        self.t1 = float(deformation.text) 
+                    elif tag == 'perform-shooting': 
                         self.perform_shooting = self._on_off_to_bool(deformation.text)
                     elif tag == 'tmin':
                         self.tmin = float(deformation.text)
@@ -321,12 +316,12 @@ class XmlParameters:
 
             self.dataset_filenames = [[] for _ in range(len(root))]
             self.visit_ages = [[] for _ in range(len(root))]
-            self.subject_ids = []
+            self.ids = []
 
             for i, subject in enumerate(root):
                 if subject.tag.lower() == 'subject':
                     
-                    self.subject_ids.append(subject.attrib['id'])
+                    self.ids.append(subject.attrib['id'])
                     
                     self.dataset_filenames[i] = [ { f"Object_{k}": op.join(xml_dirname, obj.text)
                                                     for k, obj in enumerate(visit) \
@@ -365,13 +360,11 @@ class XmlParameters:
                     self.initial_step_size = float(level1.text)
                 elif tag == 'freeze-template':
                     self.freeze_template = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-momenta': #ajout fg
+                elif tag == 'multiscale-momenta': 
                     self.multiscale_momenta = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-images': #ajout fg
-                    self.multiscale_images = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-meshes': #ajout fg
-                    self.multiscale_meshes = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-strategy': #ajout fg
+                elif tag == 'multiscale-images': 
+                    self.multiscale_objects = self._on_off_to_bool(level1.text)
+                elif tag == 'multiscale-strategy': 
                     self.multiscale_strategy = str(level1.text)
                 elif tag == 'max-line-search-iterations':
                     self.max_line_search_iterations = int(level1.text)
@@ -398,16 +391,13 @@ class XmlParameters:
     # Default xml parameters for any template object.
     @staticmethod
     def _initialize_template_object_xml_parameters():
-        template_object = {}
-        template_object['kernel_width'] = 0.0
-        template_object['filename'] = 'undefined'
-        template_object['noise_std'] = -1
-        template_object['noise_variance_prior_scale_std'] = None
-        template_object['noise_variance_prior_normalized_dof'] = 0.01
-        template_object["interpolation"] = "linear"
+        return { 'kernel_width': 0.0,
+                'filename': 'undefined',
+                'noise_std': -1,
+                'noise_variance_prior_scale_std': None,
+                'noise_variance_prior_normalized_dof': 0.01,
+                "interpolation": "linear" }
         
-        return template_object
-
     def _on_off_to_bool(self, s):
         if s.lower() == "on":
             return True

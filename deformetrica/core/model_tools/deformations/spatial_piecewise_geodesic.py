@@ -19,18 +19,16 @@ class SpatialPiecewiseGeodesic:
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, kernel=default.deformation_kernel, tR=default.t0,
-                 time_concentration=default.time_concentration,
-                 n_time_points=default.n_time_points, template_tR=None, 
-                 nb_components=2, num_components=None, extension = None,
-                 root_name = ""):
+    def __init__(self, kernel=None, tR=default.t0, time_concentration=default.time_concentration,
+                 n_time_points=default.n_time_points, template_tR=None, nb_components=2, 
+                 num_components=None, root_name = ""):
 
         self.exponential = Exponential(kernel=kernel, n_time_points=n_time_points)
 
         self.geodesic = PiecewiseGeodesic(kernel=kernel, 
                                     time_concentration=time_concentration, template_tR=template_tR,
                                     nb_components=nb_components, num_components=num_components,
-                                    extensions = extension, root_name = root_name)
+                                    root_name = root_name)
 
         self.mod_matrix_tR = None
         self.projected_mod_matrix_tR = None
@@ -44,7 +42,6 @@ class SpatialPiecewiseGeodesic:
         self.template_points_t = None
         self.cp_t = None
 
-        self.extensions = extension
         self.root_name = root_name
 
     ####################################################################################################################
@@ -306,12 +303,9 @@ class SpatialPiecewiseGeodesic:
                                             "For_paraview__GeometricMode_{}__sign_{}.vtk".format(s, si))
 
                     for j in range(step, self.nb_of_tp(), step):
-                        names = []
-                        for ext in extensions:
-                            name = '{}__GeometricMode_{}__{}__{}{}_sigma{}'\
+                        names = ['{}__GeometricMode_{}__{}__{}{}_sigma'\
                                 .format(self.root_name, s, self.nb_of_tp() - 1 + j,
-                                 si, (3. * float(j) / (self.nb_of_tp() - 1)), ext)
-                            names.append(name)
+                                 si, (3. * float(j) / (self.nb_of_tp() - 1)))]
                         deformed_points = self.exponential.get_template_points(j)
                         deformed_data = template.get_deformed_data(deformed_points, template_data)
                         template.write(output_dir, names, deformed_data)
@@ -339,15 +333,14 @@ class SpatialPiecewiseGeodesic:
                     self.exponential.set_initial_momenta(space_shift)
                     self.exponential.update()
 
-                    names = [ space_shift_name(self.root_name, s, t, time, ext) for ext in extensions]
-                    self.exponential.write_flow(names, extensions, template, template_data, output_dir,
+                    names = [ space_shift_name(self.root_name, s, t, time)]
+                    self.exponential.write_flow(names, template, template_data, output_dir,
                                                 write_adjoint_parameters, write_only_last = True)
 
                     # Backward
                     self.exponential.set_initial_momenta(- space_shift)
                     self.exponential.update()
 
-                    names = [ space_shift_name(self.root_name, s, t, time, ext, backward = True)\
-                             for ext in extensions]
-                    self.exponential.write_flow(names, extensions, template, template_data, output_dir,
+                    names = [ space_shift_name(self.root_name, s, t, time, backward = True)]
+                    self.exponential.write_flow(names, template, template_data, output_dir,
                                                 write_adjoint_parameters, write_only_last = True)

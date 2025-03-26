@@ -67,8 +67,8 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                           'rupture_time': freeze_rupture_time, 
                           'noise_variance': freeze_noise_variance}
     
-        (object_list, self.extensions, self.objects_noise_variance, 
-        self.attachment) = template_metadata(template_specifications)
+        (object_list, self.objects_noise_variance, self.attachment) = \
+                                                    template_metadata(template_specifications)
         
         self.template = DeformableMultiObject(object_list)
         self.dimension = self.template.dimension 
@@ -89,7 +89,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Momenta.
         self.set_momenta(initialize_momenta(initial_momenta, len(self.cp), 
-                        self.dimension, number_of_subjects = self.nb_components))
+                        self.dimension, n_subjects = self.nb_components))
 
         # Modulation matrix. shape (ncp x dim)  x n_sources 
         self.fixed_effects['modulation_matrix'] = initialize_modulation_matrix(
@@ -107,7 +107,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.piecewise_geodesic = SpatialPiecewiseGeodesic(
                     kernel = factory(kernel_width=deformation_kernel_width),
                     time_concentration = time_concentration, nb_components = self.nb_components, 
-                    template_tR = None, extensions = self.extensions, root_name = self.name)
+                    template_tR = None, root_name = self.name)
         cp = move_data(self.cp, device=self.device)
         self.piecewise_geodesic.set_cp_tR(cp)
         self.piecewise_geodesic_is_modified = True
@@ -141,10 +141,10 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.individual_random_effects['sources'].set_mean(np.zeros((self.n_sources,)))
         self.individual_random_effects['sources'].set_variance(1.0)
 
-    def initialize_random_effects_realization(self, number_of_subjects, 
+    def initialize_random_effects_realization(self, n_subjects, 
                                             initial_sources=default.initial_sources):
         individual_RER = {
-        'sources': initialize_sources(initial_sources, number_of_subjects, self.n_sources)}
+        'sources': initialize_sources(initial_sources, n_subjects, self.n_sources)}
 
         return individual_RER
         
@@ -165,7 +165,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
             
             self._update_geodesic(dataset, template_points, momenta, mod_matrix, tR)
             
-            residuals = self.compute_residuals_(dataset.times, dataset.deformable_objects, template_data, sources)
+            residuals = self.compute_residuals_(dataset.times, dataset.objects, template_data, sources)
 
             residuals_per_object = np.zeros((self.number_of_objects,))
             for j in range(self.number_of_objects):
@@ -405,10 +405,10 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         """
         Fully torch.
         """
-        number_of_subjects = sources.shape[0]
+        n_subjects = sources.shape[0]
         regularity = 0.0
 
-        for i in range(number_of_subjects):
+        for i in range(n_subjects):
             regularity += self.individual_random_effects['sources'].compute_log_likelihood_torch(sources[i])
 
         return regularity
@@ -424,7 +424,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         
         self._update_geodesic(dataset, template_points, momenta, mod_matrix, tR)
         
-        res = self.compute_residuals_(dataset.times, dataset.deformable_objects, template_data, sources)
+        res = self.compute_residuals_(dataset.times, dataset.objects, template_data, sources)
         
         return sum(res, [])
 
@@ -480,7 +480,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.piecewise_geodesic.set_tmax(dataset.tmax)
         self.piecewise_geodesic.update()
 
-        return self._compute_batch_attachment_and_regularity(dataset.times, dataset.deformable_objects, template_data, 
+        return self._compute_batch_attachment_and_regularity(dataset.times, dataset.objects, template_data, 
                                                             template_points, momenta, mod_matrix, sources, mode)
     
     def compute_mini_batch_gradient(self, batch, dataset, individual_RER, mode = 'complete', with_grad=True):
@@ -502,7 +502,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                                         momenta, mod_matrix, tR, sources, mode, self.points, with_grad=with_grad)
         
     def mini_batches(self, dataset, number_of_batches):
-        targets = list(zip(dataset.times[0], dataset.deformable_objects[0]))
+        targets = list(zip(dataset.times[0], dataset.objects[0]))
         np.random.shuffle(targets)
 
         batch_size = len(targets) // number_of_batches
@@ -522,9 +522,9 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
         if dist in ["current", "varifold"]:
-            return self.attachment.compute_vtk_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
+            return self.attachment.compute_vtk_distance(deformed_data, self.template, dataset.objects[j][0], dist)
         elif dist in ["ssim", "mse"]:
-            return self.attachment.compute_ssim_distance(deformed_data, self.template, dataset.deformable_objects[j][0], dist)
+            return self.attachment.compute_ssim_distance(deformed_data, self.template, dataset.objects[j][0], dist)
 
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
         template_data, _, _ = self.prepare_geodesic(dataset)
@@ -539,7 +539,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         return self.template
 
     def compute_initial_curvature(self, dataset, j, curvature = "gaussian"):
-        obj = dataset.deformable_objects[j][0] 
+        obj = dataset.objects[j][0] 
         for obj1 in (obj.object_list):
             obj1.curvature_metrics(curvature)
         
@@ -618,7 +618,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         
         self._update_geodesic(dataset, template_points, momenta, mod_matrix, tR)
 
-        return template_data, dataset.times, dataset.deformable_objects
+        return template_data, dataset.times, dataset.objects
     
     def _update_geodesic(self, dataset, template_points, momenta, mod_matrix, tR):
         """
@@ -659,10 +659,9 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Model predictions.
         if dataset is not None: #and not write_all:
-            for i, subject_id in enumerate(dataset.subject_ids):
+            for i, subject_id in enumerate(dataset.ids):
                 for j, time in enumerate(target_times[i]):
-                    names = [ reconstruction_name(self.name, subject_id, time = j, 
-                                age = time, ext = ext) for ext in self.extensions]
+                    names = [ reconstruction_name(self.name, subject_id, time = j, age = time)]
                     deformed_points = self.piecewise_geodesic.get_template_points(time, sources[j], device = device)
                     deformed_data = self.template.get_deformed_data(deformed_points, template_data)
                     self.template.write(output_dir, names, deformed_data)
@@ -683,21 +682,17 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         if write_all:
             template_names = [ template_name(self.name, 
                                 time = self.piecewise_geodesic.exponential.n_time_points - 1, 
-                                age = self.get_rupture_time()[0], ext = ext, 
-                                freeze_template = self.is_frozen['template_data']) \
-                                for ext in self.extensions ]
+                                age = self.get_rupture_time()[0], 
+                                freeze_template = self.is_frozen['template_data'])  ]
             self.template.write(output_dir, template_names)
 
             write_mod_matrix(self.get_modulation_matrix(), output_dir, name)
 
-            if self.extensions[0] != ".vtk":
-                write_cp(self.cp, output_dir, self.name)
-                write_momenta(self.get_momenta(), output_dir, self.name)
+            write_cp(self.cp, output_dir, self.name)
+            write_momenta(self.get_momenta(), output_dir, self.name)
                 
-            else:
-                # Fuse control points and momenta for paraview display
-                for c in range(self.nb_components):
-                    if self.dimension == 3:
-                        concatenate_for_paraview(self.get_momenta()[c], self.cp, output_dir, self.name, iteration, c)
+            for c in range(self.nb_components):
+                if self.dimension == 3:
+                    concatenate_for_paraview(self.get_momenta()[c], self.cp, output_dir, self.name, iteration, c)
     
 

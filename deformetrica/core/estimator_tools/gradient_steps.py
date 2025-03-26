@@ -4,7 +4,6 @@ import os
 import logging
 from decimal import Decimal
 import numpy as np
-from ...core.estimator_tools.multiscale_meshes import MultiscaleMeshes
 from ...core.estimator_tools.multiscale_images import MultiscaleImages
 from ...core.estimator_tools.multiscale_momenta import MultiscaleMomenta
 logger = logging.getLogger(__name__)
@@ -102,7 +101,7 @@ class Gradient():
         return steps  
 
     def reduce_step(self, steps, key, factor =0.1):
-        logger.info("Contain step size of {}".format(key))
+        logger.info("\nContain step size of {}".format(key))
         steps[key] = factor * steps[key] 
 
         return steps
@@ -131,11 +130,10 @@ class Gradient():
         return []
 
     def space_shift_keys(self, gradient):
-        if "sources" in gradient.keys() and "modulation_matrix" in gradient.keys():
+        if "sources" in gradient.keys():
             return ["sources", "modulation_matrix"]
         
         return []
-
 
     def all_keys(self, gradient, steps):
 
@@ -145,41 +143,29 @@ class Gradient():
     def contain_step_size(self, steps, gradient):
         """
         Prevents the step size to increase too much
-        """
-        if self.meshes.multiscale:
+        """        
+        if self.objects.multiscale:
             for key in self.momenta_keys(gradient, steps):
-                while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
-                    steps = self.reduce_step(steps, key, factor=0.5)
-                if steps[key] > 1 / self.gradient_norms[key][-1]: #modif before 1
-                    steps = self.reduce_step(steps, key, factor=0.5)
-
-        elif self.images.multiscale:
-            for key in self.momenta_keys(gradient, steps):#self.momenta_keys(gradient, steps):
+                
                 while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
                     steps = self.reduce_step(steps, key, factor=0.5)
 
-                # severe threshold for brains in atlas and regression
-                # Registration and Regression
-                # MAYBE too severe?? -> NO
+                # severe threshold for brains in atlas and regression (needed)
                 if self.n_subjects == 1:
-                    while steps[key] > 1 / self.gradient_norms[key][-1]: # before 0.01
+                    while steps[key] > 0.1 / self.gradient_norms[key][-1]: # before 0.01
                         steps = self.reduce_step(steps, key)
-                # test 12/01: (22h): before was less severe
-                elif self.images.scale > 1: # IMPORTANT in Deterministic atlas
+
+                elif self.objects.scale > 1: # IMPORTANT in Deterministic atlas
                      while steps[key] > 0.1 / self.gradient_norms[key][-1]: #modif before 1
                         steps = self.reduce_step(steps, key)
-                elif self.images.scale > 0: # Deterministic atlas
+
+                elif self.objects.scale > 0: # Deterministic atlas
                      while steps[key] > 1 / self.gradient_norms[key][-1]: #modif before 1
                         steps = self.reduce_step(steps, key)
-            
-                                
+                     
         elif self.momenta.multiscale:
             for key in self.momenta_keys(gradient, steps):
 
-                # Registration and Regression
-                # good for the brains
-                # if self.n_subjects == 1 and steps[key] > 0.01 / self.gradient_norms[key][-1]: # before 1
-                #     steps = self.reduce_step(steps, key)
                 if self.n_subjects == 1: 
                     while steps[key] > 5 / self.gradient_norms[key][-1]: # before 1
                         steps = self.reduce_step(steps, key)
@@ -193,7 +179,7 @@ class Gradient():
         Ater multiscale momenta: reinitialize momenta and template steps
         """
         ### Reinitialize some steps after CTF
-        if self.images.after_ctf(iteration) or self.meshes.after_ctf(iteration):
+        if self.objects.after_ctf(iteration):
             
             if self.name != "Registration": #do not reinitialize in registration
                  optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)

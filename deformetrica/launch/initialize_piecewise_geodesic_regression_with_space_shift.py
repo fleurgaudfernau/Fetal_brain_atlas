@@ -12,7 +12,6 @@ from sklearn.decomposition import PCA, FastICA
 import xml.etree.ElementTree as et
 from xml.dom.minidom import parseString
 from ..support import utilities
-
 from ..core import default
 from ..in_out.xml_parameters import XmlParameters, get_dataset_specifications, get_estimator_options, get_model_options
 from ..in_out.dataset_functions import template_metadata, create_dataset
@@ -26,7 +25,6 @@ warnings.filterwarnings("ignore")
 
 #############################################################################""
 
-
 def scalar_product(kernel, cp, mom1, mom2):
     return torch.sum(mom1 * kernel.convolve(cp, cp, mom2))
 
@@ -38,7 +36,6 @@ def orthogonal_projection(cp, momenta_to_project, momenta):
     orthogonal_momenta = momenta_to_project - sp * momenta
 
     return orthogonal_momenta
-
 
 def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp):
     K = torch.zeros((global_cp_nb * dimension, global_cp_nb * dimension))
@@ -57,14 +54,14 @@ def compute_RKHS_matrix(global_cp_nb, dimension, kernel_width, global_initial_cp
 #############################################################################""
 
 class SubjectFiles():
-    def __init__(self, objects_name, global_visit_ages, global_dataset_filenames, global_subject_ids,
+    def __init__(self, objects_name, global_visit_ages, global_dataset_filenames, global_ids,
                registration_output, shooting_output, global_times,
                concentration_of_tp, global_t0_for_pt):
         
         self.objects_name = objects_name
         self.global_dataset_filenames = global_dataset_filenames
         self.global_visit_ages = global_visit_ages
-        self.global_subject_ids = global_subject_ids
+        self.global_ids = global_ids
         self.registration_output = registration_output
         self.shooting_output = shooting_output
         self.global_times = global_times
@@ -82,7 +79,7 @@ class SubjectFiles():
         return round(self.global_visit_ages[i][0], 2)
 
     def id(self, i):
-        return self.global_subject_ids[i]
+        return self.global_ids[i]
     
     def registration_path(self, i):
         return join(self.registration_output, 'Registration__subject_'+ self.id(i))
@@ -177,7 +174,7 @@ class BayesianRegressionInitializer():
         #global_dataset_filenames:list of lists: 1 list per subject of dict (1 dic = 1 obs)
         self.global_dataset_filenames = self.xml_parameters.dataset_filenames
         self.global_visit_ages = self.xml_parameters.visit_ages #list of lists: 1 list of visit ages/subject
-        self.global_subject_ids = self.xml_parameters.subject_ids #list of ids
+        self.global_ids = self.xml_parameters.ids #list of ids
         self.objects_name, self.objects_ext = template_metadata(self.xml_parameters.template_specifications)[1:3]
         #xml_parameters.template_specifications: [deformable object Image], [object_name], [ext], [noise_std], [attachment]
         
@@ -186,9 +183,9 @@ class BayesianRegressionInitializer():
 
         self.dataset = create_dataset(self.xml_parameters.template_specifications, 
                                     copy.deepcopy(self.global_visit_ages), #to avoid modification
-                                    self.global_dataset_filenames, self.global_subject_ids,
+                                    self.global_dataset_filenames, self.global_ids,
                                     self.dimension)
-        self.deformable_objects_dataset = self.dataset.deformable_objects #List of DeformableMultiObjects
+        self.objects_dataset = self.dataset.objects #List of DeformableMultiObjects
         self.global_subjects_nb = len(self.global_dataset_filenames)
         self.global_observations_nb = sum([len(elt) for elt in self.global_visit_ages])
 
@@ -228,7 +225,7 @@ class BayesianRegressionInitializer():
         self.ICA_output = join(self.output_dir, '5_ICA')
 
         self.subjects = SubjectFiles(self.objects_name, self.global_visit_ages, 
-                                     self.global_dataset_filenames, self.global_subject_ids, 
+                                     self.global_dataset_filenames, self.global_ids, 
                                      self.registration_output, self.shooting_output, 
                                      self.global_times, self.concentration_of_tp, 
                                      self.global_t0_for_pt)
@@ -337,7 +334,7 @@ class BayesianRegressionInitializer():
         #join filenames as if from a single subject = [[{obs 1}] [{obs2}]] -> [[{obs 1} {obs2}]]
         xml_parameters.dataset_filenames = [sum(self.global_dataset_filenames, [])]
         xml_parameters.visit_ages = [sum(self.global_visit_ages, [])]
-        xml_parameters.subject_ids = [self.global_subject_ids[0]]
+        xml_parameters.ids = [self.global_ids[0]]
         xml_parameters.t0 = self.global_t0   
         xml_parameters.tR = self.global_tR
         xml_parameters.num_component = self.num_component
@@ -376,7 +373,7 @@ class BayesianRegressionInitializer():
     def set_registration_xml(self, i, xml_parameters):
         xml_parameters.dataset_filenames = [self.subjects.filename_(i)]
         xml_parameters.visit_ages = [[self.subjects.age(i)]]
-        xml_parameters.subject_ids = [self.subjects.id(i)]
+        xml_parameters.ids = [self.subjects.id(i)]
         xml_parameters = self.set_template_xml(xml_parameters, self.subjects.same_age_template(i))
         xml_parameters.print_every_n_iters = 100
         xml_parameters.multiscale_meshes = False

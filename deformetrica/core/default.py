@@ -4,13 +4,7 @@ from ..support import utilities
 
 logger_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-#ajout fg
-interpolation = "linear"
-
 tensor_scalar_type = utilities.get_torch_scalar_type('float32')
-
-# deformation_kernel = kernel_factory.factory(kernel_factory.Type.TORCH, kernel_width=1.)
-deformation_kernel = None
 
 output_dir = os.path.join(os.getcwd(), 'Output')
 preprocessing_dir = os.path.join(os.getcwd(), 'preprocessing')
@@ -20,7 +14,6 @@ load_state_file = False
 process_per_gpu = 1
 
 model_type = 'undefined'
-template_specifications = {}
 deformation_kernel_width = 1.0
 deformation_kernel_device = 'auto'
 
@@ -32,15 +25,11 @@ use_rk2_for_flow = False
 t0 = None
 tmin = float('inf')
 tmax = - float('inf')
-dimension = None
 covariance_momenta_prior_norm_dof = 0.001
 
-dataset_filenames = []
-visit_ages = []
-subject_ids = []
 optimization_method = 'GradientAscent'
 optimized_log_likelihood = 'complete'
-max_iterations = 100
+max_iterations = 1000
 max_line_search_iterations = 10
 save_every_n_iters = 100
 print_every_n_iters = 1
@@ -53,15 +42,14 @@ convergence_tolerance = 1e-4
 noise_variance_prior_norm_dof = 0.01
 memory_length = 10
 downsampling_factor = 1
+interpolation = "linear"
 
-gpu_mode = GpuMode.KERNEL
-_cuda_is_used = False   # true if at least one operation will use CUDA.
-_keops_is_used = False  # true if at least one keops kernel operation will take place.
+
+gpu_mode = GpuMode.FULL
 
 freeze_template = False
 multiscale_momenta = False
-multiscale_images = False
-multiscale_meshes = False
+multiscale_objects = False
 multiscale_strategy = "stairs"
 freeze_momenta = False
 freeze_modulation_matrix = False

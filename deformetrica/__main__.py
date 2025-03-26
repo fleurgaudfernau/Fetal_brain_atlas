@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 def main():
     # common options
-    print("torch.cuda.is_available", torch.cuda.is_available())
     common_parser = argparse.ArgumentParser()
     common_parser.add_argument('--parameters', '-p', type=str, help='parameters xml file')
     common_parser.add_argument('--output', '-o', type=str, help='output folder')

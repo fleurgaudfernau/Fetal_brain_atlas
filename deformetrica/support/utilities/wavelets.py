@@ -1,10 +1,7 @@
-#%% import
 import numpy as np
 import itertools
 
 from cachetools import cached
-
-#%% Haar Transform
 
 SQRTTWO = np.sqrt(2)
 

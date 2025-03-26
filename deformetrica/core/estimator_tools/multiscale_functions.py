@@ -4,21 +4,20 @@ import os
 import logging
 from decimal import Decimal
 import numpy as np
-from ...core.estimator_tools.multiscale_meshes import MultiscaleMeshes
-from ...core.estimator_tools.multiscale_images import MultiscaleImages
+from ...core.estimator_tools.multiscale_objects import MultiscaleObjects
 from ...core.estimator_tools.multiscale_momenta import MultiscaleMomenta
 from ...support.utilities.tools import residuals_change
 
 logger = logging.getLogger(__name__)
 
 class Multiscale():
-    def __init__(self, multiscale_momenta, multiscale_images, multiscale_meshes, 
-                multiscale_strategy, model, initial_step_size, output_dir, dataset):
+    def __init__(self, multiscale_momenta, multiscale_objects, multiscale_strategy, 
+                model, initial_step_size, output_dir, dataset):
         
         # Data information
         self.model = model
         self.name = model.name
-        self.n_subjects = len(dataset.subject_ids)
+        self.n_subjects = dataset.n_subjects
         
         self.initial_step_size = initial_step_size
         self.output_dir = output_dir
@@ -27,22 +26,19 @@ class Multiscale():
 
         ctf_interval = 15
         ctf_max_interval = 80 if "Regression" in self.name else 50
-        self.convergence_threshold = 1e-3
+        self.threshold = 1e-3
 
-        # Adaptation to meshes or images
         self.points = 'image_intensities'
 
         if 'landmark_points' in self.model.fixed_effects['template_data'].keys():
             self.points = 'landmark_points'
 
         # Multiscale options
-        self.momenta = MultiscaleMomenta(multiscale_momenta, multiscale_images, multiscale_meshes, model, ctf_interval, 
+        self.momenta = MultiscaleMomenta(multiscale_momenta, multiscale_objects, model, ctf_interval, 
                                         ctf_max_interval, self.points_per_axis)
-        self.images = MultiscaleImages(multiscale_images, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
+        self.objects = MultiscaleObjects(multiscale_objects, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
                                         ctf_max_interval, self.points, self.points_per_axis)
-        self.meshes = MultiscaleMeshes(multiscale_meshes, multiscale_momenta, model, dataset, output_dir, ctf_interval, 
-                                        ctf_max_interval, self.points)
-        self.dual = DualMultiscale(model, self.momenta, self.images, self.meshes, multiscale_strategy, 
+        self.dual = DualMultiscale(model, self.momenta, self.objects, multiscale_strategy, 
                                     ctf_interval, ctf_max_interval)
         
         self.model.curvature = False# consider curvature in cost fct (not CTF)
@@ -60,15 +56,13 @@ class Multiscale():
         """
         Function for the initial filter of parameters (eg template mesh/image)
         """
-        new_dataset, parameters = self.images.filter(parameters, iteration)
-        new_dataset, parameters = self.meshes.filter(parameters, iteration, new_dataset )
+        new_dataset, parameters = self.objects.filter(parameters, iteration)
 
         return new_dataset, parameters
 
     def initialize(self):
         self.momenta.initialize()
-        self.images.initialize(self.momenta.coarser_scale)
-        self.meshes.initialize(self.momenta.coarser_scale)
+        self.objects.initialize(self.momenta.coarser_scale)
         self.dual.initialize()
 
     ####################################################################################################################
@@ -78,12 +72,11 @@ class Multiscale():
                        component_residuals = None, end = False): #TODO
         
         dataset, new_parameters = self.momenta.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
-        dataset, new_parameters = self.images.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
+        dataset, new_parameters = self.objects.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
         dataset, new_parameters = self.dual.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
-        dataset, new_parameters = self.meshes.coarse_to_fine(new_parameters, dataset, iteration, avg_residuals, end)
 
         # Ajout fg: MAJ A0 et sources
-        if self.contain_A0 and iteration > 10 and residuals_change(avg_residuals) < self.convergence_threshold:
+        if self.contain_A0 and iteration > 10 and residuals_change(avg_residuals) < self.threshold:
             self.contain_A0 = False
             logger.info("Update sources and modulation matrix")
 
@@ -93,8 +86,7 @@ class Multiscale():
     ### OPTIMIZATION TOOLS
     ####################################################################################################################
     def no_convergence_after_ctf(self, iteration):
-        if self.images.after_ctf(iteration - 1) or self.meshes.after_ctf(iteration - 1) \
-            or self.momenta.after_ctf(iteration - 1): 
+        if self.objects.after_ctf(iteration - 1) or self.momenta.after_ctf(iteration - 1): 
             print("Do not allow convergence after CTF")
             return True
                         
@@ -106,8 +98,7 @@ class Multiscale():
         """
         cond = True        
         cond = self.momenta.convergence(iteration, cond)
-        cond = self.images.convergence(iteration, cond)
-        cond = self.meshes.convergence(iteration, cond)
+        cond = self.objects.convergence(iteration, cond)
             
         return cond
     
@@ -141,7 +132,6 @@ class Multiscale():
     
     def compute_gradients(self, gradient):
         # Compute an additional gradient: the WT of the momenta gradient
-        # And silence some coefficients (actual coarse to fine)
         gradient = self.momenta.compute_haar_gradient(gradient)
         
         # Store gradient norms
@@ -156,10 +146,13 @@ class Multiscale():
         for key in [g for g in gradient.keys() if g not in exclude]:
             new_parameters[key] += gradient[key] * step[key]
 
-
             # Avoir negative intensities for images
             if key == "image_intensities":
                 new_parameters[key][new_parameters[key] < 0] = 0
+
+            elif key == "sources": # Normalize sources (each column of sources)
+                sources = new_parameters[key]
+                new_parameters[key] = (sources - np.mean(sources, axis=0)) / np.std(sources, axis=0)
             
             # Normalize columns (space shifts of) Modulation Matrix
             # if key == "modulation_matrix":
@@ -168,14 +161,6 @@ class Multiscale():
             #         norm = np.linalg.norm(space_shift)
             #         if norm != 0: 
             #             new_parameters[key][:, s] = new_parameters[key][:, s] / norm 
-
-            # Normalize sources
-            if key == "sources":
-                sources = new_parameters[key]
-                for s in range(sources.shape[1]):
-                    mean = np.mean(sources[:, s])
-                    std = np.std(sources[:, s])
-                    new_parameters[key][:,s] = (new_parameters[key][:, s] - mean) / std
 
         return new_parameters
 
@@ -226,10 +211,6 @@ class Multiscale():
 
             logger.info("(Re)-initialize haar_coef_momenta step size")
             steps["haar_coef_momenta"] = 0.1 / gradient_norm if gradient_norm > 1e-8 else 1e-5
-            #steps["haar_coef_momenta"] = self.initial_step_size / gradient_norm if gradient_norm > 1e-8 else 1e-5
-            
-        # else:
-        #     steps["momenta"] = self.reinitialize_step_size(gradient, "momenta")
 
         return steps  
 
@@ -250,8 +231,6 @@ class Multiscale():
         value[value == float("inf")] = 0.1
 
         return float(value)
-
-    
 
     def handle_other_steps(self, steps, gradient):
         ### Check that steps are big enough (indpt from CTF)
@@ -279,23 +258,20 @@ class Multiscale():
         """
         Prevents the step size to increase too much
         """
-        if self.meshes.multiscale:
-            for key in self.momenta_keys(gradient, steps):
-                while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
-                    steps = self.reduce_step(steps, key, factor=0.5)
-                if steps[key] > 1 / self.gradient_norms[key][-1]: #modif before 1
-                    steps = self.reduce_step(steps, key, factor=0.5)
-
-        elif self.images.multiscale:
+        if self.objects.multiscale:
             for key in self.momenta_keys(gradient, steps):#self.momenta_keys(gradient, steps):
+                print("Step", steps[key])
+                print("1/gradient", 1 / self.gradient_norms[key][-1])
+
                 while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
                     steps = self.reduce_step(steps, key, factor=0.5)
-                # if steps[key] > 1 / self.gradient_norms[key][-1]: #modif before 1
-                #     steps = self.reduce_step(steps, key, factor=0.5)
 
-                # severe threshold for brains in atlas and regression
-                # Registration and Regression -- MAYBE too severe?? -> NO
-                if self.images.scale > 1 and len(self.template_keys(gradient, steps)) > 0: # IMPORTANT in Deterministic atlas for .nii
+                if self.n_subjects == 1:
+                    while steps[key] > 1 / self.gradient_norms[key][-1]: # before 0.01
+                        steps = self.reduce_step(steps, key)
+
+                # severe threshold for brains in atlas and regression (important)
+                if self.objects.scale > 1 and len(self.template_keys(gradient, steps)) > 0: # IMPORTANT in Deterministic atlas for .nii
                      while steps[key] > 0.1 / self.gradient_norms[key][-1]: #modif before 1
                         steps = self.reduce_step(steps, key)
 
@@ -320,13 +296,8 @@ class Multiscale():
         After multiscale on template: reinitialize momenta steps
         Ater multiscale momenta: reinitialize momenta and template steps
         """
-        #TODO test
-        # if self.images.multiscale and iteration == 0:
-        #     for key in self.template_keys(gradient, steps):
-        #             optimizer.step[key] *= 10
-
         ### Reinitialize some steps after CTF
-        if self.images.after_ctf(iteration) or self.meshes.after_ctf(iteration):
+        if self.objects.after_ctf(iteration):
             if self.name != "Registration": #do not reinitialize in registration
                  optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
             
@@ -363,19 +334,19 @@ class Multiscale():
                 Decimal(str(self.compute_gradient_norm(gradient, key))), key))
 
     def dump_state_file(self, d):
-        if self.images.multiscale:
-            d["image_scale"]= self.images.scale
-            d["iter_multiscale_images"] = self.images.iter
+        if self.objects.multiscale:
+            d["object_scale"]= self.objects.scale
+            d["iter_multiscale_objects"] = self.objects.iter
         else:
-            d["image_scale"] = 0
-            d["iter_multiscale_images"] = []
+            d["object_scale"] = 0
+            d["iter_multiscale_objects"] = []
         if self.momenta.multiscale:
             d["momenta_scale"] = self.momenta.scale
             d["iter_multiscale_momenta"] = self.momenta.iter
         else:
             d["momenta_scale"] = 0
             d["iter_multiscale_momenta"] = []
-        if self.images.multiscale and self.momenta.multiscale:
+        if self.objects.multiscale and self.momenta.multiscale:
             d["order"] = self.dual.order
         else:
             d["order"] = []
@@ -387,53 +358,44 @@ class Multiscale():
 ####################################################################################################################
 
 class DualMultiscale():
-    def __init__(self, model, momenta, images, meshes, multiscale_strategy, ctf_interval, 
+    def __init__(self, model, momenta, objects, multiscale_strategy, ctf_interval, 
                 ctf_max_interval):
         self.model = model
         self.name = model.name
-        self.ext = self.model.extensions[0]
 
         self.momenta = momenta
-        self.images = images
-        self.meshes = meshes
-        self.multiscale_momenta_images = momenta.multiscale and images.multiscale
-        self.multiscale_momenta_meshes = momenta.multiscale and meshes.multiscale
+        self.objects = objects
+        self.multiscale_momenta_objects = momenta.multiscale and objects.multiscale
         self.multiscale_strategy = multiscale_strategy
 
         self.order = []
 
-        self.initial_convergence_threshold = 1e-3
-        self.convergence_threshold = 1e-3
+        self.initial_threshold = 1e-3
+        self.threshold = 1e-3
         self.ctf_interval = ctf_interval
         self.ctf_max_interval = ctf_max_interval
 
     def initialize(self):
         """
-            Initialization of the dual coarse-to-fine (momenta + images)
+            Initialization of the dual coarse-to-fine (momenta + objects)
             The multiscale strategy is set (i.e. self.order in which to perform the coarse-to-fine steps)
         """
-        if self.multiscale_momenta_images or self.multiscale_momenta_meshes:
+        if self.multiscale_momenta_objects:
             self.first = "Momenta"
 
             logger.info("\nDual Multiscale, {} first".format(self.first))
-            self.second = ["Image" if self.first != "Image" else "Momenta"][0]
+            self.second = ["Object" if self.first != "Object" else "Momenta"][0]
             
             if self.multiscale_strategy == "simultaneous":
                 for k in range(self.momenta.coarser_scale - 1):
                     self.step = 1
                     self.order.append({self.first: 1, self.second: 1})
-
-            elif self.multiscale_strategy == "mountains":
-                for k in range(self.momenta.coarser_scale - 1):
-                    self.step = 1
-                    self.order = self.order + [{self.first: 1, self.second: None}] * (self.momenta.coarser_scale - 1 - k)
-                    self.order.append({self.first: k - self.momenta.coarser_scale + 2, self.second: 1})
             
             elif self.multiscale_strategy == "separate":
                 for k in range(self.momenta.coarser_scale - 1):
-                    self.order.append({"Image": 1, "Momenta": None})
+                    self.order.append({"Object": 1, "Momenta": None})
                 for k in range(self.momenta.coarser_scale - 1):
-                    self.order.append({"Image": None, "Momenta": 1})
+                    self.order.append({"Object": None, "Momenta": 1})
 
                 self.ctf_max_interval = 50 # to avoid rapid transitions
                 self.ctf_interval = 30
@@ -461,7 +423,6 @@ class DualMultiscale():
             logger.info("Chosen multiscale strategy: {}".format(self.multiscale_strategy))
             
             
-            
     def coarse_to_fine_condition(self, iteration, avg_residuals, end, objects):
         """
         Authorizes coarse to fine if more than 2 iterations after previous CTF (or beginning of algo)
@@ -471,63 +432,36 @@ class DualMultiscale():
             
         if end: return True
 
-        # if end and residuals_change(avg_residuals) < self.convergence_threshold: 
-        #     return True
-
         enough_iterations = (self.momenta.enough(iteration) and objects.enough(iteration))
         too_much = (self.momenta.too_much(iteration) and objects.too_much(iteration))
 
-        return (enough_iterations and residuals_change(avg_residuals) < self.convergence_threshold)\
-                or too_much
+        return (enough_iterations and residuals_change(avg_residuals) < self.threshold) or too_much
 
     def coarse_to_fine(self, parameters, current_dataset, iteration, avg_residuals, end):
-        if self.multiscale_momenta_images:
-            return self.coarse_to_fine_momenta_images(parameters, current_dataset, iteration, avg_residuals, end)
-        if self.multiscale_momenta_meshes:
-            return self.coarse_to_fine_momenta_meshes(parameters, current_dataset, iteration, avg_residuals, end)
+        if self.multiscale_momenta_objects:
+            return self.coarse_to_fine_momenta_objects(parameters, current_dataset, iteration, avg_residuals, end)
 
         return current_dataset, parameters
 
-    def coarse_to_fine_momenta_images(self, parameters, current_dataset, iteration, avg_residuals, end):
+    def coarse_to_fine_momenta_objects(self, parameters, current_dataset, iteration, avg_residuals, end):
         """
-            Dual coarse to fine between momenta and images
+            Dual coarse to fine between momenta and objects
         """
 
-        if self.coarse_to_fine_condition(iteration, avg_residuals, end, objects = self.images):
-            step_momenta, step_images = self.order[0]["Momenta"], self.order[0]["Image"]
+        if self.coarse_to_fine_condition(iteration, avg_residuals, end, objects = self.objects):
+            step_momenta, step_objects = self.order[0]["Momenta"], self.order[0]["Object"]
 
             if step_momenta:
                 self.momenta.coarse_to_fine_step(iteration, step_momenta)
                 
-            if step_images:
-                current_dataset, parameters = self.images.dual_coarse_to_fine_step(parameters, iteration, step_images)                         
+            if step_objects:
+                current_dataset, parameters = self.objects.dual_coarse_to_fine_step(parameters, iteration, step_objects)                         
                             
-            if step_momenta or step_images:
+            if step_momenta or step_objects:
                 self.order = self.order[1:]
         
         print("self.momenta.iter", self.momenta.iter)
-        print("self.images.iter", self.images.iter)
-                        
-        return current_dataset, parameters
-    
-    def coarse_to_fine_momenta_meshes(self, parameters, current_dataset, iteration, avg_residuals, end):
-        """
-            Dual coarse to fine between momenta and meshes
-        """
-        print("self.momenta.iter", self.momenta.iter)
-        print("self.meshes.iter", self.meshes.iter)
-
-        if self.coarse_to_fine_condition(iteration, avg_residuals, end, objects = self.meshes):
-            step_momenta, step_images = self.order[0]["Momenta"], self.order[0]["Image"]
-
-            if step_momenta:
-                self.momenta.coarse_to_fine_step(iteration, step_momenta)
-                
-            if step_images:
-                current_dataset, parameters = self.meshes.coarse_to_fine_step(parameters, iteration)                         
-                            
-            if step_momenta or step_images:
-                self.order = self.order[1:]
+        print("self.objects.iter", self.objects.iter)
                         
         return current_dataset, parameters
     

@@ -18,24 +18,24 @@ def initialize_cp(initial_cp, template, deformation_kernel_width, new_bounding_b
     
     if initial_cp is not None:
         control_points = read_2D_array(initial_cp)
-        logger.info('>> Reading %d initial control points from file %s.' % (len(control_points), initial_cp))
+        logger.info('\n>> Reading %d initial control points from file %s.' % (len(control_points), initial_cp))
 
     else:
         bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
         control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, template.dimension)
-        logger.info('>> Set of %d control points defined.' % len(control_points))
+        logger.info('\n>> Set of %d control points defined.' % len(control_points))
 
     return control_points
 
 
 def initialize_momenta(initial_momenta, number_of_control_points, dimension, 
-                       number_of_subjects=0, random=False):
+                       n_subjects=0, random=False):
     if initial_momenta is not None:
         momenta = read_3D_array(initial_momenta)
         logger.info('>> Reading initial momenta from file: %s.' % initial_momenta)
 
     else:
-        if number_of_subjects == 0:
+        if n_subjects == 0:
             if random:
                 momenta = np.random.randn(number_of_control_points, dimension) / math.sqrt(number_of_control_points * dimension)
                 logger.info('>> Momenta randomly initialized.')
@@ -43,8 +43,8 @@ def initialize_momenta(initial_momenta, number_of_control_points, dimension,
                 momenta = np.zeros((number_of_control_points, dimension))
                 logger.info('>> Momenta initialized to zero.')
         else:
-            momenta = np.zeros((number_of_subjects, number_of_control_points, dimension))
-            logger.info('>> Momenta initialized to zero for %d subjects (or components).' % number_of_subjects)
+            momenta = np.zeros((n_subjects, number_of_control_points, dimension))
+            logger.info('>> Momenta initialized to zero for %d subjects (or components).' % n_subjects)
 
     return momenta
 
@@ -76,12 +76,12 @@ def initialize_modulation_matrix(initial_modulation_matrix, number_of_control_po
     return modulation_matrix
 
 
-def initialize_sources(initial_sources, number_of_subjects, number_of_sources):
+def initialize_sources(initial_sources, n_subjects, number_of_sources):
     if initial_sources is not None:
         sources = read_3D_array(initial_sources).reshape((-1, number_of_sources))
         logger.info('>> Reading initial sources from file: ' + initial_sources)
     else:
-        sources = np.zeros((number_of_subjects, number_of_sources))
+        sources = np.zeros((n_subjects, number_of_sources))
         logger.info('>> Initializing all sources to zero')
     return sources
 

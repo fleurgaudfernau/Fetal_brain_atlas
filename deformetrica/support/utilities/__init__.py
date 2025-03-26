@@ -1,7 +1,7 @@
+import re
 import torch
 import torch.multiprocessing as mp
 import numpy as np
-
 from ...core import GpuMode
 
 import logging
@@ -16,18 +16,21 @@ def reverse_if(array, condition):
 def interpolate(weight_L, weight_R, liste, index):
     return weight_L * liste[index - 1] + weight_R * liste[index]
 
+def to_same_device(*args):
+    devices = {arg.device if hasattr(arg, 'device') else 'cpu' for arg in args}
+    if len(devices) > 1:
+        return tuple(arg.cpu() if hasattr(arg, 'cpu') else arg for arg in args)
+    return args
+
 def assert_same_device(**kwargs):
     devices = {tensor.device for tensor in kwargs.values()}
     if len(devices) > 1:
         raise AssertionError(f"Tensors are on different devices:\n" +
                              "\n".join(f"- '{name}': {tensor.device}"
-                                       for name, tensor in kwargs.items()))
+                                for name, tensor in kwargs.items()))
 def detach(array):
     if isinstance(array, torch.Tensor):
-        if array.requires_grad:
-            array = array.detach().cpu().numpy()
-        else:
-            array = array.cpu().numpy()
+        array = array.detach().cpu().numpy() if array.requires_grad else array.cpu().numpy()
 
     return array
 
@@ -38,15 +41,18 @@ def get_torch_scalar_type(dtype):
 
 def get_torch_integer_type(dtype):
     """
-    Note:
-    'float32' is forced to torch LongTensors because of the following error: "RuntimeError: tensors used as indices must be long or byte tensors"
+    NB:
+    'float32' is forced to torch LongTensors because of the following error: 
+    "RuntimeError: tensors used as indices must be long or byte tensors"
     """
 
-    return {'uint8': torch.ByteTensor, 'torch.uint8': torch.ByteTensor,
+    return {
+            'uint8': torch.ByteTensor, 'torch.uint8': torch.ByteTensor,
             'int8': torch.CharTensor, 'torch.int8': torch.CharTensor,
             'float16': torch.ShortTensor, 'torch.float16': torch.ShortTensor,
             'float32': torch.LongTensor, 'torch.float32': torch.LongTensor,  # IntTensor
-            'float64': torch.LongTensor, 'torch.float64': torch.LongTensor}[dtype]
+            'float64': torch.LongTensor, 'torch.float64': torch.LongTensor
+            }[dtype]
 
 def get_torch_dtype(t):
     dtype_map = {  'float32': torch.float32, np.float32: torch.float32,
@@ -77,10 +83,7 @@ def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = N
     assert device is not None, 'given input device cannot be None !'
     
     if dtype is None:
-        if integer:
-            dtype = get_torch_integer_type("float32")
-        else:   
-            dtype = get_torch_scalar_type("float32")    
+        dtype = get_torch_integer_type("float32") if integer else get_torch_scalar_type("float32")    
     
     #dtype = get_torch_dtype(data.dtype)
     if isinstance(data, np.ndarray):
@@ -95,7 +98,7 @@ def move_data(data, device='cpu', requires_grad=None, integer = False, dtype = N
 
     assert isinstance(data, torch.Tensor), 'Expecting Torch.Tensor instance not {}'.format(type(data))
 
-    # move data to device. Note: tensor.to() does not move if data is already on target device
+    # NB tensor.to() does not move if data is already on target device
     data = data.type(dtype).to(device=device)
 
     if requires_grad is not None and requires_grad:
@@ -153,7 +156,6 @@ def get_device_from_string(device):
 
     return torch_device, device_id
 
-
 def get_best_device(gpu_mode=GpuMode.FULL):
     """
     :return:    Best device. can be: 'cpu', 'cuda:0', 'cuda:1' ...
@@ -161,25 +163,14 @@ def get_best_device(gpu_mode=GpuMode.FULL):
     assert gpu_mode is not None
     assert isinstance(gpu_mode, GpuMode)
     
-    use_cuda = False
-    if gpu_mode in [GpuMode.AUTO]:
-        # TODO this should be more clever
-        use_cuda = torch.cuda.is_available()
-    elif gpu_mode in [GpuMode.FULL]:
-        use_cuda = True
-        if not torch.cuda.is_available():
-            use_cuda = False
-    assert isinstance(use_cuda, bool)
+    use_cuda = torch.cuda.is_available() if gpu_mode in [GpuMode.AUTO, GpuMode.FULL] else False
 
     device_id = 0 if use_cuda else -1
     device = 'cuda:' + str(device_id) if use_cuda and torch.cuda.is_available() else 'cpu'
 
     if use_cuda and mp.current_process().name != 'MainProcess':
         '''
-        PoolWorker-1 will use cuda:0
-        PoolWorker-2 will use cuda:1
-        PoolWorker-3 will use cuda:2
-        etc...
+        PoolWorker-1 will use cuda:0; PoolWorker-2 will use cuda:1, etc...
         '''
         # TODO: Use GPUtil to check if GPU memory is full
         # TODO: only use CPU if mp queue is still quite full (eg > 50%), else leave work for GPU
@@ -191,8 +182,7 @@ def get_best_device(gpu_mode=GpuMode.FULL):
     return device
 
 def longitudinal_extract_from_file_name(file_name):
-    import re
-    # file_name = 's0041_7110_0.nii'
+    
     m = re.search('\As(.+?)_(.+?)_(.+?).nii', file_name)
     if m:
         assert len(m.groups()) == 3
@@ -202,7 +192,6 @@ def longitudinal_extract_from_file_name(file_name):
         return subject_id, visit_age, visit_id
     else:
         raise LookupError('could not extract id and age from ' + file_name)
-
 
 def has_hyperthreading():
     import psutil
