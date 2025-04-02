@@ -21,15 +21,14 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, template_specifications,
-                 deformation_kernel_width=default.deformation_kernel_width,
+    def __init__(self, template_specifications, deformation_kernel_width=None,
                  time_concentration=default.time_concentration, 
                  t0=default.t0, tR=[], t1 = default.tmax,
                  freeze_template=default.freeze_template,
                  initial_cp=None, initial_momenta=None,
                  freeze_rupture_time = default.freeze_rupture_time,
-                 freeze_t0 = default.freeze_rupture_time, # ajout fg
-                 num_component = 2, new_bounding_box = None, # ajout fg
+                 freeze_t0 = default.freeze_rupture_time, 
+                 num_component = 2, bounding_box = None, # ajout fg
                  **kwargs):
 
         AbstractStatisticalModel.__init__(self, name='GeodesicRegression')
@@ -63,8 +62,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
 
         # Make the template bouding box wider in order to array dim x 2 (max and min)
         # Control points and Momenta.
-        self.cp = initialize_cp(initial_cp, self.template, 
-                                                deformation_kernel_width, new_bounding_box = new_bounding_box)
+        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width, bounding_box)
 
         self.fixed_effects['momenta']= initialize_momenta(
             initial_momenta, len(self.cp), self.dimension, n_subjects = self.nb_components)

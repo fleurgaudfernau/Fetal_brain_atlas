@@ -96,8 +96,7 @@ class Multiscale():
         """
             Check if the optimization is allowed to end
         """
-        cond = True        
-        cond = self.momenta.convergence(iteration, cond)
+        cond = self.momenta.convergence(iteration, True)
         cond = self.objects.convergence(iteration, cond)
             
         return cond
@@ -106,22 +105,19 @@ class Multiscale():
     ### GRADIENT TOOLS
     ####################################################################################################################
     def momenta_keys(self, gradient, steps):
-        if "haar_coef_momenta" in gradient.keys() and "haar_coef_momenta" in steps.keys():
-            return ["haar_coef_momenta"]
-        elif "momenta" in gradient.keys() and "momenta" in steps.keys():
-            return ["momenta"]
-        
+        for k in ["haar_coef_momenta", "momenta"]:
+            if k in gradient and k in steps.keys():
+                return [k]
         return []
     
     def template_keys(self, gradient, steps):
-        if "image_intensities" in gradient.keys():
-            return ["image_intensities"]
-        elif "landmark_points" in gradient.keys():
-            return ["landmark_points"]
+        for k in ["image_intensities", "landmark_points"]:
+            if k in gradient:
+                return [k]
         return []
 
     def space_shift_keys(self, gradient):
-        if "sources" in gradient.keys() and "modulation_matrix" in gradient.keys():
+        if "sources" in gradient and "modulation_matrix" in gradient:
             return ["sources", "modulation_matrix"]
         
         return []
@@ -133,6 +129,7 @@ class Multiscale():
     def compute_gradients(self, gradient):
         # Compute an additional gradient: the WT of the momenta gradient
         gradient = self.momenta.compute_haar_gradient(gradient)
+        gradient = self.momenta.smooth_gradient(gradient)
         
         # Store gradient norms
         if not self.gradient_norms:
@@ -168,7 +165,7 @@ class Multiscale():
         new_parameters = copy.deepcopy(parameters)
 
         # Multiscale gradient ascent
-        if self.momenta.ctf_is_happening():
+        if self.momenta.multiscale_wavelet:
             # Update other parameters
             new_parameters = self.regular_gradient_ascent(new_parameters, gradient, step, \
                                                         exclude = ["momenta", "haar_coef_momenta"])
@@ -200,12 +197,11 @@ class Multiscale():
         return 1 / gradient_norm
 
     def initialize_momenta_step(self, steps, gradient, optimizer, iteration):
-        if self.momenta.ctf_is_happening(): #gradient[haar_coef_momenta] = [[haar_d1, haar_d2, haar_d3] for each subj]
+        if self.momenta.multiscale_wavelet: #gradient[haar_coef_momenta] = [[haar_d1, haar_d2, haar_d3] for each subj]
             
             gradient_norm = self.compute_gradient_norm(gradient, "haar_coef_momenta")
                         
-            if iteration > 1 and steps["haar_coef_momenta"] < 0.1 / gradient_norm\
-                and steps["haar_coef_momenta"] > 0.01 / gradient_norm:
+            if iteration > 1 and 0.01 / gradient_norm < steps["haar_coef_momenta"] < 0.1 / gradient_norm:
                 logger.info("No need to reinitialize ")
                 return steps
 
@@ -260,15 +256,13 @@ class Multiscale():
         """
         if self.objects.multiscale:
             for key in self.momenta_keys(gradient, steps):#self.momenta_keys(gradient, steps):
-                print("Step", steps[key])
-                print("1/gradient", 1 / self.gradient_norms[key][-1])
 
                 while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
                     steps = self.reduce_step(steps, key, factor=0.5)
 
-                if self.n_subjects == 1:
-                    while steps[key] > 1 / self.gradient_norms[key][-1]: # before 0.01
-                        steps = self.reduce_step(steps, key)
+                # if self.n_subjects == 1:
+                #     while steps[key] > 1 / self.gradient_norms[key][-1]: # before 0.01
+                #         steps = self.reduce_step(steps, key)
 
                 # severe threshold for brains in atlas and regression (important)
                 if self.objects.scale > 1 and len(self.template_keys(gradient, steps)) > 0: # IMPORTANT in Deterministic atlas for .nii
@@ -280,6 +274,7 @@ class Multiscale():
             for key in self.momenta_keys(gradient, steps):
                 while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
                     steps = self.reduce_step(steps, key, factor=0.5)
+
                 # Registration and Regression
                 # good for the brains
                 # if self.n_subjects == 1 and steps[key] > 0.01 / self.gradient_norms[key][-1]: # before 1
@@ -303,7 +298,7 @@ class Multiscale():
             
             for key in self.template_keys(gradient, steps):
                 if steps[key] > 1e2 / self.gradient_norms[key][-1] \
-                    or steps[key] < 1e-3 / self.gradient_norms[key][-1]: #modif before 1
+                    or steps[key] < 1e-3 / self.gradient_norms[key][-1]:
                         optimizer.step[key] = self.reinitialize_step_size(gradient, key)
 
         # useful in RG with brains
@@ -313,7 +308,7 @@ class Multiscale():
                 if 'Atlas' not in self.name:
                     optimizer.step["image_intensities"] = self.reinitialize_step_size(gradient, key = "image_intensities")
             
-            elif "Regression" in self.name: #when template frozen in regression
+            elif "Regression" in self.name and "Kernel" not in self.name: #when template frozen in regression
                 optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
             else:
                 optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
@@ -358,8 +353,8 @@ class Multiscale():
 ####################################################################################################################
 
 class DualMultiscale():
-    def __init__(self, model, momenta, objects, multiscale_strategy, ctf_interval, 
-                ctf_max_interval):
+    def __init__(self, model, momenta, objects, multiscale_strategy, ctf_interval, ctf_max_interval):
+
         self.model = model
         self.name = model.name
 

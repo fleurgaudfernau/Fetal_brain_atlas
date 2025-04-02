@@ -77,7 +77,7 @@ def perform_ICA(output_dir, cp = None, global_kernel_width = None, momenta = Non
 
 
 def plot_ica(path_to_sources, path_to_mm, template_specifications, dataset_specifications,
-            deformation_kernel_width=default.deformation_kernel_width,
+            deformation_kernel_width=None,
             initial_cp=default.initial_cp,initial_momenta_tR=default.initial_momenta, 
             tmin=default.tmin, tmax=default.tmax, time_concentration=default.time_concentration,
             t0=default.t0, nb_components = 4, tR = [], n_time_points=default.n_time_points,

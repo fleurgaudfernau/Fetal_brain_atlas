@@ -35,22 +35,23 @@ class DeformableTemplate(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications, n_subjects,
-                 deformation_kernel_width=default.deformation_kernel_width,
+                 deformation_kernel_width=None,
 
                  n_time_points=default.n_time_points,
 
                  initial_cp=None, initial_momenta=None,
-                 freeze_momenta=default.freeze_momenta,
-                 freeze_template=default.freeze_template,
+                 freeze_momenta = default.freeze_momenta,
+                 freeze_template = default.freeze_template,
 
                  kernel_regression = False,
                  visit_ages = None, time = None,
+                 bounding_box = None,
 
                  **kwargs):
 
-        AbstractStatisticalModel.__init__(self, name='DeformableTemplate')
+        name='DeformableTemplate' if not kernel_regression else "KernelRegression"
+        AbstractStatisticalModel.__init__(self, name)
         
-        # Global-like attributes.
         # Declare model structure.
         self.fixed_effects['template_data'] = None
         self.fixed_effects['momenta'] = None
@@ -78,7 +79,7 @@ class DeformableTemplate(AbstractStatisticalModel):
         self.points = self.get_points() # image_intensities or landmark_points
 
         # Control points.
-        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width)
+        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width, bounding_box)
         cp = move_data(self.cp, device=self.device)                
         self.exponential.set_initial_cp(cp)
 
@@ -92,9 +93,8 @@ class DeformableTemplate(AbstractStatisticalModel):
         self.visit_ages = visit_ages
 
         if self.kernel_regression:
-            self.weights = [gaussian_kernel(self.time, age_s[0]) for age_s in self.visit_ages]
-            self.total_weights = np.sum([gaussian_kernel(self.time, age_s[0]) for age_s in self.visit_ages])
-            logger.info("Weights: {}".format([gaussian_kernel(self.time, age_s[0]) for age_s in self.visit_ages]))
+            self.weights = [round(gaussian_kernel(self.time, age_s[0]),2) for age_s in self.visit_ages]
+            self.total_weights = np.sum(self.weights)
 
         self.current_residuals = None
 
@@ -172,10 +172,8 @@ class DeformableTemplate(AbstractStatisticalModel):
 
     def setup_multiprocess_pool(self, dataset):
         self._setup_multiprocess_pool(initargs=([target[0] for target in dataset.objects],
-                                                self.attachment,
-                                                self.objects_noise_variance,
-                                                self.freeze_template, 
-                                                self.freeze_momenta, 
+                                                self.attachment, self.objects_noise_variance,
+                                                self.freeze_template, self.freeze_momenta, 
                                                 self.exponential))
 
     # Compute the functional. Numpy input/outputs.
@@ -412,12 +410,18 @@ class DeformableTemplate(AbstractStatisticalModel):
     ####################################################################################################################
 
     def write(self, dataset, individual_RER, output_dir, current_iteration, write_residuals=True, write_all = True):
+        from time import perf_counter
+        t1 = perf_counter()
         # Write the model predictions, and compute the residuals at the same time.
         self._write_model_predictions(dataset, individual_RER, output_dir, current_iteration,
-                                    compute_residuals=write_residuals)
+                                        compute_residuals=write_residuals)
 
         # Write the model parameters.
+        t2 = perf_counter()
         self._write_model_parameters(output_dir, str(current_iteration))
+        t3 = perf_counter()
+        logger.info("Time for writing: {} s (Predictions: {} s, Parameters: {} s)"\
+                    .format(int(t3-t1), int(t2-t1), int(t3-t2)))
 
     def _write_model_predictions(self, dataset, individual_RER, output_dir, current_iteration, 
                                  compute_residuals=True):
@@ -430,17 +434,18 @@ class DeformableTemplate(AbstractStatisticalModel):
         for i, subject_id in enumerate(dataset.ids):
             self.exponential.set_initial_momenta(momenta[i])
             self.exponential.update()
-            
-            
             deformed_points = self.exponential.get_template_points()
             deformed_data = self.template.get_deformed_data(deformed_points, template_data)
 
-            it = current_iteration if i == 0 else ""
             names = [ reconstruction_name(self.name, subject_id, age = self.visit_ages[i][0])\
-                    if self.kernel_regression\
-                    else reconstruction_name(self.name, subject_id, iteration = it) ]
-
+                    if self.kernel_regression else reconstruction_name(self.name, subject_id) ]       
             self.template.write(output_dir, names, deformed_data)
+
+            it = current_iteration if i == 0 else ""
+            names = [reconstruction_name(self.name, subject_id, age = self.visit_ages[i][0], 
+                    iteration = it) if self.kernel_regression else\
+                    reconstruction_name(self.name, subject_id, iteration = it)]
+            self.template.write_png(output_dir, names, deformed_data)
             
         return []
 
@@ -452,19 +457,21 @@ class DeformableTemplate(AbstractStatisticalModel):
             self.template_path = op.join(output_dir, template_name(self.name))
 
     def _write_model_parameters(self, output_dir, current_iteration):
+        time = self.time if self.kernel_regression else ""
+        template_names = [template_name(self.name, time = time, 
+                        iteration = current_iteration if not self.freeze_template else "", 
+                        freeze_template = self.freeze_template)]
 
-        template_names = None
-        if self.kernel_regression:
-            template_names = [template_name(self.name, self.time) ]
-        else:
-            template_names = [template_name(self.name) ]
-            self.template.write(output_dir, template_names)
+        self.template.write(output_dir, template_names)
+        self.template.write_png(output_dir, template_names)
         
         # Momenta and cp.
         write_cp(self.cp, output_dir, self.name)
         write_momenta(self.get_momenta(), output_dir, self.name)
         
-        concatenate_for_paraview(self.get_momenta(), self.cp, output_dir, self.name, current_iteration)
+        # Write only the first subject 
+        momenta = self.get_momenta()[0,:,:]
+        concatenate_for_paraview(momenta, self.cp, output_dir, self.name, current_iteration)
     
     
     

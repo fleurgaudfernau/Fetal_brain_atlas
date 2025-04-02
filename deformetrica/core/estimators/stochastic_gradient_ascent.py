@@ -31,9 +31,6 @@ class StochasticGradientAscent(AbstractEstimator):
                  max_iterations=default.max_iterations, convergence_tolerance=default.convergence_tolerance,
                  print_every_n_iters=default.print_every_n_iters, save_every_n_iters=default.save_every_n_iters,
                  initial_step_size=default.initial_step_size,
-                 max_line_search_iterations=default.max_line_search_iterations,
-                 line_search_shrink=default.line_search_shrink,
-                 line_search_expand=default.line_search_expand,
                  output_dir=default.output_dir, callback=None,
                  load_state_file=default.load_state_file, state_file=default.state_file,
                  last_residuals = None, initial_residuals = None, #ajouts fg
@@ -60,11 +57,11 @@ class StochasticGradientAscent(AbstractEstimator):
         self.current_log_likelihood = None
 
         self.step = None
-        self.line_search_shrink = line_search_shrink
-        self.line_search_expand = line_search_expand
+        self.line_search_shrink = 0.5
+        self.line_search_expand = 1.5
 
         self.initial_step_size = initial_step_size
-        self.max_line_search_iterations = max_line_search_iterations
+        self.max_line_search_iterations = 10
         self.current_iteration = 0
 
         # Stochastic gradient

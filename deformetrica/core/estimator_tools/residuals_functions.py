@@ -43,7 +43,7 @@ class Residuals():
         self.id = dataset.ids if "Regression" not in self.name else [n for n in range(self.n_obs)]
 
         # Residuals computation
-        if self.name == "DeformableTemplate":
+        if self.name in ["DeformableTemplate", "KernelRegression"]:
             self.compute_model_residuals = self.compute_atlas_residuals
         elif self.name == "BayesianAtlas":
             self.compute_model_residuals = self.compute_bayesian_atlas_residuals
@@ -53,7 +53,7 @@ class Residuals():
         # Piecewise
         self.n_components = 1
 
-        if "Regression" in self.name and len(model.get_momenta().shape) > 2:
+        if "Piecewise" in self.name:
             self.n_components = model.get_momenta().shape[0]
         
         self.components = [str(c) for c in range(self.n_components)]  
@@ -139,7 +139,10 @@ class Residuals():
     
     def percentage_residuals_diminution(self):
         return ratio(self.get_values("Residuals_average")[-1],  self.get_values("Residuals_average")[0])
-            
+    
+    def last_residuals_diminution(self):
+        return ratio(self.get_values("Residuals_average")[-1], self.get_values("Residuals_average")[-2])
+
     def to_plot(self, k):
         return self.plot[k]["condition"]
     
@@ -311,14 +314,8 @@ class Residuals():
         self.compute_attachement_residuals(dataset, current_iteration, individual_RER)
         
         if self.print_every_n_iters and not (current_iteration % self.print_every_n_iters):
-            # try:
-            #     logger.info("Last average residuals {}".format(self.get_values("Residuals_average")[-3:]))
-            # except:
-            #     logger.info("Avg_residuals {}".format(self.get_values("Residuals_average")))
-
             if len(self.get_values("Residuals_average")) > 1: 
-                logger.info("\nResiduals diminution: {}".format(ratio(self.get_values("Residuals_average")[-1], 
-                                                                    self.get_values("Residuals_average")[-2])))
+                logger.info("\nResiduals diminution: {} (%)".format(self.last_residuals_diminution() ))
                         
     ####################################################################################################################
     ### Plot tools
@@ -389,7 +386,7 @@ class Residuals():
 
         to_write = [["\nTotal residuals left: {}".format(self.get_values("Residuals_average")[-1])],
                     ["Total initial residuals:", self.get_values("Residuals_average")[0]],
-                    ["'%' residuals diminution:{}".format(self.percentage_residuals_diminution())]]
+                    ["Residuals diminution: {} (%)".format(self.percentage_residuals_diminution())]]
                 
         # save distances and curvatures
         to_write.append(["\n******** Template ********"])
@@ -398,10 +395,10 @@ class Residuals():
         to_write.append(["\n******** Observations ********"])
         for i in range(self.n_obs):
             if self.ages:
-                to_write.append(["\n---Observation: {} age {}---".format(i, self.ages[i])])
+                to_write.append(["\n>> Observation: {} age {}---".format(i, self.ages[i])])
             else:
-                to_write.append(["\n---Observation: {}".format(i)])
-            to_write.append(["'%' residuals diminution:{}"\
+                to_write.append(["\n>> Observation: {}".format(i)])
+            to_write.append(["Residuals diminution (%):{}"\
                         .format(ratio(self.get_values('Residuals_subjects')[i][-1], 
                                 self.get_values('Residuals_subjects')[i][0]))])
             

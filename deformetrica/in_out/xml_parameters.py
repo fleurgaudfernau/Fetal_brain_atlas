@@ -9,118 +9,64 @@ from ..support import utilities
 
 logger = logging.getLogger(__name__)
 
-def floatif(tag, value, variable, level):
-    if tag == value:
-        variable = float(level.text)
-
-    return variable
-
 def get_dataset_specifications(xml_parameters):
 
-    specifications = {}
-    specifications['visit_ages'] = xml_parameters.visit_ages
-    specifications['filenames'] = xml_parameters.dataset_filenames
-    specifications['ids'] = xml_parameters.ids
-    specifications['interpolation'] = xml_parameters.interpolation
-    specifications['kernel_width'] = xml_parameters.template_specifications["Object_1"]["kernel_width"]
-    specifications['n_subjects'] = len(xml_parameters.ids)
-    n_observations = sum(len(visit) for subject in xml_parameters.dataset_filenames for visit in subject)
-    specifications['n_observations'] = n_observations
-
-    specifications['n_objects'] = len(xml_parameters.template_specifications) 
+    specifications = { k : getattr(xml_parameters, k) for k in [
+                                    "ids", "visit_ages", "filenames", "interpolation"] }
+    specifications.update({ 
+    'kernel_width': xml_parameters.template_specifications["Object_1"]["kernel_width"],
+    'noise_std': xml_parameters.template_specifications["Object_1"]["noise_std"],
+    'n_subjects': len(xml_parameters.ids),
+    'n_observations': sum(len(visit) for subject in xml_parameters.filenames for visit in subject),
+    'n_objects': len(xml_parameters.template_specifications) })
 
     return specifications
 
 def get_estimator_options(xml_parameters):
-    options = {}
 
-    optimization_method = xml_parameters.optimization_method.lower()
-
-    if optimization_method in ['GradientAscent'.lower(), 'StochasticGradientAscent'.lower()]:
-        options['initial_step_size'] = xml_parameters.initial_step_size
-        options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
-        options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
-
-    elif optimization_method == 'ScipyLBFGS'.lower():
-        options['freeze_template'] = xml_parameters.freeze_template
-        options['max_line_search_iterations'] = xml_parameters.max_line_search_iterations
-        options['optimized_log_likelihood'] = xml_parameters.optimized_log_likelihood
-
-    # common options
-    options['optimization_method'] = optimization_method
-    options['max_iterations'] = xml_parameters.max_iterations
-    options['convergence_tolerance'] = xml_parameters.convergence_tolerance
-    options['print_every_n_iters'] = xml_parameters.print_every_n_iters
-    options['save_every_n_iters'] = xml_parameters.save_every_n_iters
-    options['state_file'] = xml_parameters.state_file
-    options['load_state_file'] = xml_parameters.load_state_file
-
-    # Multiscale options
-    options['multiscale_momenta'] = xml_parameters.multiscale_momenta 
-    options['multiscale_objects'] = xml_parameters.multiscale_objects
-    options['multiscale_strategy'] =  xml_parameters.multiscale_strategy 
-
-    return options
+    xml_params_keys = [ 'optimization_method', "optimized_log_likelihood",
+                        'initial_step_size', 'max_iterations', 
+                        'convergence_tolerance', 'print_every_n_iters', 'save_every_n_iters', 
+                        'multiscale_momenta', 'multiscale_objects', "multiscale_strategy",
+                        "state_file", "load_state_file" ]
+    
+    return {k : getattr(xml_parameters, k) for k in xml_params_keys }
 
 def get_model_options(xml_parameters):
-    options = {'deformation_kernel_width': xml_parameters.deformation_kernel_width,
-                'n_time_points': xml_parameters.n_time_points,
-                'time_concentration': xml_parameters.time_concentration,
-                'freeze_template': xml_parameters.freeze_template,
-                'freeze_momenta': xml_parameters.freeze_momenta,
-                'freeze_noise_variance': xml_parameters.freeze_noise_variance,
-                'initial_cp': xml_parameters.initial_cp,
-                'initial_momenta': xml_parameters.initial_momenta,
-                'downsampling_factor': xml_parameters.downsampling_factor,
-                'perform_shooting': xml_parameters.perform_shooting,
-                'interpolation': xml_parameters.interpolation }
+
+    keys = [ 'deformation_kernel_width', 'n_time_points', 'time_concentration',
+            'freeze_template', 'freeze_momenta', 'freeze_noise_variance',
+            'initial_cp', 'initial_momenta', 'downsampling_factor',
+            'interpolation', 'perform_shooting', "kernel_regression",
+            "momenta_proposal_std", "sources_proposal_std", 
+            "freeze_reference_time", "freeze_rupture_time", "freeze_noise_variance",
+            't0', 't1', 'tmin', 'tmax',
+            'tR', "num_component", 'number_of_sources']
+
+    options = {k : getattr(xml_parameters, k) for k in keys }
+
+    options.update({"kernel_regression" : False})
 
     model_type = xml_parameters.model_type.lower()
 
     model_specific_options = {
-        'bayesiangeodesicregression': {
-            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax,
-            'tR': xml_parameters.tR,
-            'number_of_sources': xml_parameters.number_of_sources,
-            'initial_modulation_matrix': xml_parameters.initial_modulation_matrix,
-            'initial_sources': xml_parameters.initial_sources,
-            'freeze_modulation_matrix': xml_parameters.freeze_modulation_matrix,
-            'freeze_reference_time': xml_parameters.freeze_reference_time,
-            'freeze_rupture_time': xml_parameters.freeze_rupture_time },
+        'bayesiangeodesicregression': { k : getattr(xml_parameters, k) for k in [
+                                        'number_of_sources', 'initial_modulation_matrix',
+                                        'initial_sources', 'freeze_modulation_matrix',
+                                        'freeze_reference_time', 'freeze_rupture_time'] },
 
-        'regression': {
-            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax },
+        'piecewiseregression': { k : getattr(xml_parameters, k) \
+                            for k in ["freeze_reference_time", "freeze_rupture_time"] },
 
-        'kernelregression': {
-            't0': xml_parameters.t0, 'tmin': xml_parameters.tmin, 'tmax': xml_parameters.tmax },
+        'paralleltransport': { k : getattr(xml_parameters, k) for k in [
+                                        'start_time',
+                                        'initial_momenta_to_transport',
+                                        'initial_cp_to_transport'] },
 
-        'piecewiseregression': {
-            'num_component': xml_parameters.num_component,
-            't0': xml_parameters.t0, 'tR': xml_parameters.tR, 't1': xml_parameters.t1,
-            'freeze_reference_time': xml_parameters.freeze_reference_time,
-            'freeze_rupture_time': xml_parameters.freeze_rupture_time },
-
-        'paralleltransport': {
-            't0': xml_parameters.t0, 't1': xml_parameters.t1,
-            'start_time': xml_parameters.t1,
-            'tmin': xml_parameters.tmin,
-            'tmax': xml_parameters.tmax,
-            'initial_momenta_to_transport': xml_parameters.initial_momenta_to_transport,
-            'initial_cp_to_transport': xml_parameters.initial_cp_to_transport,
-            'perform_shooting': xml_parameters.perform_shooting },
-
-        'piecewiseparalleltransport': {
-            'num_component': xml_parameters.num_component,
-            't0': xml_parameters.t0,
-            'tR': xml_parameters.tR,
-            't1': xml_parameters.t1,
-            'start_time': xml_parameters.t1,
-            'tmin': xml_parameters.tmin,
-            'tmax': xml_parameters.tmax,
-            'initial_momenta_to_transport': xml_parameters.initial_momenta_to_transport,
-            'initial_cp_to_transport': xml_parameters.initial_cp_to_transport,
-            'perform_shooting': xml_parameters.perform_shooting } }
-
+        'piecewiseparalleltransport': { k : getattr(xml_parameters, k) for k in [
+                                        'start_time',
+                                        'initial_momenta_to_transport',
+                                        'initial_cp_to_transport'] } }
     if model_type in model_specific_options:
         options.update(model_specific_options[model_type])
 
@@ -139,28 +85,30 @@ class XmlParameters:
 
     def __init__(self):
         self.model_type = default.model_type
-        self.template_specifications = {}
-        self.deformation_kernel_width = 0
+        self.deformation_kernel_width = None
+
         self.n_time_points = default.n_time_points
         self.time_concentration = default.time_concentration
         self.number_of_sources = default.number_of_sources
+        self.num_component = None
+
         self.t0 = None
-        self.tR = [] # ajout fg
+        self.tR = [] 
         self.t1 = None 
-        self.start_time = None 
-        self.num_component = None # ajout fg
         self.tmin = default.tmin
         self.tmax = default.tmax
-        self.covariance_momenta_prior_norm_dof = default.covariance_momenta_prior_norm_dof
-
-        self.dataset_filenames = []
+        self.start_time = None 
+        
+        self.template_specifications = {}
+        self.filenames = []
         self.visit_ages = []
         self.ids = []
+
+        self.kernel_regression = False
 
         self.optimization_method = default.optimization_method
         self.optimized_log_likelihood = default.optimized_log_likelihood
         self.max_iterations = default.max_iterations
-        self.max_line_search_iterations = default.max_line_search_iterations
         self.save_every_n_iters = default.save_every_n_iters
         self.print_every_n_iters = default.print_every_n_iters
         self.smoothing_kernel_width = default.smoothing_kernel_width
@@ -173,148 +121,116 @@ class XmlParameters:
         self.load_state_file = False
 
         self.freeze_template = default.freeze_template
-        self.multiscale_momenta = default.multiscale_momenta 
-        self.multiscale_objects = default.multiscale_objects 
-        self.multiscale_strategy = default.multiscale_strategy 
+        self.multiscale_momenta = False 
+        self.multiscale_objects = False 
+        self.multiscale_strategy = "stairs" 
         self.perform_shooting = default.perform_shooting 
         self.freeze_momenta = default.freeze_momenta
-        self.freeze_modulation_matrix = default.freeze_modulation_matrix
+        self.freeze_modulation_matrix = False
         self.freeze_reference_time = default.freeze_reference_time
         self.freeze_rupture_time = default.freeze_rupture_time
         self.freeze_noise_variance = default.freeze_noise_variance
 
         self.initial_cp = default.initial_cp
+        self.initial_cp_to_transport = default.initial_cp_to_transport
         self.initial_momenta = default.initial_momenta
         self.initial_momenta_to_transport = None
+
         self.initial_modulation_matrix = default.initial_modulation_matrix
         self.initial_sources = default.initial_sources
         self.initial_sources_mean = default.initial_sources_mean
         self.initial_sources_std = default.initial_sources_std
 
-        self.initial_cp_to_transport = default.initial_cp_to_transport
-
         self.momenta_proposal_std = default.momenta_proposal_std
         self.sources_proposal_std = default.sources_proposal_std
+        self.covariance_momenta_prior_norm_dof = default.covariance_momenta_prior_norm_dof
 
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
 
-    def read_all_xmls(self, model_xml_path, dataset_xml_path, parameters_xml_path):
-        self._read_model_xml(model_xml_path)
-        self._read_dataset_xml(dataset_xml_path)
-        self._read_parameters_xml(parameters_xml_path)
+    def read_all_xmls(self, args):
+        try:
+            self.directory = op.dirname(args.dataset)
+        except:
+            self.directory = None
+
+        self._read_dataset_xml(args.dataset)
+        self._read_args(args)
+        self._set_output(args)
 
     ####################################################################################################################
     ### Private methods:
     ####################################################################################################################
-
-    # Read the parameters from the model xml.
-    def _read_model_xml(self, model_xml_path):
-        root = et.parse(model_xml_path).getroot()
-        directory = op.dirname(model_xml_path)
-
-        for model in root:
-            model_tag, text = model.tag.lower(), model.text
-
-            if model_tag == 'model-type':
-                self.model_type = model.text.lower()
-
-            elif model_tag == 'num-component':
-                self.num_component = int(model.text)
-
-            elif model_tag == 'initial-control-points':
-                self.initial_cp = op.join(directory, text)
-
-            elif model_tag == 'initial-momenta':
-                self.initial_momenta = op.join(directory, text)
-
-            elif model_tag == 'initial-modulation-matrix':
-                self.initial_modulation_matrix = op.join(directory, text)
-
-            elif model_tag == 'initial-sources':
-                self.initial_sources = op.join(directory, text)
-
-            elif model_tag == 'initial-sources-mean':
-                self.initial_sources_mean = model.text
-
-            elif model_tag == 'initial-sources-std':
-                self.initial_sources_std = model.text
-
-            elif model_tag == 'initial-momenta-to-transport':
-                self.initial_momenta_to_transport = op.join(directory, text)
-
-            elif model_tag == 'initial-control-points-to-transport':
-                self.initial_cp_to_transport = op.join(directory, text)
-
-            elif model_tag == 'template':
-                n_objects = 0
-                for properties in model:
-
-                    tag, text = properties.tag.lower(), properties.text
-
-                    if tag == 'filename':
-                        n_objects += 1
-                        template_object = self._initialize_template_object_xml_parameters()
-                        template_object['filename'] = op.join(directory, text)
-                    elif tag == 'attachment-type':
-                        template_object['attachment_type'] = text.lower()
-                    elif tag == 'kernel-width':
-                        template_object['kernel_width'] = float(text)
-                    elif tag == 'noise-std':
-                        template_object['noise_std'] = round(float(text) ** 2, 5)
-                    elif tag == 'noise-variance-prior-scale-std':
-                        template_object['noise_variance_prior_scale_std'] = float(text)
-                    elif tag == 'noise-variance-prior-normalized-dof':
-                        template_object['noise_variance_prior_normalized_dof'] = float(text)
-                    else:
-                        warnings.warn('Unknown entry while parsing model xml:{}'.format(tag))
-
-                self.template_specifications["Object_{}".format(n_objects)] = template_object
-
-            elif model_tag == 'deformation-parameters':
-                for deformation in model:
-                    tag = deformation.tag.lower()
-                    # self.deformation_kernel_width = floatif(tag, 'kernel-width', 
-                    #                         self.deformation_kernel_width, deformation)
-                    if tag == 'kernel-width':
-                        self.deformation_kernel_width = float(deformation.text)
-                    elif tag == 'number-of-timepoints':
-                        self.n_time_points = int(deformation.text)
-                    elif tag == 'concentration-of-timepoints':
-                        self.time_concentration = int(deformation.text)
-                    elif tag == 'number-of-sources':
-                        self.number_of_sources = int(deformation.text)
-                    elif tag == 't0':
-                        self.t0 = float(deformation.text)
-                    elif tag == 'tr':
-                        self.tR.append(float(deformation.text))
-                    elif tag == 't1':
-                        self.t1 = float(deformation.text) 
-                    elif tag == 'perform-shooting': 
-                        self.perform_shooting = self._on_off_to_bool(deformation.text)
-                    elif tag == 'tmin':
-                        self.tmin = float(deformation.text)
-                    elif tag == 'tmax':
-                        self.tmax = float(deformation.text)
-                    elif tag == 'covariance-momenta-prior-normalized-dof':
-                        self.covariance_momenta_prior_norm_dof = float(deformation.text)
-                    else:
-                        msg = 'Unknown entry while parsing the deformation-parameters section of the model xml: {}'.format(deformation.tag)
-                        warnings.warn(msg)
+    def _set_output(self, args):
+        self.output_dir = None
+        try:
+            if args.output is None:
+                if args.command == 'initialize':
+                    self.output_dir = dfca.default.preprocessing_dir
+                else:
+                    self.output_dir = "Output_k{}".format(args.deformation_kernel_width)
+                    self.output_dir += "_noise_{}".format(args.noise_std) if args.noise_std else ""
+                    self.output_dir += "_t0_{}".format(args.t0) if args.t0 else ""
+                    self.output_dir += "_comp_{}".format(args.num_component) if args.num_component else ""
+                    self.output_dir += "_ctf_momenta" if args.multiscale_momenta else ""
+                    self.output_dir += "_ctf_objects" if args.multiscale_objects else ""
             else:
-                msg = 'Unknown entry while parsing root of the model xml: {}'.format(model.tag)
-                warnings.warn(msg)
+                self.output_dir = args.output
+                
+            os.makedirs(self.output_dir)
+        except FileExistsError:
+            pass
 
-    # Read the parameters from the dataset xml.
-    
+    def _read_args(self, args):
+        """
+            Read arguments provided by user
+        """
+        for arg_name in ["deformation_kernel_width", "initial_step_size", 
+                        't0', 't1', 'tmin', 'tmax', "tR",
+                        "num_component", "time_concentration", "number_of_sources",
+                        'save_every_n_iters', 'max_iterations', 'downsampling_factor', 
+                        'convergence_tolerance',
+                        
+                        "initial_control_points", "initial_momenta",
+                        "initial_control_points_to_transport", "initial_momenta_to_transport",
+                        "initial_sources", "initial_modulation_matrix"]:
+            
+            if getattr(args, arg_name):
+                setattr(self, arg_name, getattr(args, arg_name))
+
+        for arg_name in ["model_type", "interpolation", 'attachment_type']:
+            if getattr(args, arg_name):
+                setattr(self, arg_name, str(getattr(args, arg_name).lower()))
+
+        for arg_name in ["multiscale_momenta", "multiscale_objects", "freeze_template"]:
+            if getattr(args, arg_name):
+                setattr(self, arg_name, True)
+        
+        template_object = self._initialize_template_object_xml_parameters()
+        
+        if args.template:
+            template_object['filename'] = op.join(self.directory, args.template)
+
+        if args.attachment_type:
+            template_object['attachment_type'] = args.attachment_type.lower()
+
+        if args.attachment_kernel:
+            template_object['kernel_width'] = args.attachment_kernel
+        else:
+            template_object['kernel_width'] = self.deformation_kernel_width
+
+        if args.noise_std:
+            template_object['noise_std'] = round(float(args.noise_std) ** 2, 5)
+        
+        self.template_specifications["Object_1"] = template_object
+
     def _read_dataset_xml(self, dataset_xml_path):
-        if dataset_xml_path is not None and dataset_xml_path != 'None':
+        if dataset_xml_path not in [None, 'None']:
 
             root = et.parse(dataset_xml_path).getroot()
-            xml_dirname = op.dirname(dataset_xml_path)
 
-            self.dataset_filenames = [[] for _ in range(len(root))]
+            self.filenames = [[] for _ in range(len(root))]
             self.visit_ages = [[] for _ in range(len(root))]
             self.ids = []
 
@@ -323,7 +239,7 @@ class XmlParameters:
                     
                     self.ids.append(subject.attrib['id'])
                     
-                    self.dataset_filenames[i] = [ { f"Object_{k}": op.join(xml_dirname, obj.text)
+                    self.filenames[i] = [ { f"Object_{k}": op.join(self.directory, obj.text)
                                                     for k, obj in enumerate(visit) \
                                                     if obj.tag.lower() == 'filename'} \
                                                     for visit in subject if visit.tag.lower() == 'visit' ]
@@ -332,67 +248,10 @@ class XmlParameters:
                                             if visit.tag.lower() == 'visit'
                                             for obj in visit if obj.tag.lower() == 'age' ]
 
-    # Read the parameters from the optimization_parameters xml.
-    def _read_parameters_xml(self, parameters_xml_path):
-        if parameters_xml_path is not None and parameters_xml_path != 'None':
-            
-            root = et.parse(parameters_xml_path).getroot()
-
-            for level1 in root:
-                tag = level1.tag.lower()
-                if tag == 'optimization-method-type':
-                    self.optimization_method = level1.text.lower()
-                elif tag == 'optimized-log-likelihood':
-                    self.optimized_log_likelihood = level1.text.lower()
-                elif tag == 'max-iterations':
-                    self.max_iterations = int(level1.text)
-                elif tag == 'convergence-tolerance':
-                    self.convergence_tolerance = float(level1.text)
-                elif tag == 'downsampling-factor':
-                    self.downsampling_factor = int(level1.text)
-                elif tag == 'interpolation':
-                    self.interpolation = str(level1.text)
-                elif tag == 'save-every-n-iters':
-                    self.save_every_n_iters = int(level1.text)
-                elif tag == 'print-every-n-iters':
-                    self.print_every_n_iters = int(level1.text)
-                elif tag == 'initial-step-size':
-                    self.initial_step_size = float(level1.text)
-                elif tag == 'freeze-template':
-                    self.freeze_template = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-momenta': 
-                    self.multiscale_momenta = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-images': 
-                    self.multiscale_objects = self._on_off_to_bool(level1.text)
-                elif tag == 'multiscale-strategy': 
-                    self.multiscale_strategy = str(level1.text)
-                elif tag == 'max-line-search-iterations':
-                    self.max_line_search_iterations = int(level1.text)
-                elif tag == 'state-file':
-                    self.state_file = op.join(op.dirname(parameters_xml_path), level1.text)
-                elif tag == 'momenta-proposal-std':
-                    self.momenta_proposal_std = float(level1.text)
-                elif tag == 'sources-proposal-std':
-                    self.sources_proposal_std = float(level1.text)
-                elif tag == 'initialization-heuristic':
-                    self.initialization_heuristic = self._on_off_to_bool(level1.text)
-                elif tag == 'freeze-modulation-matrix':
-                    self.freeze_modulation_matrix = self._on_off_to_bool(level1.text)
-                elif tag == 'freeze-reference-time':
-                    self.freeze_reference_time = self._on_off_to_bool(level1.text)
-                elif tag == 'freeze-rupture-time':
-                    self.freeze_rupture_time = self._on_off_to_bool(level1.text)
-                elif tag == 'freeze-noise-variance':
-                    self.freeze_noise_variance = self._on_off_to_bool(level1.text)
-                else:
-                    msg = 'Unknown entry while parsing the optimization_parameters xml: {}'.format(level1.tag)
-                    warnings.warn(msg)
-
     # Default xml parameters for any template object.
     @staticmethod
     def _initialize_template_object_xml_parameters():
-        return { 'kernel_width': 0.0,
-                'filename': 'undefined',
+        return { 'kernel_width': 0.0, 'filename': 'undefined',
                 'noise_std': -1,
                 'noise_variance_prior_scale_std': None,
                 'noise_variance_prior_normalized_dof': 0.01,

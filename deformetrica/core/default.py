@@ -14,7 +14,6 @@ load_state_file = False
 process_per_gpu = 1
 
 model_type = 'undefined'
-deformation_kernel_width = 1.0
 deformation_kernel_device = 'auto'
 
 n_time_points = 11
@@ -30,20 +29,16 @@ covariance_momenta_prior_norm_dof = 0.001
 optimization_method = 'GradientAscent'
 optimized_log_likelihood = 'complete'
 max_iterations = 1000
-max_line_search_iterations = 10
-save_every_n_iters = 100
+save_every_n_iters = 20
 print_every_n_iters = 1
 sample_every_n_mcmc_iters = 10
 smoothing_kernel_width = None
-initial_step_size = None
-line_search_shrink = 0.5
-line_search_expand = 1.5
+initial_step_size = 1e-2
 convergence_tolerance = 1e-4
 noise_variance_prior_norm_dof = 0.01
 memory_length = 10
 downsampling_factor = 1
 interpolation = "linear"
-
 
 gpu_mode = GpuMode.FULL
 

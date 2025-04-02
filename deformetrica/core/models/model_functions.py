@@ -3,7 +3,6 @@ import torch
 
 from ...in_out.array_readers_and_writers import *
 
-
 import logging
 logger = logging.getLogger(__name__)
 
@@ -14,14 +13,16 @@ def residuals_change(avg_residuals):
     return (avg_residuals[-2] - avg_residuals[-1])/avg_residuals[-2]
 
 
-def initialize_cp(initial_cp, template, deformation_kernel_width, new_bounding_box = None):
+def initialize_cp(initial_cp, template, deformation_kernel_width, bounding_box = None):
     
     if initial_cp is not None:
         control_points = read_2D_array(initial_cp)
         logger.info('\n>> Reading %d initial control points from file %s.' % (len(control_points), initial_cp))
 
     else:
-        bounding_box = new_bounding_box if new_bounding_box is not None else template.bounding_box
+        if bounding_box is not None:
+            logger.info("Creating larger bounding box to fit all subjects")
+        bounding_box = bounding_box if bounding_box is not None else template.bounding_box
         control_points = create_regular_grid_of_points(bounding_box, deformation_kernel_width, template.dimension)
         logger.info('\n>> Set of %d control points defined.' % len(control_points))
 

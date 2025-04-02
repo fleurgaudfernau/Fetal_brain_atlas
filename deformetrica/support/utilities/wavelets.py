@@ -201,7 +201,6 @@ def haar_backward_transpose(X, J = None, gamma = 1, points_per_axis = None):
     haar.wc.flat = IWT_transpose @ X.flat
     return(haar) 
 
-
 @cached(cache={})
 def haar_IWT_mat_shape(shape, J = None, gamma = 1):
     X = np.zeros(shape=shape)

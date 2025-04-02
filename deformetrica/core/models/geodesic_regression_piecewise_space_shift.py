@@ -33,7 +33,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
 
     def __init__(self, template_specifications,
 
-                 deformation_kernel_width=default.deformation_kernel_width,
+                 deformation_kernel_width=None,
 
                  time_concentration=default.time_concentration, 
                  t0=default.t0, tR=[], t1 = default.tmax,
@@ -47,7 +47,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
                  freeze_noise_variance = default.freeze_noise_variance,
 
                  num_component = 2,
-                 new_bounding_box = None, # ajout fg
+                 bounding_box = None, # ajout fg
                  number_of_sources = 2,
                  
                  **kwargs):
@@ -84,8 +84,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         self.points = self.get_points()
         
         # Control points.
-        self.cp = initialize_cp(initial_cp, self.template, 
-                            deformation_kernel_width, new_bounding_box = new_bounding_box)
+        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width, bounding_box)
 
         # Momenta.
         self.set_momenta(initialize_momenta(initial_momenta, len(self.cp), 
@@ -661,7 +660,7 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         if dataset is not None: #and not write_all:
             for i, subject_id in enumerate(dataset.ids):
                 for j, time in enumerate(target_times[i]):
-                    names = [ reconstruction_name(self.name, subject_id, time = j, age = time)]
+                    names = [ reconstruction_name(self.name, i, time = j, age = time)]
                     deformed_points = self.piecewise_geodesic.get_template_points(time, sources[j], device = device)
                     deformed_data = self.template.get_deformed_data(deformed_points, template_data)
                     self.template.write(output_dir, names, deformed_data)

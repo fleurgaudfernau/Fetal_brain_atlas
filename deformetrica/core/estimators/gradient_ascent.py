@@ -33,15 +33,11 @@ class GradientAscent(AbstractEstimator):
                  print_every_n_iters=default.print_every_n_iters, 
                  save_every_n_iters=default.save_every_n_iters,
                  initial_step_size=default.initial_step_size,
-                 max_line_search_iterations=default.max_line_search_iterations,
-                 line_search_shrink=default.line_search_shrink,
-                 line_search_expand=default.line_search_expand,
                  output_dir=default.output_dir, 
                  load_state_file=default.load_state_file, 
                  state_file=default.state_file,
 
-                 multiscale_momenta = default.multiscale_momenta, #ajout fg
-                 multiscale_objects = default.multiscale_objects, #ajout fg
+                 multiscale_momenta = False, multiscale_objects = False,
                  multiscale_strategy = default.multiscale_strategy,
                  overwrite = True,
 
@@ -63,11 +59,11 @@ class GradientAscent(AbstractEstimator):
         self.current_log_likelihood = None
 
         self.step = None
-        self.line_search_shrink = line_search_shrink
-        self.line_search_expand = line_search_expand
+        self.line_search_shrink = 0.5
+        self.line_search_expand = 1.5
 
         self.initial_step_size = initial_step_size
-        self.max_line_search_iterations = max_line_search_iterations
+        self.max_line_search_iterations = 10
         self.current_iteration = 0
 
         self.multiscale = Multiscale(multiscale_momenta, multiscale_objects, 
@@ -116,9 +112,6 @@ class GradientAscent(AbstractEstimator):
             logger.info("\nOutput directory not empty - Stopping.\n _____________________________________________\n")  
             self.stop = True
             return 
-        
-        logger.info("Initial step size set to {}".format(self.initial_step_size))
-        logger.info("Convergence tolerance set to {}".format(self.convergence_tolerance))
 
         self.multiscale.initialize()
 
@@ -231,7 +224,7 @@ class GradientAscent(AbstractEstimator):
             
             # Printing and writing -------------------------------------------------------------------------------------
             t2 = perf_counter()
-            logger.info("Time taken for iteration: {}".format(round(t2-t1, 1)))
+            logger.info("Time taken for iteration: {} s".format(round(t2-t1, 1)))
             if not self.current_iteration % self.print_every_n_iters: self.print()
             if not self.current_iteration % self.save_every_n_iters: self.write()
 
@@ -308,7 +301,7 @@ class GradientAscent(AbstractEstimator):
                     if gradient_norm < 1e-8:
                         remaining_keys.append(key)
 
-                    elif math.isinf(gradient_norm):
+                    else:
                         step[key] = 1e-10 if math.isinf(gradient_norm) else 1.0 / gradient_norm
 
             if len(remaining_keys) > 0:

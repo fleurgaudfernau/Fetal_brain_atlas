@@ -13,24 +13,23 @@ import numpy as np
 import time 
 from time import strftime, gmtime
 from ..core import default
+from ..launch.compute_shooting import compute_shooting
+from ..launch.compute_ica import perform_ICA, plot_ica
+from ..support.utilities import has_hyperthreading
+from ..support.utilities.vtk_tools import screenshot_vtk
+from ..support.utilities.tools import gaussian_kernel
 from ..core.estimators.gradient_ascent import GradientAscent
 from ..core.models import DeformableTemplate, GeodesicRegression, PiecewiseGeodesicRegression, \
                         BayesianPiecewiseGeodesicRegression
 from ..in_out.dataset_functions import create_dataset, filter_dataset, make_dataset_timeseries,\
-                                        age, id, dataset_for_registration, maxi, mini, ages_histogram
+                                        age, id, dataset_for_registration, maxi, mini, ages_histogram,\
+                                        kernel_selection, mean_object
 from ..launch.compute_parallel_transport import launch_parallel_transport, launch_piecewise_parallel_transport, \
                                                 compute_distance_to_flow
 from ..in_out.array_readers_and_writers import read_3D_array, write_3D_array
-from ..launch.compute_shooting import compute_shooting
-from ..launch.compute_ica import perform_ICA, plot_ica
-from ..support import utilities
-from ..support.utilities.vtk_tools import screenshot_vtk
-from ..support.utilities.tools import gaussian_kernel
 from ..support.probability_distributions.multi_scalar_normal_distribution import MultiScalarNormalDistribution
 from ..support.probability_distributions.uniform_distribution import UniformDistribution
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
-
-
 from ..core.estimators.stochastic_gradient_ascent import StochasticGradientAscent
 from .piecewise_rg_tools import make_dir, complete, PlotResiduals, options_for_registration
 
@@ -85,8 +84,6 @@ class Deformetrica:
 
         logger.addHandler(logger_stream_handler)
 
-        logger.error("Logger has been set to: " + logging.getLevelName(logger_stream_handler.level))
-
     def __del__(self):
         logger.debug('Deformetrica.__del__()')
         if torch.cuda.is_available():
@@ -114,10 +111,6 @@ class Deformetrica:
         new_bounding_box = np.array([np.min(bounding_boxes[:, :, 0], axis=0), 
                                     np.max(bounding_boxes[:, :, 1], axis=0)]).T
 
-        # new_bounding_box = np.zeros((dataset.dimension, 2))
-        # new_bounding_box[:, 0] = np.min(bounding_boxes, axis = 0)[:, 0]
-        # new_bounding_box[:, 1] = np.max(bounding_boxes, axis = 0)[:, 1]
-
         return new_bounding_box
 
     def registration(self, template_spec, dataset_spec, model_options={}, estimator_options={}, 
@@ -140,8 +133,11 @@ class Deformetrica:
         dataset = create_dataset(**dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
         
+        # Handle the case where template has smaller bounding box than the subjects
+        bounding_box = self.set_bounding_box(dataset)
+
         # Instantiate model.
-        model = DeformableTemplate(template_spec, dataset.n_subjects, **model_options)
+        model = DeformableTemplate(template_spec, dataset.n_subjects, **model_options) #, bounding_box = bounding_box)
         model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
@@ -154,8 +150,8 @@ class Deformetrica:
 
         return model
 
-    def deformable_template(self, template_spec, dataset_spec, model_options={}, 
-                        estimator_options={}, write_output=True):
+    def deformable_template(self, template_spec, dataset_spec, model_options = {}, 
+                            estimator_options = {}, write_output = True):
         """ Estimate deformable template model.
         Given a family of objects, the atlas model learns a template shape (mean of the objects),
         + a low number of coordinates for each object from this template shape.
@@ -174,6 +170,9 @@ class Deformetrica:
         dataset = create_dataset(**dataset_spec)
         assert (dataset.is_cross_sectional()), "Cannot estimate an atlas from a non-cross-sectional dataset."
 
+        # Handle the case where template has smaller bounding box than the subjects
+        bounding_box = self.set_bounding_box(dataset)
+
         # Instantiate model.
         model = DeformableTemplate(template_spec, dataset.n_subjects, **model_options)
         model.initialize_noise_variance(dataset)
@@ -188,8 +187,8 @@ class Deformetrica:
 
         return model
 
-    def bayesian_atlas(self, template_spec, dataset_spec,
-                                model_options={}, estimator_options={}, write_output=True):
+    def bayesian_atlas(self, template_spec, dataset_spec, model_options={}, 
+                        estimator_options={}, write_output=True):
         """ Estimate bayesian atlas.
         Bayesian version of the deformable template. 
         In addition to the template and the registrations, the variability of the geometry and the data noise are learned.
@@ -211,8 +210,7 @@ class Deformetrica:
 
         # Instantiate model.
         model = BayesianAtlas(template_spec, **model_options)
-        individual_RER = model.initialize_random_effects_realization(dataset.n_subjects,
-                                                                                **model_options)
+        individual_RER = model.initialize_random_effects_realization(dataset.n_subjects, **model_options)
         model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
@@ -247,10 +245,10 @@ class Deformetrica:
         assert (dataset.is_time_series()), "Cannot estimate a geodesic regression from a non-time-series dataset."
         
         # Handle the case where template has smaller bounding box than the subjects
-        new_bounding_box = self.set_bounding_box(dataset)
+        bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        model = GeodesicRegression(template_spec, **model_options, new_bounding_box=new_bounding_box)
+        model = GeodesicRegression(template_spec, **model_options, bounding_box=bounding_box)
         model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
@@ -285,10 +283,10 @@ class Deformetrica:
         assert (dataset.is_time_series()), "Cannot estimate a geodesic regression from a non-time-series dataset."
 
         # Handle the case where template has smaller bounding box than the subjects
-        new_bounding_box = self.set_bounding_box(dataset)
+        bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        model = PiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        model = PiecewiseGeodesicRegression(template_spec, **model_options, bounding_box = bounding_box)
         model.initialize_noise_variance(dataset)
 
         # Instantiate estimator.
@@ -323,12 +321,11 @@ class Deformetrica:
             "Cannot estimate a bayesian regression from a cross-sectional or time-series dataset."
 
         # Handle the case where template has smaller bounding box than the subjects
-        new_bounding_box = self.set_bounding_box(dataset)
+        bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
-        individual_RER = model.initialize_random_effects_realization(dataset.n_subjects,
-                                                                                 **model_options)
+        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, bounding_box = bounding_box)
+        individual_RER = model.initialize_random_effects_realization(dataset.n_subjects, **model_options)
         model.initialize_noise_variance(dataset, individual_RER)
 
         # Instantiate estimator.
@@ -350,7 +347,7 @@ class Deformetrica:
 
         # Select subjects around t0
         new_dataset_spec = { 
-            'subject_ids': [dataset_spec['subject_ids'][i]\
+            'ids': [dataset_spec['ids'][i]\
                     for i in range(dataset_spec['n_subjects']) if t0 - 3 < age(dataset_spec, i) < t0 + 3],
             'filenames': [[dataset_spec['filenames'][i][0]]\
                     for i in range(dataset_spec['n_subjects']) if t0 - 3 < age(dataset_spec, i) < t0 + 3],
@@ -404,11 +401,11 @@ class Deformetrica:
         
         assert (dataset.is_time_series()), "Cannot estimate a geodesic regression from a non-time-series dataset."
 
-        new_bounding_box = self.set_bounding_box(dataset)
+        bounding_box = self.set_bounding_box(dataset)
 
         model_options["freeze_template"] = True # important
 
-        model = PiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        model = PiecewiseGeodesicRegression(template_spec, **model_options, bounding_box = bounding_box)
         model.initialize_noise_variance(dataset)
 
         estimator = self.__instantiate_estimator(model, dataset, estimator_options_)
@@ -637,10 +634,10 @@ class Deformetrica:
             "Cannot estimate a bayesian regression from a cross-sectional or time-series dataset."
 
         # Handle the case where template has smaller bounding box than the subjects
-        new_bounding_box = self.set_bounding_box(dataset)
+        bounding_box = self.set_bounding_box(dataset)
 
         # Instantiate model.
-        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, new_bounding_box = new_bounding_box)
+        model = BayesianPiecewiseGeodesicRegression(template_spec, **model_options, bounding_box = bounding_box)
         individual_RER = model.initialize_random_effects_realization(dataset.n_subjects,
                                                                                  **model_options)
         model.initialize_noise_variance(dataset, individual_RER)
@@ -661,49 +658,29 @@ class Deformetrica:
         # Check and completes the input parameters.
         model_options, estimator_options = self.further_initialization('KernelRegression', 
                                             model_options, dataset_spec, estimator_options)
-        visit_ages = [d[0] for d in dataset_spec['visit_ages']]
-        original_template_spec = template_spec["Object_1"]
         
-        time = int(time)
-        model_options['time'] = time
-        self.output_dir = self.output_dir + '/time_' + str(time)
+        model_options['time'] = int(time)
+        self.output_dir = self.output_dir + '/time_' + str(int(time))
         if not op.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
         # Select the subjects that contribute to the atlas
-        visit_ages = dataset_spec['visit_ages']
-        total_weights = np.sum([ gaussian_kernel(time, age[0]) for age in dataset_spec['visit_ages'] ])
-        weights = [ gaussian_kernel(time, age[0]) for age in visit_ages ]
-        selection = [ i for i, w in enumerate(weights) if w > 0.01 ]
-        
-        # Adaptative kernel
-        
-        # Update the dataset accordingly
-        new_dataset_spec = copy.deepcopy(dataset_spec)        
-        new_dataset_spec['visit_ages'] = [[visit_ages[i][0]] for i in selection]
-        new_dataset_spec['subject_ids'] = [dataset_spec['subject_ids'][i] for i in selection]
-        new_dataset_spec['filenames'] = [dataset_spec['filenames'][i] for i in selection]
+        selection, weights, weights_ = kernel_selection(dataset_spec, int(time))                
+        new_dataset_spec = filter_dataset(dataset_spec, selection)
         model_options['visit_ages'] = new_dataset_spec['visit_ages']
 
         dataset = create_dataset(**new_dataset_spec)
         
         # Compute a mean image
-        # if ".nii" in new_dataset_spec['filenames'][0][0]["img"]:
-        #     data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['filenames']]
-        #     mean = np.zeros((data_list[0].get_fdata().shape))
-        #     for i, f in enumerate(data_list):
-        #         mean += f.get_fdata() * (weights[i]/total_weights)
-        #     image_new = nib.nifti1.Nifti1Image(mean, data_list[0].affine, data_list[0].header)
-        #     output_image = original_template_spec.replace("mean", "mean_age_{}".format(time))
-        #     nib.save(image_new, output_image)
-        # else:            
-        #     i = weights.index(max(weights))
-        #     name = new_dataset_spec['filenames'][i][0]["img"]
-        #     name = "/home/fleur.gaudfernau/Necker_atlas_SPT/Inner_cortical_surface_bayesian_piecewise_regression_60_subjects_with_init_/Kernel_regression/template_smooth_2000.vtk"
-        #template_spec['img']["filename"] = name
+        template_spec = mean_object(new_dataset_spec, template_spec, weights)
         
         # Instantiate model.
-        print("Number of subjects:", len(new_dataset_spec['filenames']), "at age", time)
+        logger.info("\n{} subjects selected at age {}".format(len(new_dataset_spec['filenames']), time))
+        logger.info("Selected template {}".format(template_spec["Object_1"]["filename"]))
+
+        logger.info("Relative weights: {}".format(weights_))
+        print("selected subjects", new_dataset_spec["ids"])
+        
         model = DeformableTemplate(template_spec, dataset.n_subjects, **model_options)
         model.initialize_noise_variance(dataset)
 
@@ -714,72 +691,6 @@ class Deformetrica:
             self.__launch_estimator(estimator, write_output)
         finally:
             model.cleanup()
-
-        return 
-
-    def kernel_regression_2(self, template_spec, dataset_spec,
-                                     model_options={}, estimator_options={}, write_output=True):
-        """ Estimate a deterministic atlas
-        """
-        # Check and completes the input parameters.
-        model_options, estimator_options = self.further_initialization('KernelRegression', 
-                                            model_options, dataset_spec, estimator_options)
-        
-        visit_ages = [d[0] for d in dataset_spec['visit_ages']]
-        tmin = int(min(visit_ages))
-        tmax = int(max(visit_ages))
-        original_template_spec = template_spec['img']["filename"]
-        root_output_dir = self.output_dir
-        
-        for time in range(tmin, tmax):
-            model_options['time'] = time
-
-            self.output_dir = root_output_dir + '/time_' + str(time)
-            if not op.exists(self.output_dir):
-                os.makedirs(self.output_dir)
-
-            # Select the subjects that contribute to the atlas
-            selection = []
-            weights = []
-            total_weights = np.sum([gaussian_kernel(time, age[0]) for age in dataset_spec['visit_ages']])
-            for i, age in enumerate(dataset_spec['visit_ages']):
-                weight = gaussian_kernel(time, age[0])
-                if weight > 0.01:
-                    selection.append(i)
-                    weights.append(weight)
-
-            # Update the dataset accordingly
-            new_dataset_spec = copy.deepcopy(dataset_spec)
-            new_dataset_spec['visit_ages'] = [[age] for i, age in enumerate(visit_ages) if i in selection]
-            new_dataset_spec['subject_ids'] = [id for i, id in enumerate(dataset_spec['subject_ids'])\
-                                                        if i in selection]
-            new_dataset_spec['filenames'] = [name for i, name in enumerate(dataset_spec['filenames'])\
-                                                            if i in selection]
-            model_options['visit_ages'] = new_dataset_spec['visit_ages']
-
-            dataset = create_dataset(**new_dataset_spec)
-            
-            # Compute a mean image
-            data_list = [nib.load(f[0]["img"]) for f in new_dataset_spec['filenames']]
-            mean = np.zeros((data_list[0].get_fdata().shape))
-            for i, f in enumerate(data_list):
-                mean += f.get_fdata() * (weights[i]/total_weights)
-            image_new = nib.nifti1.Nifti1Image(mean, data_list[0].affine, data_list[0].header)
-            output_image = original_template_spec.replace("mean", "mean_age_{}".format(time))
-            nib.save(image_new, output_image)
-            template_spec['img']["filename"] = output_image
-            
-            # Instantiate model.
-            model = DeformableTemplate(template_spec, dataset.n_subjects, **model_options)
-            model.initialize_noise_variance(dataset)
-
-            # Instantiate estimator.
-            estimator = self.__instantiate_estimator(model, dataset, estimator_options)
-
-            try:
-                self.__launch_estimator(estimator, write_output)
-            finally:
-                model.cleanup()
 
         return 
 
@@ -888,53 +799,15 @@ class Deformetrica:
                                 estimator_options = None, time = None):
         model_type = model_type.lower()
 
-        if dataset_spec is None or estimator_options is None:
+        if dataset_spec is None:
             assert model_type in ['Shooting'.lower(), 'ParallelTransport'.lower()], \
             'Only shooting and parallel transport can run without dataset and estimator.'
 
-        if estimator_options is not None:
-            if 'state_file' not in estimator_options:
-                estimator_options['state_file'] = default.state_file
-            if 'load_state_file' not in estimator_options:
-                estimator_options['load_state_file'] = default.load_state_file
-            if 'multiscale_momenta' not in estimator_options: 
-                estimator_options['multiscale_momenta'] = default.multiscale_momenta
-            if 'multiscale_objects' not in estimator_options: 
-                estimator_options['multiscale_objects'] = default.multiscale_objects
-            if 'multiscale_strategy' not in estimator_options: 
-                estimator_options['multiscale_strategy'] = default.multiscale_strategy
-
-        if 'perform_shooting' not in model_options: 
-            model_options['perform_shooting'] = default.perform_shooting
-        if 'freeze_template' not in model_options:
-            model_options['freeze_template'] = default.freeze_template
-        if 'initial_cp' not in model_options:
-            model_options['initial_cp'] = default.initial_cp
-        if 'deformation_kernel_width' not in model_options:
-            model_options['deformation_kernel_width'] = default.deformation_kernel_width
-        if 't0' not in model_options:
-            model_options['t0'] = default.t0
-        if 'tR' not in model_options:
-            model_options['tR'] = []
-        if 't1' not in model_options:
-            model_options['t1'] = default.t0 
-        if 'initial_modulation_matrix' not in model_options:
-            model_options['initial_modulation_matrix'] = default.initial_modulation_matrix
-        if 'number_of_sources' not in model_options:
-            model_options['number_of_sources'] = default.number_of_sources
-        if 'downsampling_factor' not in model_options:
-            model_options['downsampling_factor'] = default.downsampling_factor
-        if 'interpolation' not in model_options: 
-            model_options['interpolation'] = default.interpolation
-        if "kernel_regression" not in model_options:
-            model_options['kernel_regression'] = False
-
         # try and automatically set best number of thread per spawned process if not overridden by uer
         if 'OMP_NUM_THREADS' not in os.environ:
-            hyperthreading = utilities.has_hyperthreading()
             omp_num_threads = math.floor(os.cpu_count() / 1)
 
-            if hyperthreading:
+            if has_hyperthreading():
                 omp_num_threads = math.ceil(omp_num_threads / 2)
 
             omp_num_threads = max(1, int(omp_num_threads))
@@ -966,18 +839,15 @@ class Deformetrica:
         except ValueError:
             logger.warning('Could not set max open file. Currently using: ' + str(rlimit))
 
-        if estimator_options is not None:
-            if estimator_options['state_file'] is None:
-                path_to_state_file = op.join(self.output_dir, "deformetrica-state.p")
-                logger.info('>> Deformetrica state is saved in: %s.' % path_to_state_file)
-                if op.isfile(path_to_state_file):
-                    os.remove(path_to_state_file)
-                estimator_options['state_file'] = path_to_state_file
-            else:
-                if op.exists(estimator_options['state_file']):
-                    estimator_options['load_state_file'] = True
-                    logger.info(
-                        '>> Deformetrica will resume computation from state file %s.' % estimator_options['state_file'])
+        if estimator_options['state_file'] is None:
+            path_to_state_file = op.join(self.output_dir, "deformetrica-state.p")
+            if op.isfile(path_to_state_file):
+                os.remove(path_to_state_file)
+            estimator_options['state_file'] = path_to_state_file
+        else:
+            if op.exists(estimator_options['state_file']):
+                estimator_options['load_state_file'] = True
+                logger.info('>> Deformetrica resumes computation from state file %s.' % estimator_options['state_file'])
 
         # Freeze the fixed effects in case of a registration.
         if model_type == 'Registration'.lower():
@@ -1001,8 +871,5 @@ class Deformetrica:
 
                 estimator_options['individual_proposal_distributions'] = {
                     'sources': MultiScalarNormalDistribution(std=estimator_options['sources_proposal_std'])}
-
-        logger.info("Downsampling factor set to: {}".format(model_options['downsampling_factor']))
-        logger.info("Deformation kernel width set to: {}".format(model_options['deformation_kernel_width']))
 
         return model_options, estimator_options

@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import nibabel as nib
 from ...core.model_tools.attachments.multi_object_attachment import MultiObjectAttachment
 from ...core import default, GpuMode
 from ...support import utilities
@@ -10,7 +11,7 @@ def gaussian_kernel(x, y, sigma = 1):
     return np.exp(-0.5 * ((x-y)/sigma)**2) / sigma * np.sqrt(2 * np.pi)
 
 def residuals_change(liste):
-    return round((liste[-2] - liste[-1]) / liste[-2], 3)
+    return round((liste[-2] - liste[-1]) / liste[-2], 2)
 
 def ratio(current_value, initial_value):
     if initial_value != 0:

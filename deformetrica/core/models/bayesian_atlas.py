@@ -31,7 +31,7 @@ class BayesianAtlas(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications,
-                 deformation_kernel_width=default.deformation_kernel_width,
+                 deformation_kernel_width = None,
                  n_time_points=default.n_time_points,
                  freeze_template=default.freeze_template,
                  initial_cp=None,

@@ -250,6 +250,9 @@ class Image:
             np.save(op.join(output_dir, name) + self.extension, intensities_rescaled)
         else:
             raise ValueError('Writing images with the given extension "%s" is not coded yet.' % name)
+    
+    def write_png(self, output_dir, name, *args):
+        return
 
     ####################################################################################################################
     ### Utility methods:

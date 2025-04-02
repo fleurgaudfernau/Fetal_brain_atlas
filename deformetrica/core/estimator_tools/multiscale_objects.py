@@ -1,8 +1,9 @@
 import copy
 import logging
 import os.path as op
-from ...support import utilities
 import numpy as np
+from ...support import utilities
+from time import perf_counter
 from ...support.utilities.tools import residuals_change
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,6 @@ class MultiscaleObjects():
         self.iter = [0] if multiscale else []
 
         self.points = points
-        self.step = 0.5 if not self.multiscale_momenta else 1
         self.step = 1
         #self.step = 0.5
 
@@ -46,7 +46,7 @@ class MultiscaleObjects():
             The template object is filtered according to the current object scale
         """
         if self.multiscale:
-            logger.info("\n** Initialisation - coarse to fine on objects with step {} **".format(self.step))
+            logger.info("\n** Initialisation - multiscale objects with step {} **".format(self.step))
             
             self.momenta_scale = momenta_coarser_scale
             self.momenta_coarser_scale = momenta_coarser_scale
@@ -106,8 +106,7 @@ class MultiscaleObjects():
         # only initialize filter for models that optimize template
         # filter template when template is frozen
         # 1st row: to avoid refiltering when template already filtered 
-        if (self.type == "Image" and self.model_name in ["DeterministicAtlas"])\
-            and (iteration == 0 and (self.model_name in ["DeterministicAtlas"] or\
+        if (iteration == 0 and (self.model_name in ["DeformableTemplate", "KernelRegression"] or\
             "Regression" in self.model_name)) or self.freeze_template:
             logger.info("Filtering of template...")
 
@@ -127,7 +126,9 @@ class MultiscaleObjects():
             new_dataset = copy.deepcopy(self.original_dataset)
 
         if self.multiscale:
-            if iteration == 0: logger.info("Initial filtering of objects...")
+            t1 = perf_counter()
+            if iteration == 0: 
+                logger.info("Initial filtering of objects...")
             
             for i in range(new_dataset.n_subjects):
                 print("\t Object {}/{} done".format(i + 1, new_dataset.n_subjects))
@@ -136,8 +137,10 @@ class MultiscaleObjects():
                         object.filter(self.scale)
             
             object.write(self.output_dir, "Subject_{}_iter_{}_width_{}".format(i, iteration, self.scale))
+            object.write_png(self.output_dir, "Subject_{}_iter_{}_width_{}".format(i, iteration, self.scale))
             
             parameters = self.filter_template(parameters, iteration)
+            logger.info("\nTime for filtering dataset {}".format(round(perf_counter() - t1,1)))
 
         return new_dataset, parameters
 

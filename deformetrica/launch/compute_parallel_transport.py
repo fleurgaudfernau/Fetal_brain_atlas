@@ -352,7 +352,7 @@ class PiecewiseParallelTransport(ParallelTransport):
 ####################################################################################################################
 
 def launch_parallel_transport(template_specifications,
-                               deformation_kernel_width=default.deformation_kernel_width,
+                               deformation_kernel_width=None,
                                initial_cp=None, initial_momenta=None,
                                initial_momenta_to_transport=default.initial_momenta_to_transport,
                                tmin=default.tmin, tmax=default.tmax,
@@ -384,7 +384,7 @@ def launch_parallel_transport(template_specifications,
     return pt.transported_mom_path
 
 def launch_piecewise_parallel_transport(template_specifications,
-                               deformation_kernel_width=default.deformation_kernel_width,
+                               deformation_kernel_width=None,
                                initial_cp=None, initial_momenta=None,
                                initial_momenta_to_transport=default.initial_momenta_to_transport,
                                tmin=default.tmin, tmax=default.tmax,
@@ -423,7 +423,7 @@ def launch_piecewise_parallel_transport(template_specifications,
     return pt.transported_mom_path
 
 def compute_distance_to_flow(template_specifications,
-                        deformation_kernel_width=default.deformation_kernel_width,
+                        deformation_kernel_width=None,
                         initial_cp=None, initial_momenta_tR=None,
                         initial_momenta_to_transport=default.initial_momenta_to_transport,
                         tmin=default.tmin, tmax=default.tmax,

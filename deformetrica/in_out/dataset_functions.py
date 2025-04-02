@@ -10,6 +10,7 @@ from torch.autograd import Variable
 from math import ceil, floor, trunc, prod
 from ..support.kernels import factory
 from ..support import kernels as kernel_factory 
+from ..support.utilities.tools import gaussian_kernel
 from ..core.model_tools.attachments.multi_object_attachment import MultiObjectAttachment
 from ..core.observations.datasets.longitudinal_dataset import LongitudinalDataset
 from ..core.observations.deformable_objects.deformable_multi_object import DeformableMultiObject
@@ -43,7 +44,6 @@ def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = ""
 def make_dataset_timeseries(dataset_specifications):
     # visit ages [[1], [2] ...] -> [[1, 2]] / filenames : [[{'img':...}], [{'img':...}]] -> [[{'img':...}, {'img':...}]]
     # id : [1, 2, 3] -> [1]
-
     new_dataset_spec = deepcopy(dataset_specifications)
     new_dataset_spec["filenames"] = [sum(dataset_specifications["filenames"], [])]
     new_dataset_spec["visit_ages"] = [sum(dataset_specifications["visit_ages"], [])]
@@ -51,20 +51,44 @@ def make_dataset_timeseries(dataset_specifications):
 
     return new_dataset_spec
 
-def filter_dataset(dataset_specifications, age_limit):
-    new_dataset_spec = {k:[] for k in dataset_specifications.keys()}
-    new_dataset_spec["ids"] = dataset_specifications["ids"]
+def kernel_selection(dataset_spec, time, limit = 0.01):
+    visit_ages = dataset_spec['visit_ages']
+    weights = [ gaussian_kernel(time, age[0]) for age in visit_ages ]
+    total_weights = np.sum(weights)
+    weights_ = [w / total_weights for w in weights]
+    
+    selection = [ i for i, w in enumerate(weights_) if w > limit ] # 1% contribution
+    weights = [round(weights[i], 2) for i in selection]
+    weights_ = [round(weights_[i], 2) for i in selection]
 
-    for age, name in zip(dataset_specifications["visit_ages"][0], 
-                       dataset_specifications["filenames"][0]):
-        if age < age_limit:
-            new_dataset_spec["visit_ages"].append(age)
-            new_dataset_spec["filenames"].append(name)
+    return selection, weights, weights_
 
-    new_dataset_spec["visit_ages"] = [new_dataset_spec["visit_ages"]]
-    new_dataset_spec["filenames"] = [new_dataset_spec["filenames"]]
+def filter_dataset(dataset_spec, selection):
+    new_dataset_spec = deepcopy(dataset_spec)   
+    visit_ages = dataset_spec['visit_ages']     
+    new_dataset_spec['visit_ages'] = [[visit_ages[i][0]] for i in selection]
+    new_dataset_spec['ids'] = [dataset_spec['ids'][i] for i in selection]
+    new_dataset_spec['filenames'] = [dataset_spec['filenames'][i] for i in selection]
 
     return new_dataset_spec
+
+def mean_object(dataset_spec, template_spec, weights):            
+    if ".nii" in dataset_spec['filenames'][0][0]:
+
+        data_list = [ nib.load(f[0]) for f in dataset_spec['filenames']]
+        mean = np.zeros((data_list[0].get_fdata().shape))
+        for i, f in enumerate(data_list):
+            mean += f.get_fdata() * (weights[i]/total_weights)
+        image_new = nib.nifti1.Nifti1Image(mean, data_list[0].affine, data_list[0].header)
+        output_image = template_spec.replace("mean", "mean_age_{}".format(time))
+        nib.save(image_new, output_image)   
+        template_spec["Object_1"]["filename"] = output_image    
+
+    else:
+        i = weights.index(max(weights))
+        template_spec["Object_1"]["filename"] = dataset_spec['filenames'][i][0]["Object_1"]
+    
+    return template_spec 
 
 def id(dataset_specifications, i):
     return dataset_specifications["ids"][i]
@@ -107,11 +131,9 @@ def ages_histogram(dataset_specifications, path):
         ticks = [k for k in range(int(min(ages)), int(min(ages)) + int(max(ages)) - int(min(ages)) + 1)]
         ax.set_xticks(ticks)
         fig.tight_layout()
-        #ax.set_title(r'Histogram of IQ: $\mu=100$, $\sigma=15$')
 
         # Tweak spacing to prevent clipping of ylabel
         plt.savefig(op.join(path, "ages_histogram.png"))
-
 
 def template_metadata(template_spec):
     """

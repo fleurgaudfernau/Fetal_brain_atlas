@@ -22,11 +22,11 @@ class GeodesicRegression(AbstractStatisticalModel):
     ####################################################################################################################
 
     def __init__(self, template_specifications,
-                 deformation_kernel_width=default.deformation_kernel_width,
+                 deformation_kernel_width=None,
                  time_concentration=default.time_concentration, t0=default.t0,
                  freeze_template=default.freeze_template,
                  initial_cp=None, initial_momenta=None,
-                 new_bounding_box = None,
+                 bounding_box = None,
                  **kwargs):
 
         AbstractStatisticalModel.__init__(self, name='GeodesicRegression')
@@ -57,8 +57,7 @@ class GeodesicRegression(AbstractStatisticalModel):
         self.points = self.get_points()
 
         # Control points.
-        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width, 
-                                new_bounding_box = new_bounding_box)
+        self.cp = initialize_cp(initial_cp, self.template, deformation_kernel_width, bounding_box)
 
         # Momenta.
         self.fixed_effects['momenta'] = initialize_momenta(initial_momenta, len(self.cp), self.dimension)
@@ -395,7 +394,9 @@ class GeodesicRegression(AbstractStatisticalModel):
                 names = [reconstruction_name(self.name, time = j, age = time)]
                 deformed_points = self.geodesic.get_template_points(time)
                 deformed_data = self.template.get_deformed_data(deformed_points, template_data)
+                
                 self.template.write(output_dir, names, deformed_data)
+                self.template.write_png(output_dir, names, deformed_data)
 
     def output_path(self, output_dir, dataset):
         self.cp_path = op.join(output_dir, cp_name(self.name))

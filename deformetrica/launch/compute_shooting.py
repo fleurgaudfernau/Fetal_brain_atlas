@@ -89,7 +89,7 @@ def vector_field_to_new_support_(control_points, momenta_torch, new_template):
 
 
 def compute_shooting(template_specifications,
-                     deformation_kernel_width=default.deformation_kernel_width,
+                     deformation_kernel_width=None,
                      initial_cp=default.initial_cp,
                      initial_momenta=default.initial_momenta,
                      time_concentration=default.time_concentration,

@@ -155,25 +155,38 @@ class DeformableMultiObject:
                 if self.object_list[k].bounding_box[d, 1] > self.bounding_box[d, 1]:
                     self.bounding_box[d, 1] = self.object_list[k].bounding_box[d, 1]
 
-    def write(self, output_dir, names, data=None, momenta = None, cp = None, kernel = None):
+    def _write(self, output_dir, names, data=None, momenta = None, cp = None, kernel = None, 
+                png = False):
         """
         Save the list of objects with the given names
         """
         if names is None: return
     
-        assert len(names) == len(self.object_list), "Give as many names as objects to save multi-object"
         pos = 0
         for elt, name in zip(self.object_list, names):
+            function = (elt.write_png if png else elt.write)
             if data is None:
-                elt.write(output_dir, name)
+                function(output_dir, name)
 
             else:
                 data = detach(data)
 
                 if elt.type.lower() in ['surfacemesh', 'landmark']:
-                    elt.write(output_dir, name, data['landmark_points'][pos:pos + elt.n_points()], 
+                    function(output_dir, name, data['landmark_points'][pos:pos + elt.n_points()], 
                                 momenta, cp, kernel)
                     pos += elt.n_points()
 
                 elif elt.type.lower() == 'image':
-                    elt.write(output_dir, name, data['image_intensities'])
+                    function(output_dir, name, data['image_intensities'])
+        
+    def write(self, output_dir, names, data=None, momenta=None, cp=None, kernel=None):
+        """
+            Save the list of objects with the given names.
+        """
+        self._write(output_dir, names, data, momenta, cp, kernel)
+
+    def write_png(self, output_dir, names, data=None, momenta=None, cp=None, kernel=None):
+        """
+            Save the list of objects as PNGs with the given names.
+        """
+        self._write(output_dir, names, data, momenta, cp, kernel, png=True)

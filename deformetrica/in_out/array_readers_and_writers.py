@@ -52,9 +52,9 @@ def paraview_name(name, iteration = "", comp = ""):
 
 def reconstruction_name(name, subject_id = "", time = "", age = "", iteration = ""):
     if name == "KernelRegression":
-        return "{}__Reconstruction__subject_{}_age_".format(name, subject_id, age)
+        return "{}__Reconstruction__subject_{}_age_{}".format(name, subject_id, age)
 
-    elif name == "DeformableTemplate" and not iteration:
+    elif name == "DeformableTemplate" and iteration == "":
         return '{}__Reconstruction__subject_{}'.format(name, subject_id)
     
     elif name == "DeformableTemplate":
@@ -68,13 +68,20 @@ def reconstruction_name(name, subject_id = "", time = "", age = "", iteration = 
 
 def template_name(name, time = "", age = "", t0 = "", iteration = "", freeze_template = False):
     if name == "KernelRegression":
-        return "{}__Estimated__Template_time_{}".format(name, time)
+        base_name = "{}__Estimated__Template_time_{}".format(name, time)
+        if len(iteration) > 0:
+            base_name += "_{}".format(iteration)
+        return base_name
     
     elif name in ["DeformableTemplate", "BayesianAtlas"]:
-        if not freeze_template and len(iteration) > 0:
-            return "{}__Estimated__Template_{}".format(name, iteration)
+        if freeze_template:
+            base_name = "{}__Fixed__Template".format(name)
         else:
-            return "{}__Estimated__Template".format(name)
+            base_name = "{}__Estimated__Template".format(name)
+        if len(iteration) > 0:
+            base_name += "_{}".format(iteration)
+        
+        return base_name
 
     elif name == "GeodesicRegression":
         if not freeze_template:   
@@ -182,7 +189,7 @@ def concatenate_for_paraview(array_momenta, array_cp, output_dir, name, iteratio
             else:
                 polydata.point_data[str(k)] = v
         
-        save_name = op.join(output_dir, name).replace(".vtk", "_sujet_{}".format(sujet)) + ".vtk"
+        save_name = op.join(output_dir, name).replace(".vtk", "_sujet_{}.vtk".format(sujet))
         polydata.save(save_name, binary=False)
 
 ####################################################################################################################
