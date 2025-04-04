@@ -133,9 +133,9 @@ class DeformableTemplate(AbstractStatisticalModel):
     def get_template_data(self):
         return self.fixed_effects['template_data']
 
-    def set_template_data(self, td):
+    def set_template_data(self, td, check):
         self.fixed_effects['template_data'] = td
-        self.template.set_data(td)
+        self.template.set_data(td, check)
     
     def get_points(self):
         return list(self.fixed_effects['template_data'].keys())[0]
@@ -158,13 +158,12 @@ class DeformableTemplate(AbstractStatisticalModel):
                 
         return out
 
-    def set_fixed_effects(self, fixed_effects):
+    def set_fixed_effects(self, fixed_effects, check):
         if not self.freeze_template:
             template_data = {key: fixed_effects[key] for key in self.fixed_effects['template_data'].keys()}
-            self.set_template_data(template_data)
+            self.set_template_data(template_data, check)
         if not self.freeze_momenta:
             self.set_momenta(fixed_effects['momenta'])
-
 
     ####################################################################################################################
     ### Public methods:
@@ -315,35 +314,19 @@ class DeformableTemplate(AbstractStatisticalModel):
 
         return 
 
-    def compute_curvature(self, dataset, j = None, individual_RER = None, curvature = "gaussian", iter = None):
+    def compute_curvature(self, dataset, j, individual_RER = None, curvature = "gaussian"):
         """
-            Compute object curvature (at iter 0) or deformed template to object curvature
+            Compute curvature of the deformed template to object
         """
         template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
 
-        # template curvature
-        if j is None:
-            data = self.template.get_data()
-            for i, obj1 in enumerate(self.template.object_list):
-                obj1.polydata.points = data[self.points][0:obj1.n_points()]
-                obj1.curvature_metrics(curvature)
-                return self.template
-
+        # Compute deformed template curvature
         self.exponential.prepare_and_update(self.cp, momenta[j], template_points, device = self.device)
         deformed_points = self.exponential.get_template_points()
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         
-        # Compute deformed template curvature
-        obj = dataset.objects[j][0] if iter == 0 else self.template 
-
-        for i, obj1 in enumerate(self.template.object_list):
-            if iter != 0:
-                obj1.polydata.points = deformed_data[self.points][0:obj1.n_points()].cpu().numpy()
-
-            obj1.curvature_metrics(curvature)
+        self.template.compute_curvature(curvature, deformed_data)
         
-        return obj
-
     def compute_residuals(self, dataset, individual_RER = None):
         template_data, template_points, momenta = self._fixed_effects_to_torch_tensors()
 
@@ -379,7 +362,7 @@ class DeformableTemplate(AbstractStatisticalModel):
             
             residuals_by_point += residuals
         
-        return residuals_by_point.cpu().numpy().flatten()
+        return detach(residuals_by_point).flatten()
     
     ####################################################################################################################
     ### Private utility methods:

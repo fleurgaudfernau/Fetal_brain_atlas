@@ -32,13 +32,13 @@ class ObjectReader:
 
     # Create a PyDeformetrica object from specified filename and object type.
     @staticmethod
-    def create_object(object_filename, interpolation = "linear", kernel_width=None):
+    def create_object(object_filename, interpolation = "linear"):
 
         obj_type = object_type(object_filename)
 
         if obj_type.lower() == 'SurfaceMesh'.lower():
             points, connectivity = ObjectReader.read_file(object_filename, extract_connectivity=True)
-            out_object = SurfaceMesh(points, connectivity, object_filename, kernel_width = kernel_width)
+            out_object = SurfaceMesh(points, connectivity, object_filename)
             out_object.remove_null_normals()
 
         elif obj_type.lower() == 'Image'.lower():

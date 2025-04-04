@@ -814,18 +814,6 @@ class Deformetrica:
 
             os.environ['OMP_NUM_THREADS'] = str(omp_num_threads)
 
-        # If longitudinal model and t0 is not initialized, initializes it.
-        if model_type in ['Regression'.lower(), 'PiecewiseRegression'.lower(), 'BayesianGeodesicRegression'.lower()]:
-            
-            assert 'visit_ages' in dataset_spec, 'Visit ages are needed to estimate a Regression'
-
-            if model_options['t0'] is None:
-                ages = [a[0] for a in dataset_spec['visit_ages']]   
-                logger.info('>> Initial t0 set to the minimal visit age: %.2f' % min(ages))
-                model_options['t0'] = min(ages)
-            else:
-                logger.info('>> Initial t0 set by the user to %.2f' % (model_options['t0']))
-
         rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
         try:
             torch.multiprocessing.set_start_method("spawn")
@@ -849,23 +837,8 @@ class Deformetrica:
                 estimator_options['load_state_file'] = True
                 logger.info('>> Deformetrica resumes computation from state file %s.' % estimator_options['state_file'])
 
-        # Freeze the fixed effects in case of a registration.
-        if model_type == 'Registration'.lower():
-            model_options['freeze_template'] = True
-
-        elif model_type == 'KernelRegression'.lower():
-            model_options['kernel_regression'] = True
-            model_options['time'] = time
-            model_options['visit_ages'] = []
-
         # Initialize the number of sources if needed.
         if model_type in ['BayesianGeodesicRegression'.lower()]:
-
-            if model_options['initial_modulation_matrix'] is None and model_options['number_of_sources'] is None:
-                model_options['number_of_sources'] = 4
-                logger.info('>> No initial modulation matrix neither number of sources. '
-                            'The latter will be ARBITRARILY defaulted to %d.' % model_options['number_of_sources'])
-        
             if 'sources_proposal_std' not in estimator_options:
                 estimator_options['sources_proposal_std'] = 1
 

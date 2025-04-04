@@ -13,19 +13,28 @@ def gaussian_kernel(x, y, sigma = 1):
 def residuals_change(liste):
     return round((liste[-2] - liste[-1]) / liste[-2], 2)
 
+def total_residuals_change(liste):
+    try:
+        return round((liste[0] - liste[-1]) / liste[0], 2)
+    except:
+        return 0
+
 def ratio(current_value, initial_value):
     if initial_value != 0:
         return round(100 * (initial_value - current_value) / initial_value, 2)
     else:
         return 0
 
-def change(list, n_subjects = 1):
+def change(liste, n_subjects = 1):
     """
     SSD between two consecutive iterations
     """
-    if len(list) == 1: return 0
+    if len(liste) == 1: return 0
+
+    a = list(liste[-2])[0]
+    b = list(liste[-1])[0]
     
-    return np.sum((list[-2]-list[-1])**2) / n_subjects
+    return np.sum((a -b)**2) / n_subjects
 
 def scalar_product_(kernel, cp, mom1, mom2):
     return torch.sum(mom1 * kernel.convolve(cp, cp, mom2))

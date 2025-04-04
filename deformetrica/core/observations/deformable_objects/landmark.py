@@ -39,9 +39,8 @@ class Landmark:
         self.object_filename = object_filename
         
         if self.object_filename is not None:
-            for extension in ['.pny', '.vtk', '.stl']:
-                if self.object_filename.endswith(extension):
-                    self.extension = extension
+            self.extension = next((ext for ext in ['.pny', '.vtk', '.stl']\
+                        if self.object_filename.endswith(ext)), None)
 
         self.update_bounding_box()
 
@@ -65,6 +64,20 @@ class Landmark:
 
     def get_points(self):
         return self.points
+    
+    def update_polydata(self, points, triangles):
+        """
+            Update the object polydata if position of vertices have changed
+        """
+        vertices = deepcopy(points).astype('float32')
+        connectivity = deepcopy(triangles)
+
+        # Edges first column: nb of points in each line
+        new_column = np.asarray([self.dimension] * connectivity.shape[0]).reshape((connectivity.shape[0], 1))
+        edges = np.hstack(np.append(new_column, connectivity, axis=1))
+
+        # For Laplacian filter (multiscale "img")
+        self.polydata = pv.PolyData(vertices, edges, n_faces = edges.shape[0])
 
     ####################################################################################################################
     ### Public methods:
@@ -80,23 +93,17 @@ class Landmark:
     def write(self, output_dir, name, points=None, momenta = None, cp = None, kernel = None):
         """
             Write the VTK polydata
-        """        
+        """     
         points = detach(self.points) if points is None else detach(points)
+        connec = detach(self.connectivity) if self.connectivity is not None else None
         
-        if self.connectivity is not None:
-            connec = detach(self.connectivity)
-            a, degree = connec.shape
-            faces = np.hstack((np.full((connec.shape[0], 1), degree), connec)).flatten()
-            mesh = pv.PolyData(points, faces = faces)
-        else:
-            mesh = pv.PolyData(points)
+        faces = np.hstack((np.full((connec.shape[0], 1), connec.shape[1]), connec)).flatten() \
+                if self.connectivity is not None else None
+
+        mesh = pv.PolyData(points, faces = faces)
         
         # Norm of the vector fields convolved at polydata points
         if momenta is not None:
-            points = move_data(points, device = get_best_device() )
-            cp = move_data(cp, device = get_best_device() )
-            momenta = move_data(momenta, device = get_best_device() )
-
             momenta_to_points = kernel.convolve(points, cp, momenta) 
             mesh.point_data["momenta_to_mesh"] = detach(momenta_to_points)
         
@@ -104,9 +111,9 @@ class Landmark:
         mesh.save(self.last_vtk_saved)
 
         # Taubin smoothing
-        smooth = mesh.smooth_taubin(n_iter = 1000)
-        name = op.join(output_dir, name + "_taubin" + self.extension)
-        smooth.save(name)
+        # smooth = mesh.smooth_taubin(n_iter = 1000)
+        # name = op.join(output_dir, name + "_taubin" + self.extension)
+        # smooth.save(name)
 
     def write_png(self, output_dir, name, *args):
         """Plots a .vtk mesh using matplotlib and saves it as a PNG."""   

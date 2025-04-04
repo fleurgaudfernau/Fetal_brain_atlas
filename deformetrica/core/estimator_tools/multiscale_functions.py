@@ -254,6 +254,16 @@ class Multiscale():
         """
         Prevents the step size to increase too much
         """
+        # ajout 02/04/2025
+        if self.name in ["KernelRegression"]:
+            for key in self.momenta_keys(gradient, steps):
+                while steps[key] > 1 / self.gradient_norms[key][-1]:
+                    steps = self.reduce_step(steps, key, factor=0.5)
+                    
+            for key in self.gradient_norms.keys():
+                while steps[key] > 10 / self.gradient_norms[key][-1]:
+                    steps = self.reduce_step(steps, key, factor=0.5)
+
         if self.objects.multiscale:
             for key in self.momenta_keys(gradient, steps):#self.momenta_keys(gradient, steps):
 
@@ -268,17 +278,12 @@ class Multiscale():
                 if self.objects.scale > 1 and len(self.template_keys(gradient, steps)) > 0: # IMPORTANT in Deterministic atlas for .nii
                      while steps[key] > 0.1 / self.gradient_norms[key][-1]: #modif before 1
                         steps = self.reduce_step(steps, key)
-
-                                
+     
         elif self.momenta.multiscale:
             for key in self.momenta_keys(gradient, steps):
                 while steps[key] > 10 / self.gradient_norms[key][-1]: #modif before 1
                     steps = self.reduce_step(steps, key, factor=0.5)
 
-                # Registration and Regression
-                # good for the brains
-                # if self.n_subjects == 1 and steps[key] > 0.01 / self.gradient_norms[key][-1]: # before 1
-                #     steps = self.reduce_step(steps, key)
                 if self.n_subjects == 1 and len(self.template_keys(gradient, steps)) > 0: 
                     while steps[key] > 1 / self.gradient_norms[key][-1]: # before 1
                         steps = self.reduce_step(steps, key)
@@ -297,9 +302,8 @@ class Multiscale():
                  optimizer.step = self.initialize_momenta_step(steps, gradient, optimizer, iteration)
             
             for key in self.template_keys(gradient, steps):
-                if steps[key] > 1e2 / self.gradient_norms[key][-1] \
-                    or steps[key] < 1e-3 / self.gradient_norms[key][-1]:
-                        optimizer.step[key] = self.reinitialize_step_size(gradient, key)
+                if 1e2 / self.gradient_norms[key][-1] < steps[key] < 1e-3 / self.gradient_norms[key][-1]:
+                    optimizer.step[key] = self.reinitialize_step_size(gradient, key)
 
         # useful in RG with brains
         elif self.momenta.after_ctf(iteration):
@@ -327,6 +331,7 @@ class Multiscale():
         for key in [s for s in steps.keys() if s in gradient.keys()]:
             logger.info("\t\t%.3E   and   %.3E \t[ %s ]" % (Decimal(str(steps[key])),
                 Decimal(str(self.compute_gradient_norm(gradient, key))), key))
+            #print("\t\t {}".format(1/self.compute_gradient_norm(gradient, key)))
 
     def dump_state_file(self, d):
         if self.objects.multiscale:

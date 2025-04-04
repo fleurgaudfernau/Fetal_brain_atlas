@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-
 from ...support.kernels import AbstractKernel
 from ...core import default, GpuMode
 from pykeops.torch import Genred
@@ -99,9 +98,9 @@ class KeopsKernel(AbstractKernel):
 
     def convolve(self, x, y, p, mode='gaussian'):
         if mode == 'gaussian':
-            assert isinstance(x, torch.Tensor), 'x variable must be a torch Tensor'
-            assert isinstance(y, torch.Tensor), 'y variable must be a torch Tensor'
-            assert isinstance(p, torch.Tensor), 'p variable must be a torch Tensor'
+            # assert isinstance(x, torch.Tensor), 'x variable must be a torch Tensor'
+            # assert isinstance(y, torch.Tensor), 'y variable must be a torch Tensor'
+            # assert isinstance(p, torch.Tensor), 'p variable must be a torch Tensor'
 
             # move tensors with respect to gpu_mode
             x, y, p = (self._move_to_device(t, gpu_mode=self.gpu_mode) for t in [x, y, p])

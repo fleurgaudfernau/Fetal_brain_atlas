@@ -57,7 +57,14 @@ class DeformableMultiObject:
             data['image_intensities'] = image_intensities
         return data
 
-    def set_data(self, data):
+    def set_data(self, data, check = False):
+        # import inspect
+        # stack = inspect.stack()
+        # print("Called by:", stack[1].function)  # immediate caller
+        # print("Full call stack:")
+        # for frame in stack[1:5]:
+        #     print(f"  -> {frame.function} in {frame.filename}:{frame.lineno}")
+
         if 'landmark_points' in data.keys():
             landmark_object_list = [elt for elt in self.object_list
                                     if elt.type.lower() in ['surfacemesh','landmark']]
@@ -66,6 +73,11 @@ class DeformableMultiObject:
             pos = 0
             for i, elt in enumerate(landmark_object_list):
                 elt.set_points(data['landmark_points'][pos:pos + elt.n_points()])
+
+                if check and elt.type.lower() == 'surfacemesh':
+                    elt.filter_taubin()
+                    logger.info("Additional taubin filter on template")
+
                 pos += elt.n_points()
 
         if 'image_intensities' in data.keys():
@@ -110,38 +122,18 @@ class DeformableMultiObject:
                 deformed_points['image_points'], template_data['image_intensities'])
 
         return deformed_data
-
-    # def set_points(self, points):
-    #     """
-    #     points is a numpy array containing the new position of all the landmark points
-    #     """
-    #     if 'landmark_points' in data.keys():
-    #         landmark_object_list = [elt for elt in self.object_list
-    #                                 if elt.type.lower() in ['surfacemesh', 'polyline', 'landmark']]
-    #         assert len(data) == np.sum([elt.n_points() for elt in landmark_object_list]), \
-    #             "Number of points differ in template and data given to template"
-    #         pos = 0
-    #         for i, elt in enumerate(landmark_object_list):
-    #             elt.set_points(data[pos:pos + elt.n_points()])
-    #             pos += elt.n_points()
-    #
-    #     if 'image_intensities' in data.keys():
-    #         image_object = [elt for elt in self.object_list if elt.type.lower() == 'image'][0]
-    #         image_object.set_intensities(data['image_intensities'])
+    
+    def compute_curvature(self, curvature, deformed_data = None):        
+        for i, obj1 in enumerate(self.object_list):
+            if deformed_data is None:
+                obj1.polydata.points = self.get_data()['landmark_points']
+            else:
+                obj1.polydata.points = detach(deformed_data['landmark_points'])
+            obj1.curvature_metrics(curvature)
 
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
-
-    # # Update the relevant information.
-    # def update(self):
-    #     self.number_of_objects = len(self.object_list)
-    #     assert (self.number_of_objects > 0)
-    #
-    #     for elt in self.object_list:
-    #         elt.update()
-    #
-    #     self.update_bounding_box(self.dimension)
 
     # Compute a tight bounding box that contains all objects.
     def update_bounding_box(self, dimension):

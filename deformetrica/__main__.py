@@ -53,6 +53,8 @@ def main():
                                 help = "Multiscale on objects")
     common_parser.add_argument('--freeze-template', "-ft", action='store_true', 
                                 help = "Freeze template optimization")
+    common_parser.add_argument('--freeze-momenta', "-fm", action='store_true', 
+                                help = "Freeze momenta optimization")
 
     common_parser.add_argument('--initial-step-size', "-step", type = float,  help = "Initial step size")
     common_parser.add_argument('--save-every-n-iters', "-save", type = int,  help = "Save every N iterations")
@@ -121,7 +123,8 @@ def main():
     logger.info(">>> Model information: ")
     logger.info("       Deformation kernel width: {}".format(model_options['deformation_kernel_width']))
     logger.info("       Noise std: {}".format(dataset_spec['noise_std']))
-    if model_options["freeze_template"] is not None:
+    
+    if model_options["freeze_template"] is True:
         logger.info("       Template object is frozen during estimation")
 
     if model_options["num_component"] is not None:
@@ -132,9 +135,9 @@ def main():
         logger.info("Age(s): {}".format(args.age))
 
     if model_options["t0"] is not None:
-        logger.info("       t0: {}".format(model_options['t0']))
+        logger.info("       Initial time t0: {}".format(model_options['t0']))
     
-    if model_options["number_of_sources"] is not None:
+    if "bayesian" in xml.model_type:
         logger.info("       Number of sources: {}".format(model_options['number_of_sources']))
 
     logger.info("\n*******************************************************************")

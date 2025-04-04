@@ -19,8 +19,7 @@ from ..in_out.deformable_object_reader import ObjectReader, object_type
 
 logger = logging.getLogger(__name__)
 
-def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = "", 
-                    kernel_width = None, **kwargs):
+def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = "", **kwargs):
     """
     Creates a longitudinal dataset object from xml parameters. 
 
@@ -33,7 +32,7 @@ def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = ""
         for i, subject in enumerate(filenames): #for each subject
             subject_objects = []
             for j, observations in enumerate(subject): #for each observation of i
-                object_list = [ ObjectReader().create_object(observation, interpolation, kernel_width=kernel_width) \
+                object_list = [ ObjectReader().create_object(observation, interpolation) \
                                 for observation in observations.values() ]
                 subject_objects.append(DeformableMultiObject(object_list))
 
@@ -42,7 +41,8 @@ def create_dataset(visit_ages=None, filenames=None, ids=None, interpolation = ""
     return LongitudinalDataset(ids, visit_ages, objects_dataset)
 
 def make_dataset_timeseries(dataset_specifications):
-    # visit ages [[1], [2] ...] -> [[1, 2]] / filenames : [[{'img':...}], [{'img':...}]] -> [[{'img':...}, {'img':...}]]
+    # visit ages [[1], [2] ...] -> [[1, 2]]
+    # filenames : [[{'obj_1':...}], [{'img':...}]] -> [[{'img':...}, {'img':...}]]
     # id : [1, 2, 3] -> [1]
     new_dataset_spec = deepcopy(dataset_specifications)
     new_dataset_spec["filenames"] = [sum(dataset_specifications["filenames"], [])]
@@ -70,6 +70,8 @@ def filter_dataset(dataset_spec, selection):
     new_dataset_spec['ids'] = [dataset_spec['ids'][i] for i in selection]
     new_dataset_spec['filenames'] = [dataset_spec['filenames'][i] for i in selection]
 
+    new_dataset_spec['n_subjects'] = len(new_dataset_spec['ids'])
+    new_dataset_spec['n_observations'] = sum(len(v) for s in new_dataset_spec['filenames'] for v in s)
     return new_dataset_spec
 
 def mean_object(dataset_spec, template_spec, weights):            
@@ -85,7 +87,8 @@ def mean_object(dataset_spec, template_spec, weights):
         template_spec["Object_1"]["filename"] = output_image    
 
     else:
-        i = weights.index(max(weights))
+        #i = weights.index(max(weights))
+        i = np.array(weights).argsort()[-2]
         template_spec["Object_1"]["filename"] = dataset_spec['filenames'][i][0]["Object_1"]
     
     return template_spec 
@@ -139,7 +142,7 @@ def template_metadata(template_spec):
     """
     Creates a longitudinal dataset object from xml parameters.
     """   
-    objects_list = [ ObjectReader().create_object( obj['filename'], kernel_width=obj['kernel_width'] )
+    objects_list = [ ObjectReader().create_object( obj['filename'])
                     for obj in template_spec.values() ]
     
     objects_norm = [ _get_object_norm(obj, object_type(obj['filename']).lower())\

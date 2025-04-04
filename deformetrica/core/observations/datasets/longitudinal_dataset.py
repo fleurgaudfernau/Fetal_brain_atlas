@@ -20,8 +20,9 @@ class LongitudinalDataset:
         self.ids = ids
         self.times = times
         self.tmin, self.tmax = None, None            
-        self.objects = objects
+        self.objects = objects # list of lists of deformable multi objects
         self.dimension = objects[0][0].dimension
+        self.type = objects[0][0].object_list[0].type.lower()
 
         self.n_subjects = len(ids)
         self.n_obs = len(sum(self.objects, []))

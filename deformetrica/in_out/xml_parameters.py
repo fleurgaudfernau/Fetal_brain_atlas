@@ -34,10 +34,12 @@ def get_estimator_options(xml_parameters):
 
 def get_model_options(xml_parameters):
 
+    model_type = xml_parameters.model_type.lower()
+
     keys = [ 'deformation_kernel_width', 'n_time_points', 'time_concentration',
-            'freeze_template', 'freeze_momenta', 'freeze_noise_variance',
+            'freeze_momenta', 'freeze_noise_variance',
             'initial_cp', 'initial_momenta', 'downsampling_factor',
-            'interpolation', 'perform_shooting', "kernel_regression",
+            'interpolation', 'perform_shooting',
             "momenta_proposal_std", "sources_proposal_std", 
             "freeze_reference_time", "freeze_rupture_time", "freeze_noise_variance",
             't0', 't1', 'tmin', 'tmax',
@@ -45,9 +47,16 @@ def get_model_options(xml_parameters):
 
     options = {k : getattr(xml_parameters, k) for k in keys }
 
-    options.update({"kernel_regression" : False})
-
-    model_type = xml_parameters.model_type.lower()
+    options.update({"freeze_template" : xml_parameters.freeze_template\
+                    if model_type != "registration" else False})
+                    
+    options.update({"kernel_regression" : False if model_type != "kernelregression"\
+                                        else True})
+                                        
+    if "regression" in xml_parameters.model_type and "kernel" not in xml_parameters.model_type:
+        if options['t0'] is None:
+            ages = [ a[0] for a in xml_parameters.visit_ages ]   
+            options.update({ 't0' : min(ages) })
 
     model_specific_options = {
         'bayesiangeodesicregression': { k : getattr(xml_parameters, k) for k in [
@@ -226,6 +235,7 @@ class XmlParameters:
         self.template_specifications["Object_1"] = template_object
 
     def _read_dataset_xml(self, dataset_xml_path):
+        # filenames [ [{'Object_1'}:path] ]
         if dataset_xml_path not in [None, 'None']:
 
             root = et.parse(dataset_xml_path).getroot()

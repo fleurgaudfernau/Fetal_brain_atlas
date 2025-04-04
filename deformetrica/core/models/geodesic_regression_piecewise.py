@@ -83,8 +83,7 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         # Deformation.
         self.geodesic = PiecewiseGeodesic(t0 = t0, nb_components = self.nb_components, template_tR=None,
                                         kernel=factory(kernel_width=deformation_kernel_width),
-                                        time_concentration=time_concentration, extensions = self.extensions,
-                                        root_name = self.name)
+                                        time_concentration=time_concentration, root_name = self.name)
         self.geodesic.set_tR(self.tR)
         #self.geodesic.set_t0(self.t0)
 
@@ -299,51 +298,23 @@ class PiecewiseGeodesicRegression(AbstractStatisticalModel):
         elif dist in ["ssim", "mse"]:
             return self.attachment.compute_ssim_distance(deformed_data, self.template, obj, dist)
 
-
     def compute_flow_curvature(self, dataset, time, curvature = "gaussian"):
+        """ 
+            Compute regression curvature at a given time point
+        """
         template_data, _, _ = self.prepare_geodesic(dataset)
-
         deformed_points = self.geodesic.get_template_points(time)
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-        for i, obj1 in enumerate(self.template.object_list):
-            obj1.polydata.points = deformed_data['landmark_points'].cpu().numpy()
-            obj1.curvature_metrics(curvature)
-        
-        return self.template
 
-    def compute_initial_curvature(self, dataset, j, curvature = "gaussian"):
-        obj = dataset.objects[0][j] 
-        for obj1 in (obj.object_list):
-            obj1.curvature_metrics(curvature)
-        
-        return obj
-
-    def compute_curvature(self, dataset, j = None, individual_RER = None, curvature = "gaussian", iter = None):
+        self.template.compute_curvature(curvature, deformed_data)
+                            
+    def compute_curvature(self, dataset, j, individual_RER = None, curvature = "gaussian"):
         """
-            Compute object curvature (at iter 0) or deformed template to object curvature
-        """
-        if j is None:
-            data = self.template.get_data()
-            for i, obj1 in enumerate(self.template.object_list):
-                obj1.polydata.points = data['landmark_points'][0:obj1.n_points()]
-                obj1.curvature_metrics(curvature)
-            
-                return self.template
-            
-        if iter == 0:
-            return self.compute_initial_curvature(dataset, j, curvature)
-
-        template_data, _, _ = self.prepare_geodesic(dataset)
+            Compute deformed template to object curvature
+        """      
+        time = dataset.times[0][j]
+        self.compute_flow_curvature(dataset, time, curvature)      
         
-        deformed_points = self.geodesic.get_template_points(dataset.times[0][j])
-        deformed_data = self.template.get_deformed_data(deformed_points, template_data)
-        
-        for i, obj1 in enumerate(self.template.object_list):
-            obj1.polydata.points = deformed_data['landmark_points'][0:obj1.n_points()].cpu().numpy()
-            obj1.curvature_metrics(curvature)
-        
-        return self.template
-
     ####################################################################################################################
     ### Private utility methods:
     ####################################################################################################################

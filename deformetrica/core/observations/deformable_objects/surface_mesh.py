@@ -34,18 +34,11 @@ class SurfaceMesh(Landmark):
     ### Constructor:
     ####################################################################################################################
 
-    def __init__(self, points, triangles, object_filename = None, polydata= None,
-                kernel_width = None):
-        Landmark.__init__(self, points) #self.points = points
+    def __init__(self, points, triangles, object_filename, polydata= None):
+        super().__init__(points, object_filename) # initialize all attributes in Landmark
         self.type = 'SurfaceMesh'
         
         self.connectivity = triangles
-        self.object_filename = object_filename
-
-        # Extension 
-        for extension in ['.pny', '.vtk', '.stl']:
-            if self.object_filename.endswith(extension):
-                self.extension = extension
 
         self.original_points = deepcopy(points)
 
@@ -53,63 +46,73 @@ class SurfaceMesh(Landmark):
                     "surface_area": dict(), "GI": dict()}
         self.distance = {"current" : 0, "signed":0, "hausdorff": 0, "average_min_dist" : 0}
 
+        ##################################################################################
         # Create polydata (ajout fg)
-        vertices = deepcopy(self.original_points).astype('float32')
-        connectivity = deepcopy(triangles)
+        self.update_polydata(self.original_points, triangles)
+        self.original_polydata = deepcopy(self.polydata)
 
-        # Edges first column: nb of points in each line
-        new_column = np.asarray([self.dimension] * connectivity.shape[0]).reshape((connectivity.shape[0], 1))
-        edges = np.hstack(np.append(new_column, connectivity, axis=1))
-
-        # For Laplacian filter (multiscale "img")
-        self.original_polydata = pv.PolyData(vertices, edges, n_faces = edges.shape[0])
-        self.polydata = deepcopy(self.original_polydata)
-
-        self.centers_polydata = None
-
-        # Multiscale mesh v1
-        self.multiscale_mesh = False
-        self.current_scale = None
-        self.faces = dict()
-        self.change = True
-
-        # All of these are torch tensor attributes.
+        # # All of these are torch tensor attributes.
         self.centers, self.normals = SurfaceMesh._get_centers_and_normals(
                                     torch.from_numpy(points), torch.from_numpy(triangles))
-        self.original_normals = self.normals.clone()
-        self.update_polydata_(detach(self.centers.detach().clone()), 
-                              detach(self.normals.detach().clone()))
-        
+
+        self.change = True
+                
         # ajout fg to avoid norm recomputation (useless)
         self.filtered = False
                             
     ####################################################################################################################
     ### Polydata tools (ajout fg):
     ####################################################################################################################
-    def save(self, output_dir, name):
-        self.centers_polydata.save(op.join(output_dir, name) + self.extension, binary=False)
-    
-    def update_polydata_(self, centers = None, normals = None):
+    def set_points(self, points):
+        """
+        Override Landmark.set_points to update mesh polydata automatically.
+        """
+        super().set_points(points)  # still stores points and bounding box
+        
+        self.update_polydata(points, self.connectivity)
+
+    def update_polydata(self, points, triangles):
         """
             Update the object polydata if position of vertices have changed
         """
-        # store the initial centers positions (to check how points move)
-        if self.change and centers is not None:
-            #if self.centers_polydata is None:
-            self.centers_polydata = pv.PolyData(centers)
-            # else:
-            #     self.centers_polydata.points = centers
-            self.centers_polydata.point_data["Normals"] = normals
+        vertices = deepcopy(points).astype('float32')
+        connectivity = deepcopy(triangles)
 
-    def set_centers_point_data(self, key, value, indices = None):
-        if indices is None:
-            self.centers_polydata.point_data[str(key)] = value
-        else:
-            self.centers_polydata.point_data[str(key)][indices] = value
+        # Edges first column: nb of points in each line
+        new_column = np.asarray([self.dimension] * connectivity.shape[0]).reshape((connectivity.shape[0], 1))
+        edges = np.hstack(np.append(new_column, connectivity, axis=1))
+
+        # For Laplacian filter (multiscale objects)
+        self.polydata = pv.PolyData(vertices, edges, n_faces = edges.shape[0])
+    
+    def _update_from_polydata(self):
+        # Get new points and edges for object
+        points = nps.vtk_to_numpy(self.polydata.GetPoints().GetData()).astype('float64')[:, :self.dimension]
+        
+        connectivity = self.get_connectivity()
+        points = points[:, :self.dimension]
+
+        self.set_points(points)
+        self.set_connectivity(connectivity)
+
+        return points
     
     ####################################################################################################################
     ### Public methods:
     ####################################################################################################################
+    def get_connectivity(self):
+        lines = nps.vtk_to_numpy(self.polydata.GetLines().GetData()).reshape((-1, 3))[:, 1:]
+        polygons = nps.vtk_to_numpy(self.polydata.GetPolys().GetData()).reshape((-1, 4))[:, 1:]
+
+        if len(lines) == 0 and len(polygons) == 0:
+            return None
+        elif (len(lines) > 0 and len(polygons) == 0) or self.dimension == 2:
+            return lines
+        elif len(lines) == 0 and len(polygons) > 0:
+            return polygons
+        else:
+            return polygons
+    
     def remove_null_normals(self):
         _, normals = self.get_centers_and_normals()
         triangles_to_keep = torch.nonzero(torch.norm(normals, 2, 1) != 0)
@@ -124,42 +127,25 @@ class SurfaceMesh(Landmark):
             self.centers, self.normals = SurfaceMesh._get_centers_and_normals(
                 torch.from_numpy(self.points), torch.from_numpy(self.connectivity))
 
-    def set_scale(self, new_scale):
-        self.current_scale = new_scale
-        self.multiscale_mesh = True
-
     def filter(self, n_iter):
         """
         Laplacian smoothing of the mesh
         """
         self.filtered = True
         self.polydata = self.original_polydata.smooth(n_iter, relaxation_factor=0.01) # relaxation=displacement factor of points
-
-        # Get new points and edges for object
-        points = nps.vtk_to_numpy(self.polydata.GetPoints().GetData()).astype('float64')
-        points = points[:, :self.dimension]
         
-        lines = nps.vtk_to_numpy(self.polydata.GetLines().GetData()).reshape((-1, 3))[:, 1:]
-        polygons = nps.vtk_to_numpy(self.polydata.GetPolys().GetData()).reshape((-1, 4))[:, 1:]
-
-        if len(lines) == 0 and len(polygons) == 0:
-            connectivity = None
-        elif len(lines) > 0 and len(polygons) == 0:
-            connectivity = lines
-        elif len(lines) == 0 and len(polygons) > 0:
-            connectivity = polygons
-        elif self.dimension == 2:
-            connectivity = lines
-        else:
-            connectivity = polygons
-
-        # Save points and edges
-        self.set_points(points)
-        self.set_connectivity(connectivity)
-
+        points = self._update_from_polydata()
+        
         return points
     
+    def filter_taubin(self, n_iter = 1000):
+        self.update_polydata(self.points, self.connectivity)
+
+        self.polydata.smooth_taubin(n_iter)
+        self._update_from_polydata()
+
     def curvature_metrics(self, type):
+        type = type.replace("Curvature_", "")
         if type == "normals": # Compute normals
             self.current()
         elif type == "varifold":  # Compute normals normalized

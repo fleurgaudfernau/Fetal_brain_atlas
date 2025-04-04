@@ -532,46 +532,23 @@ class BayesianPiecewiseGeodesicRegression(AbstractStatisticalModel):
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         
         for i, obj1 in enumerate(self.template.object_list):
-            obj1.polydata.points = deformed_data[self.points].cpu().numpy()
+            obj1.polydata.points = detach(deformed_data[self.points])
             obj1.curvature_metrics(curvature)
         
         return self.template
 
-    def compute_initial_curvature(self, dataset, j, curvature = "gaussian"):
-        obj = dataset.objects[j][0] 
-        for obj1 in (obj.object_list):
-            obj1.curvature_metrics(curvature)
-        
-        return obj
-
-    def compute_curvature(self, dataset, j, individual_RER = None, curvature = "gaussian", iter = None):
+    def compute_curvature(self, dataset, j, individual_RER = None, curvature = "gaussian"):
         """
             Compute object curvature (at iter 0) or deformed template to object curvature
         """     
-        if j is None:
-            data = self.template.get_data()
-            for i, obj1 in enumerate(self.template.object_list):
-                obj1.polydata.points = data[self.points][0:obj1.n_points()]
-                obj1.curvature_metrics(curvature)
-            
-                return self.template
-             
-        if iter == 0:
-            return self.compute_initial_curvature(dataset, j, curvature)
-          
         template_data, _, _ = self.prepare_geodesic(dataset)
         sources = self._individual_RER_to_torch_tensors(individual_RER)
         
         deformed_points = self.piecewise_geodesic.get_template_points(dataset.times[j][0], sources[j])
         deformed_data = self.template.get_deformed_data(deformed_points, template_data)
         
-        # Compute deformed template curvature
-        for i, obj1 in enumerate(self.template.object_list):
-            obj1.polydata.points = deformed_data[self.points][0:obj1.n_points()].cpu().numpy()
-            obj1.curvature_metrics(curvature)
-        
-        return self.template
-    
+        self.template.compute_curvature(curvature, deformed_data)
+            
     ####################################################################################################################
     ### Private utility methods:
     ####################################################################################################################

@@ -1,18 +1,20 @@
 import torch
 import logging
-import numpy as np
 import os
-from ...in_out.array_readers_and_writers import write_2D_list
-from ...core.model_tools.deformations.exponential_tools import norm, scalar_product, current_distance
-from ...support.utilities.plot_tools import scatter_plot, plot_value_evolution, plot_sources
-from ...support.utilities.tools import ratio, change
-from .curvature_functions import Curvature
+import numpy as np
 import os.path as op
 from copy import deepcopy
+from ...in_out.array_readers_and_writers import write_2D_list
+from ...core.model_tools.deformations.exponential_tools import norm, scalar_product, current_distance
+from ...support.utilities.plot_tools import PlotTracker, scatter_plot, plot_value_evolution, plot_sources
+from ...support.utilities.tools import total_residuals_change, residuals_change, change
+from  ...support.utilities import detach
+from .curvature_functions import Curvature
 logger = logging.getLogger(__name__)
 
-class Residuals():
+class Residuals(PlotTracker):
     def __init__(self, model, dataset, print_every_n_iters = None, output_dir = None):
+        super().__init__() 
         
         # Model parameters
         self.model = model
@@ -20,6 +22,7 @@ class Residuals():
         self.type = self.model.template.object_list[0].type 
         self.width = self.model.deformation_kernel_width   
         self.print_every_n_iters = print_every_n_iters
+        self.output_dir = output_dir
 
         self.n_sources = self.model.n_sources
 
@@ -43,12 +46,11 @@ class Residuals():
         self.id = dataset.ids if "Regression" not in self.name else [n for n in range(self.n_obs)]
 
         # Residuals computation
-        if self.name in ["DeformableTemplate", "KernelRegression"]:
-            self.compute_model_residuals = self.compute_atlas_residuals
-        elif self.name == "BayesianAtlas":
-            self.compute_model_residuals = self.compute_bayesian_atlas_residuals
-        elif "Regression" in self.name:
-            self.compute_model_residuals = self.compute_regression_residuals
+        self.compute_model_residuals = {"DeformableTemplate" : self.compute_atlas_residuals,
+                                    "KernelRegression" : self.compute_atlas_residuals,
+                                    "BayesianPiecewiseRegression" : self.compute_bayesian_atlas_residuals,
+                                    "PiecewiseRegression" : self.compute_regression_residuals,
+                                    "Regression" : self.compute_regression_residuals} 
 
         # Piecewise
         self.n_components = 1
@@ -80,7 +82,7 @@ class Residuals():
 
         # Conditions
         self.set_condition("Residuals_subjects")
-        self.set_condition("Template_changes")
+        self.set_condition("Template_changes", not self.model.freeze_template)
         self.set_condition("Template_distance", ("Atlas" in self.name))
         self.set_condition("Modulation_matrix_distance", self.name == "BayesianGeodesicRegression")
         self.set_condition("Modulation_matrix_changes",self.name == "BayesianGeodesicRegression")
@@ -91,7 +93,7 @@ class Residuals():
         self.ss = {c : [] for c in range(self.n_sources)}
 
         # Curvatures
-        #self.curvature = Curvature(dataset, self.model, self.name, self.ages, self.n_obs)
+        self.curvature = Curvature(self.output_dir, dataset, self.model, self.name, self.ages, self.n_obs)
 
         #self.first_write = [True, True]
         
@@ -101,50 +103,12 @@ class Residuals():
     ### Residuals tools
     ####################################################################################################################
     
-    def initialize_values(self, k, v = {}):
-        self.plot[k]["v"] = v
-    
-    def set_condition(self, k, v = False):
-        self.plot[k]["condition"] = v
-    
-    def set_ylab(self, k, v):
-        if type(v) != list: v = list(v)
-        
-        self.plot[k]["ylab"] = v
-
-    def add_iter(self, k, iteration):
-        if iteration not in self.plot[k]["iter"]:
-            self.plot[k]["iter"].append(iteration)
-    
-    def set_value(self, k, value, i = None):
-        if i is not None:
-            self.plot[k]["v"][i] = value
-        else:
-            self.plot[k]["v"] = value
-
-    def add_value(self, k, value, i = None):
-        if i is not None:
-            self.plot[k]["v"][i].append(value)
-        else:
-            self.plot[k]["v"].append(value)
-    
-    def get_values(self, k, i = None):
-        if i is not None:
-            return deepcopy(self.plot[k]["v"][i])
-        
-        if type(self.plot[k]["v"]) == dict:
-            return deepcopy(list(self.plot[k]["v"].values()))
-        
-        return deepcopy(self.plot[k]["v"])
-    
     def percentage_residuals_diminution(self):
-        return ratio(self.get_values("Residuals_average")[-1],  self.get_values("Residuals_average")[0])
+        return round(100 * total_residuals_change(self.get_values("Residuals_average")), 2)
     
     def last_residuals_diminution(self):
-        return ratio(self.get_values("Residuals_average")[-1], self.get_values("Residuals_average")[-2])
+        return round(100 * residuals_change(self.get_values("Residuals_average")), 2)
 
-    def to_plot(self, k):
-        return self.plot[k]["condition"]
     
     ####################################################################################################################
     ### PARAMETERS CHANGE
@@ -198,7 +162,7 @@ class Residuals():
                             "Distances_subject_t{}_i{}.vtk".format(j, current_iteration)), binary=False)
                             self.model.template.object_list[i].polydata.save(op.join(self.output_dir, 
                             "Distances_deformed_template_to_t{}_i{}.vtk".format(j, current_iteration)), binary=False)
-        
+
     def template_change(self, iteration):
         if self.to_plot("Template_changes"):
             self.templates.append(self.model.get_template_data().values())
@@ -256,37 +220,29 @@ class Residuals():
             self.add_iter("Modulation_matrix_changes", iteration)    
     
     ####################################################################################################################
-    ### Residuals tools for other models
+    ### Model-specific residuals tools
     ####################################################################################################################
+    
     def compute_atlas_residuals(self, dataset, individual_RER = None):
-        residuals_list = self.model.compute_residuals(dataset, individual_RER)
-        residuals_list = [r.cpu().numpy() for r in residuals_list]
-
-        return residuals_list
+        return [detach(r) for r in self.model.compute_residuals(dataset, individual_RER)]
     
     def compute_bayesian_atlas_residuals(self, dataset, individual_RER):
-        residuals_list = self.model._write_model_predictions(dataset, individual_RER, output_dir="", write = False)
-        residuals_list = [r[0].cpu().numpy() for r in residuals_list]
-
-        return residuals_list
+        return [detach(r[0]) for r in self.model._write_model_predictions(dataset, 
+                                            individual_RER, output_dir="", write = False)]
 
     def compute_regression_residuals(self, dataset, individual_RER = None):
         # Avoid residuals recomputation: already computed in LL computation
-        if self.model.current_residuals is None:
-            residuals_list = self.model.compute_residuals(dataset, individual_RER)
-        else:
-            residuals_list = self.model.current_residuals
-        
-        if torch.is_tensor(residuals_list[0]):
-            residuals_list = [r.cpu().numpy() for r in residuals_list]
-        
-        return residuals_list         
+        residuals_list = self.model.compute_residuals(dataset, individual_RER) \
+                        if self.model.current_residuals is None else self.model.current_residuals
+                
+        return [detach(r) for r in residuals_list]         
 
     ####################################################################################################################
     ### Common Residuals tools
     ####################################################################################################################
+    
     def compute_attachement_residuals(self, dataset, current_iteration, individual_RER):
-        subjects_residuals = self.compute_model_residuals(dataset, individual_RER)
+        subjects_residuals = self.compute_model_residuals[self.name](dataset, individual_RER)
 
         # average residuals over subjects
         self.add_value("Residuals_average", np.sum(subjects_residuals))
@@ -298,7 +254,6 @@ class Residuals():
         self.add_iter("Residuals_average", current_iteration)
         self.add_iter("Residuals_subjects", current_iteration)        
                    
-
     def compute_residuals(self, dataset, current_iteration, individual_RER = None, multiscale = None):
         """
         Compute residuals at each pixel/voxel between objects and deformed template.
@@ -320,6 +275,7 @@ class Residuals():
     ####################################################################################################################
     ### Plot tools
     ####################################################################################################################
+    
     def set_ylabels(self):
         self.set_ylab("Residuals_average", 'Average residuals (attachement term)')
         self.set_ylab("Residuals_subjects", self.obs_names)
@@ -336,53 +292,46 @@ class Residuals():
 
     def plot_residuals_evolution(self, output_dir, multiscale, individual_RER = None):
         # Scatter plots
-        self.plot_sources(output_dir, individual_RER)
-        self.plot_residuals_by_age(output_dir)
+        self.plot_sources(self.output_dir, individual_RER)
+        self.plot_residuals_by_age(self.output_dir)
 
         # Curvatures
-        # self.curvature.plot_reconstructions_curvature(output_dir)
-        # self.curvature.plot_regression_curvature(output_dir)
+        self.curvature.plots()
         
         self.set_ylabels()
         self.set_to_plot()
 
         for t in self.plot.keys():
             if self.to_plot(t):
-                try:
-                    plot_value_evolution(output_dir, t, self.plot[t]["plots"], self.plot[t]["iter"],
-                                         self.plot[t]["ylab"], 
-                                         [multiscale.objects.iter, multiscale.momenta.iter],
-                                         ["multiscale_images", "multiscale_momenta"])
-                except Exception as e:
-                      print("\nProblem plotting {}".format(t))
-                      print("Error {}".format(e))
+                plot_value_evolution(self.output_dir, t, self.plot[t]["plots"], 
+                                    self.plot[t]["iter"], self.plot[t]["ylab"], 
+                                    [multiscale.objects.iter, multiscale.momenta.iter],
+                                    ["multiscale_images", "multiscale_momenta"])
                 
     def plot_sources(self, output_dir, individual_RER = None):
         if individual_RER and "sources" in individual_RER:
             sources = individual_RER["sources"]
-            plot_sources(output_dir, sources, self.ages)
+            plot_sources(self.output_dir, sources, self.ages)
     
     def plot_residuals_by_age(self, output_dir):    
         if self.n_obs > 1 and self.time_series:    
-            ratios = [ratio(self.get_values('Residuals_subjects')[i][-1], 
-                            self.get_values('Residuals_subjects')[i][0]) \
+            ratios = [total_residuals_change(self.get_values('Residuals_subjects')[i]) \
                       for i in range(self.n_obs)]
-            scatter_plot(output_dir, "Residuals_changes_by_age.png", self.ages, 
+            scatter_plot(self.output_dir, "Residuals_changes_by_age.png", self.ages, 
                          ratios, labels = self.id, xlab = "Age (GW)", ylab = "Residuals")
             
             values = [self.get_values('Residuals_subjects')[i][-1] for i in range(self.n_obs)]
-            scatter_plot(output_dir, "Residual_error_by_age.png", self.ages, 
+            scatter_plot(self.output_dir, "Residual_error_by_age.png", self.ages, 
                          values, labels = self.id,  xlab = "Age (GW)", ylab = "Residual error")
     
-
     def write(self, output_dir, dataset, individual_RER =None, current_iteration = None):
         # Recompute residuals to display remaining residuals per subject
 
         # Curvature computed only every save_every_n_iters to save time
         #self.compute_image_distances(dataset, current_iteration)
         #self.compute_mesh_distance(dataset, current_iteration, individual_RER)
-        # self.curvature.compute_mesh_curvatures(dataset, current_iteration, individual_RER)
-        # self.curvature.compute_regression_curvature(dataset)
+
+        self.curvature.update(dataset, current_iteration, individual_RER)
 
         to_write = [["\nTotal residuals left: {}".format(self.get_values("Residuals_average")[-1])],
                     ["Total initial residuals:", self.get_values("Residuals_average")[0]],
@@ -399,9 +348,8 @@ class Residuals():
             else:
                 to_write.append(["\n>> Observation: {}".format(i)])
             to_write.append(["Residuals diminution (%):{}"\
-                        .format(ratio(self.get_values('Residuals_subjects')[i][-1], 
-                                self.get_values('Residuals_subjects')[i][0]))])
+                        .format(total_residuals_change(self.get_values('Residuals_subjects')[i]))])
             
             #to_write = self.curvature.write(to_write, i)
 
-        write_2D_list(to_write, output_dir, "{}___Residuals.txt".format(self.name))
+        write_2D_list(to_write, self.output_dir, "{}___Residuals.txt".format(self.name))

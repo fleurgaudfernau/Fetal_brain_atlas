@@ -18,7 +18,7 @@ deformation_kernel_device = 'auto'
 
 n_time_points = 11
 time_concentration = 10
-number_of_sources = None
+number_of_sources = 4
 use_rk2_for_shoot = False
 use_rk2_for_flow = False
 t0 = None

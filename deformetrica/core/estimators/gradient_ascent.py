@@ -49,8 +49,7 @@ class GradientAscent(AbstractEstimator):
                          optimized_log_likelihood=optimized_log_likelihood,
                          max_iterations=max_iterations, convergence_tolerance=convergence_tolerance,
                          print_every_n_iters=print_every_n_iters, save_every_n_iters=save_every_n_iters,
-                         individual_RER=individual_RER,
-                        state_file=state_file, output_dir=output_dir)
+                         individual_RER=individual_RER, state_file=state_file, output_dir=output_dir)
         
         assert optimization_method.lower() == self.name.lower()
         
@@ -210,7 +209,8 @@ class GradientAscent(AbstractEstimator):
             self._set_parameters(self.current_parameters)
 
             # Coarse to fine------------------------------------------------------------------------------------------
-            self.residuals.compute_residuals(self.dataset, self.current_iteration, self.individual_RER, self.multiscale)
+            self.residuals.compute_residuals(self.dataset, self.current_iteration, self.individual_RER, 
+                                            self.multiscale)
             new_parameters = self.coarse_to_fine(new_parameters, end)
 
             # Test the stopping criterion ------------------------------------------------------------------------------
@@ -331,7 +331,7 @@ class GradientAscent(AbstractEstimator):
 
     def _set_parameters(self, parameters):
         fixed_effects = {key: parameters[key] for key in self.statistical_model.get_fixed_effects().keys()}
-        self.statistical_model.set_fixed_effects(fixed_effects)
+        self.statistical_model.set_fixed_effects(fixed_effects, check = True)
         self.individual_RER = {key: parameters[key] for key in self.individual_RER.keys()}
 
     def _load_state_file(self):
